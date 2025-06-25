@@ -1,0 +1,52 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Linteum.Infrastructure", "Linteum.Infrastructure\Linteum.Infrastructure.csproj", "{84C9D1CF-4447-4F19-AFCE-65C4DF9374C1}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Linteum.Tests.Db", "Linteum.Tests.Db\Linteum.Tests.Db.csproj", "{4FCF906F-1C49-444E-9E92-C9DF9E4F291E}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Linteum.Domain", "Linteum.Domain\Linteum.Domain.csproj", "{180D5AF6-7C55-442A-80A3-010B100892F3}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Linteum.Shared", "Linteum.Shared\Linteum.Shared.csproj", "{04BA5DE1-EDE6-4D49-AF2E-45EB7E4D69B9}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Linteum.Api", "Linteum.Api\Linteum.Api.csproj", "{03FCCA90-4B95-4EE5-B22B-1F9D50454CB6}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Linteum.BlazorApp", "Linteum.BlazorApp\Linteum.BlazorApp.csproj", "{D7C1C134-BA9C-4938-810A-648C31673C87}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{84C9D1CF-4447-4F19-AFCE-65C4DF9374C1}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{84C9D1CF-4447-4F19-AFCE-65C4DF9374C1}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{84C9D1CF-4447-4F19-AFCE-65C4DF9374C1}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{84C9D1CF-4447-4F19-AFCE-65C4DF9374C1}.Release|Any CPU.Build.0 = Release|Any CPU
+		{4FCF906F-1C49-444E-9E92-C9DF9E4F291E}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{4FCF906F-1C49-444E-9E92-C9DF9E4F291E}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{4FCF906F-1C49-444E-9E92-C9DF9E4F291E}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{4FCF906F-1C49-444E-9E92-C9DF9E4F291E}.Release|Any CPU.Build.0 = Release|Any CPU
+		{180D5AF6-7C55-442A-80A3-010B100892F3}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{180D5AF6-7C55-442A-80A3-010B100892F3}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{180D5AF6-7C55-442A-80A3-010B100892F3}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{180D5AF6-7C55-442A-80A3-010B100892F3}.Release|Any CPU.Build.0 = Release|Any CPU
+		{04BA5DE1-EDE6-4D49-AF2E-45EB7E4D69B9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{04BA5DE1-EDE6-4D49-AF2E-45EB7E4D69B9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{04BA5DE1-EDE6-4D49-AF2E-45EB7E4D69B9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{04BA5DE1-EDE6-4D49-AF2E-45EB7E4D69B9}.Release|Any CPU.Build.0 = Release|Any CPU
+		{03FCCA90-4B95-4EE5-B22B-1F9D50454CB6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{03FCCA90-4B95-4EE5-B22B-1F9D50454CB6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{03FCCA90-4B95-4EE5-B22B-1F9D50454CB6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{03FCCA90-4B95-4EE5-B22B-1F9D50454CB6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{D7C1C134-BA9C-4938-810A-648C31673C87}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{D7C1C134-BA9C-4938-810A-648C31673C87}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{D7C1C134-BA9C-4938-810A-648C31673C87}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{D7C1C134-BA9C-4938-810A-648C31673C87}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal

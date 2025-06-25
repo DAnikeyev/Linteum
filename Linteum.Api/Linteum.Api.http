@@ -1,0 +1,6 @@
+@Linteum.Api_HostAddress = http://localhost:5182
+
+GET {{Linteum.Api_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###
