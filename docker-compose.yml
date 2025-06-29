@@ -1,0 +1,50 @@
+services:
+  db:
+    image: postgres:16
+    container_name: ${DB_CONTAINER_NAME}
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "${DB_HOST_PORT}:${DB_CONTAINER_PORT}"
+    networks:
+      - linteum_dev
+    volumes:
+      - db_data:/var/lib/postgresql/data
+
+  api:
+    build:
+      context: .
+      dockerfile: Linteum.Api/Dockerfile
+    container_name: ${API_CONTAINER_NAME}
+    environment:
+      - ConnectionStrings__DefaultConnection=Host=${DB_CONTAINER_NAME};Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
+      - ASPNETCORE_URLS=http://*:${API_CONTAINER_PORT}
+    depends_on:
+      - db
+    networks:
+      - linteum_dev
+
+  blazor:
+    build:
+      context: .
+      dockerfile: Linteum.BlazorApp/Dockerfile
+    container_name: ${BLAZOR_CONTAINER_NAME}
+    environment:
+      - API_CONTAINER_NAME=${API_CONTAINER_NAME}
+      - API_CONTAINER_PORT=${API_CONTAINER_PORT}
+      - ASPNETCORE_URLS=http://*:${BLAZOR_CONTAINER_PORT}
+    ports:
+      - "${BLAZOR_HOST_PORT}:${BLAZOR_CONTAINER_PORT}"
+    depends_on:
+      - api
+    networks:
+      - linteum_dev
+
+networks:
+  linteum_dev:
+    driver: bridge
+
+volumes:
+  db_data:

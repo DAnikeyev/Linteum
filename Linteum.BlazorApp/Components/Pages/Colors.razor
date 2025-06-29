@@ -1,0 +1,43 @@
+@page "/colors"
+@using Linteum.Shared.DTO
+@inject MyApiClient ApiClient
+
+<h2>Colors</h2>
+
+@if (_colors == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <table class="table">
+        <thead>
+        <tr>
+            <th>Name</th>
+            <th>Hex</th>
+            <th>Preview</th>
+        </tr>
+        </thead>
+        <tbody>
+        @foreach (var color in _colors)
+        {
+            <tr>
+                <td>@color.Name</td>
+                <td>@color.HexValue</td>
+                <td>
+                    <span style="display:inline-block;width:32px;height:16px;background:@color.HexValue"></span>
+                </td>
+            </tr>
+        }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<ColorDto>? _colors;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _colors = await ApiClient.GetColorsAsync();
+    }
+}

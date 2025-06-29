@@ -1,6 +1,20 @@
+using Linteum.BlazorApp;
 using Linteum.BlazorApp.Components;
 
 var builder = WebApplication.CreateBuilder(args);
+DotNetEnv.Env.Load("../.env");
+// Read the API base address from the environment variable
+var apiContainerName = Environment.GetEnvironmentVariable("API_CONTAINER_NAME") ?? "api";
+var apiContainerPort = Environment.GetEnvironmentVariable("API_CONTAINER_PORT") ?? "8080";
+var apiBaseAddress = $"http://{apiContainerName}:{apiContainerPort}";
+
+Console.WriteLine($"API Base Address: {apiBaseAddress}");
+
+builder.Services.AddHttpClient<MyApiClient>("ApiClient", client => {
+    client.BaseAddress = new Uri(apiBaseAddress);
+});
+
+builder.Services.AddScoped(sp => sp.GetRequiredService<IHttpClientFactory>().CreateClient("ApiClient"));
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
