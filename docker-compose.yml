@@ -20,6 +20,7 @@ services:
     container_name: ${API_CONTAINER_NAME}
     environment:
       - ConnectionStrings__DefaultConnection=Host=${DB_CONTAINER_NAME};Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
+      - MASTER_PASSWORD_HASH=${MASTER_PASSWORD_HASH}
       - ASPNETCORE_URLS=http://*:${API_CONTAINER_PORT}
     depends_on:
       - db

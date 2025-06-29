@@ -1,6 +1,6 @@
 using Linteum.Shared.DTO;
 
-namespace Linteum.Tests.Create;
+namespace Linteum.Tests.Db.Create;
 
 internal class CanvasRepositoryCreateTest : SyntheticDataTest
 {

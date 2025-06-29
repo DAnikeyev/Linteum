@@ -5,6 +5,7 @@ using Linteum.Domain.Repository;
 using Linteum.Shared;
 using Linteum.Shared.DTO;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using NLog;
 
 namespace Linteum.Infrastructure;
@@ -17,15 +18,17 @@ public class UserRepository : IUserRepository
     private readonly IBalanceChangedEventRepository _balanceChangedEventRepository;
     private readonly ISubscriptionRepository _subscriptionRepository;
     private readonly DbConfig _defaultsConfig;
-    private readonly ILogger _logger = LogManager.GetCurrentClassLogger();
+    private readonly ILogger<UserRepository> _logger;
+    
 
-    public UserRepository(AppDbContext context, IMapper mapper, IBalanceChangedEventRepository balanceChangedEventRepository, ISubscriptionRepository subscriptionRepository, DbConfig defaultsConfig)
+    public UserRepository(AppDbContext context, IMapper mapper, IBalanceChangedEventRepository balanceChangedEventRepository, ISubscriptionRepository subscriptionRepository, DbConfig defaultsConfig, ILogger<UserRepository> logger)
     {
         _context = context;
         _mapper = mapper;
         _balanceChangedEventRepository = balanceChangedEventRepository;
         _subscriptionRepository = subscriptionRepository;
         _defaultsConfig = defaultsConfig;
+        _logger = logger;
     }
 
     public async Task<UserDto?> GetByEmailAsync(string email)
@@ -106,7 +109,7 @@ public class UserRepository : IUserRepository
         }
         catch (Exception ex)
         {
-            _logger.Error(ex, "Error in AddOrUpdateUserAsync for user: {Email}", userDto.Email);
+            _logger.LogError(ex, "Error in AddOrUpdateUserAsync for user: {Email}", userDto.Email);
             await transaction.RollbackAsync();
             return null;
         }

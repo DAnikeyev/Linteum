@@ -1,7 +1,7 @@
 using Linteum.Infrastructure;
 using Microsoft.EntityFrameworkCore;
 
-namespace Linteum.Tests;
+namespace Linteum.Tests.Db;
 
 public class PermamentDbTest
 {

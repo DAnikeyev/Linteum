@@ -4,7 +4,9 @@ using Linteum.Domain.Repository;
 using Linteum.Shared;
 using Linteum.Shared.DTO;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using NLog;
+using ILogger = NLog.ILogger;
 
 namespace Linteum.Infrastructure;
 
@@ -13,13 +15,14 @@ public class PixelRepository : IPixelRepository
     private readonly AppDbContext _context;
     private readonly IMapper _mapper;
     private readonly IBalanceChangedEventRepository _balanceChangedEventRepository;
-    private static readonly ILogger Logger = LogManager.GetCurrentClassLogger();
+    private readonly ILogger<PixelRepository> _logger;
 
-    public PixelRepository(AppDbContext context, IMapper mapper, IBalanceChangedEventRepository balanceChangedEventRepository)
+    public PixelRepository(AppDbContext context, IMapper mapper, IBalanceChangedEventRepository balanceChangedEventRepository, ILogger<PixelRepository> logger)
     {
         _context = context;
         _mapper = mapper;
         _balanceChangedEventRepository = balanceChangedEventRepository;
+        _logger = logger;
     }
 
     public async Task<IEnumerable<PixelDto>> GetByCanvasIdAsync(Guid canvasId)
@@ -47,12 +50,12 @@ public class PixelRepository : IPixelRepository
             .FirstOrDefaultAsync(c => c.Id == pixel.CanvasId);
         if (canvas == null)
         {
-            Logger.Warn($"Canvas with ID {pixel.CanvasId} not found.");
+            _logger.LogWarning($"Canvas with ID {pixel.CanvasId} not found.");
             return null;
         }
         if (canvas.Height < pixel.Y || canvas.Width < pixel.X || pixel.X < 0 || pixel.Y < 0)
         {
-            Logger.Warn($"Pixel coordinates ({pixel.X}, {pixel.Y}) are out of bounds for canvas {canvas.Name} (Width: {canvas.Width}, Height: {canvas.Height}).");
+            _logger.LogWarning($"Pixel coordinates ({pixel.X}, {pixel.Y}) are out of bounds for canvas {canvas.Name} (Width: {canvas.Width}, Height: {canvas.Height}).");
             return null;
         }
         await using var transaction = await _context.Database.BeginTransactionAsync();
@@ -119,13 +122,13 @@ public class PixelRepository : IPixelRepository
             _context.Pixels.Update(existingPixel);
             await _context.PixelChangedEvents.AddAsync(pixelChangedEvent);
             await _context.SaveChangesAsync();
-            Logger.Info($"Pixel changed successfully. PixelId={existingPixel.Id}, OwnerId={ownerId}, CanvasId={pixel.CanvasId}, Price={paid}");
+            _logger.LogInformation($"Pixel changed successfully. PixelId={existingPixel.Id}, OwnerId={ownerId}, CanvasId={pixel.CanvasId}, Price={paid}");
             await transaction.CommitAsync();
             return _mapper.Map<PixelDto>(existingPixel);
         }
         catch (Exception ex)
         {
-            Logger.Error(ex);
+            _logger.LogError(ex.Message, "Error changing pixel. OwnerId={OwnerId}, Pixel={Pixel}", ownerId, pixel);
             await transaction.RollbackAsync();
             return null;
         }

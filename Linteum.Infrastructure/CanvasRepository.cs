@@ -2,8 +2,10 @@ using AutoMapper;
 using AutoMapper.QueryableExtensions;
 using Linteum.Domain;
 using Linteum.Domain.Repository;
+using Linteum.Shared;
 using Linteum.Shared.DTO;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using NLog;
 
 namespace Linteum.Infrastructure;
@@ -14,13 +16,14 @@ public class CanvasRepository : ICanvasRepository
     private readonly string _masterPasswordHash;
     private readonly string _defaultCanvasName;
     private readonly AppDbContext _context;
-    private static readonly ILogger Logger = LogManager.GetCurrentClassLogger();
+    private readonly ILogger<CanvasRepository> _logger;
     
-    public CanvasRepository(AppDbContext context, IMapper mapper, string masterPasswordHash, string defaultCanvasName)
+    public CanvasRepository(AppDbContext context, IMapper mapper, ILogger<CanvasRepository> logger, DbConfig dbConfig)
     {
+        _logger = logger;
         _mapper = mapper;
-        _masterPasswordHash = masterPasswordHash;
-        _defaultCanvasName = defaultCanvasName;
+        _masterPasswordHash = dbConfig.MasterPasswordHash;
+        _defaultCanvasName = dbConfig.DefaultCanvasName;
         _context = context;
     }
 
@@ -57,14 +60,14 @@ public class CanvasRepository : ICanvasRepository
             .FirstOrDefaultAsync(c => c.Name == name);
         if (canvas == null)
         {
-            Logger.Warn($"Canvas with name {name} and provided password hash not found.");
+            _logger.LogWarning($"Canvas with name {name} and provided password hash not found.");
             return false;
         }
         
         
         if (canvas.Name == _defaultCanvasName)
         {
-            Logger.Warn($"Cannot delete default canvas with deafult name {_defaultCanvasName}.");
+            _logger.LogWarning($"Cannot delete default canvas with deafult name {_defaultCanvasName}.");
             return false;
         }
         
@@ -72,19 +75,19 @@ public class CanvasRepository : ICanvasRepository
         
         if(!passwordMatch)
         {
-            Logger.Warn($"Canvas with name {name} found, but password hash does not match.");
+            _logger.LogWarning($"Canvas with name {name} found, but password hash does not match.");
             return false;
         }
         _context.Canvases.Remove(canvas);
         try
         {
             await _context.SaveChangesAsync();
-            Logger.Info($"Canvas with name {name} deleted successfully.");
+            _logger.LogInformation($"Canvas with name {name} deleted successfully.");
             return true;
         }
         catch (DbUpdateException ex)
         {
-            Logger.Error(ex, $"Error deleting canvas with name {name}.");
+            _logger.LogError(ex, $"Error deleting canvas with name {name}.");
             return false;
         }
     }
@@ -97,7 +100,7 @@ public class CanvasRepository : ICanvasRepository
         
         if (canvasInDb == null)
         {
-            Logger.Warn($"Canvas with ID {canvas.Id} not found for password check.");
+            _logger.LogWarning($"Canvas with ID {canvas.Id} not found for password check.");
             return false; // Canvas not found
         }
         
@@ -122,14 +125,14 @@ public class CanvasRepository : ICanvasRepository
 
         if (_context.Canvases.Any(c => c.Name == newCanvas.Name))
         {
-            Logger.Error($"Canvas with name {newCanvas.Name} already exists.");
+            _logger.LogError($"Canvas with name {newCanvas.Name} already exists.");
             return null;
         }
         
         var defaultColor = await _context.Colors.AsNoTracking().FirstOrDefaultAsync(c => c.HexValue == "#FFFFFF");
          if (defaultColor == null)
         {
-            Logger.Error("Default color not found, cannot create canvas.");
+            _logger.LogError("Default color not found, cannot create canvas.");
             return null;
         }
         try
@@ -145,14 +148,14 @@ public class CanvasRepository : ICanvasRepository
                 .FirstOrDefaultAsync();
             if (canvasInDb == null)
             {
-                Logger.Error($"Canvas with ID {newCanvas.Id} was not found after adding.");
+                _logger.LogError($"Canvas with ID {newCanvas.Id} was not found after adding.");
                 return null;
             }
             return canvasInDb;
         }
         catch (DbUpdateException ex)
         {
-            Logger.Error(ex, "Error adding canvas or pixels");
+            _logger.LogError(ex, "Error adding canvas or pixels");
             return null;
         }
     }

@@ -1,4 +1,4 @@
-namespace Linteum.Tests.Read;
+namespace Linteum.Tests.Db.Read;
 
 internal class ColorRepositoryReadTest : SyntheticDataTest
 {

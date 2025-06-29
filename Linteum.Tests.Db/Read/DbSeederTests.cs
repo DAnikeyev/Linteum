@@ -2,7 +2,7 @@ using Linteum.Infrastructure;
 using Linteum.Shared;
 using Microsoft.EntityFrameworkCore;
 
-namespace Linteum.Tests.Read;
+namespace Linteum.Tests.Db.Read;
 
 internal class DbSeederTests : SyntheticDataTest
 {

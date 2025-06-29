@@ -4,6 +4,7 @@ using Linteum.Domain;
 using Linteum.Domain.Repository;
 using Linteum.Shared.DTO;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
 namespace Linteum.Infrastructure;
 
@@ -11,11 +12,13 @@ public class PixelChangedEventRepository : IPixelChangedEventRepository
 {
     private readonly AppDbContext _context;
     private readonly IMapper _mapper;
+    private readonly ILogger<PixelChangedEventRepository> _logger;
 
-    public PixelChangedEventRepository(AppDbContext context, IMapper mapper)
+    public PixelChangedEventRepository(AppDbContext context, IMapper mapper, ILogger<PixelChangedEventRepository> logger)
     {
         _context = context;
         _mapper = mapper;
+        _logger = logger;
     }
 
     public async Task<IEnumerable<PixelChangedEventDto>> GetByUserIdAsync(Guid userId)
@@ -62,7 +65,7 @@ public class PixelChangedEventRepository : IPixelChangedEventRepository
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error adding PixelChangedEvent: {ex.Message}");
+            _logger.LogError($"Error adding PixelChangedEvent: {ex.Message}");
             return false;
         }
 

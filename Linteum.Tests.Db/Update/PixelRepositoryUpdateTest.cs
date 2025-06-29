@@ -1,7 +1,7 @@
 using Linteum.Shared;
 using Linteum.Shared.DTO;
 
-namespace Linteum.Tests.Update;
+namespace Linteum.Tests.Db.Update;
 
 internal class PixelRepositoryUpdateTest : SyntheticDataTest
 {

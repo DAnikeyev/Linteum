@@ -5,6 +5,7 @@ using Linteum.Domain.Repository;
 using Linteum.Shared;
 using Linteum.Shared.DTO;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using NLog;
 
 namespace Linteum.Infrastructure;
@@ -14,13 +15,14 @@ public class SubscriptionRepository : ISubscriptionRepository
     private readonly AppDbContext _context;
     private readonly IMapper _mapper;
     private readonly IBalanceChangedEventRepository _balanceChangedEventRepository;
-    private readonly ILogger _logger = LogManager.GetCurrentClassLogger();
+    private readonly ILogger<SubscriptionRepository> _logger;
 
-    public SubscriptionRepository(AppDbContext context, IMapper mapper, IBalanceChangedEventRepository balanceChangedEventRepository)
+    public SubscriptionRepository(AppDbContext context, IMapper mapper, IBalanceChangedEventRepository balanceChangedEventRepository, ILogger<SubscriptionRepository> logger)
     {
         _context = context;
         _mapper = mapper;
         _balanceChangedEventRepository = balanceChangedEventRepository;
+        _logger = logger;
     }
 
     public async Task<IEnumerable<SubscriptionDto>> GetByUserIdAsync(Guid userId)
@@ -55,17 +57,17 @@ public class SubscriptionRepository : ISubscriptionRepository
                 .FirstOrDefaultAsync(c => c.Id == canvasId);
             if (canvas == null)
             {
-                _logger.Warn("Canvas not found. userId={UserId}, canvasId={CanvasId}", userId, canvasId);
+                _logger.LogWarning("Canvas not found. userId={UserId}, canvasId={CanvasId}", userId, canvasId);
                 throw new InvalidOperationException("Canvas not found.");
             }
             if (canvas.PasswordHash != passwordHash)
             {
-                _logger.Warn("Invalid password for the canvas. userId={UserId}, canvasId={CanvasId}", userId, canvasId);
+                _logger.LogWarning("Invalid password for the canvas. userId={UserId}, canvasId={CanvasId}", userId, canvasId);
                 throw new InvalidOperationException("Invalid password for the canvas.");
             }
             if (existing != null)
             {
-                _logger.Info("User already subscribed. userId={UserId}, canvasId={CanvasId}", userId, canvasId);
+                _logger.LogInformation("User already subscribed. userId={UserId}, canvasId={CanvasId}", userId, canvasId);
                 return _mapper.Map<SubscriptionDto>(existing);
             }
 
@@ -79,13 +81,13 @@ public class SubscriptionRepository : ISubscriptionRepository
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
             await _balanceChangedEventRepository.TryChangeBalanceAsync(userId, canvasId, 1, BalanceChangedReason.Subscription);
-            _logger.Info("User subscribed successfully. userId={UserId}, canvasId={CanvasId}", userId, canvasId);
+            _logger.LogInformation("User subscribed successfully. userId={UserId}, canvasId={CanvasId}", userId, canvasId);
             return _mapper.Map<SubscriptionDto>(subscription);
         }
         catch (Exception ex)
         {
             await transaction.RollbackAsync();
-            _logger.Error(ex, "Error subscribing user. userId={UserId}, canvasId={CanvasId}", userId, canvasId);
+            _logger.LogError(ex, "Error subscribing user. userId={UserId}, canvasId={CanvasId}", userId, canvasId);
             return null;
         }
     }

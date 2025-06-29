@@ -1,6 +1,7 @@
 using AutoMapper;
 using Linteum.Domain.Repository;
 using Linteum.Shared;
+using Microsoft.Extensions.Logging;
 
 namespace Linteum.Infrastructure;
 
@@ -16,15 +17,15 @@ public class RepositoryManager
     public IPixelRepository PixelRepository { get; }
     
     
-    public RepositoryManager(AppDbContext context, IMapper mapper, DbConfig config)
+    public RepositoryManager(AppDbContext context, IMapper mapper, DbConfig config, ILoggerFactory loggerFactory)
     {
-        LoginEventRepository = new LoginEventRepository(context, mapper);
-        BalanceChangedEventRepository = new BalanceChangedEventRepository(context, mapper);
-        CanvasRepository = new CanvasRepository(context, mapper, config.MasterPasswordHash, config.DefaultCanvasName);
-        ColorRepository = new ColorRepository(context, mapper);
-        SubscriptionRepository = new SubscriptionRepository(context, mapper, BalanceChangedEventRepository);
-        UserRepository = new UserRepository(context, mapper, BalanceChangedEventRepository, SubscriptionRepository, config);
-        PixelChangedEventRepository = new PixelChangedEventRepository(context, mapper);
-        PixelRepository = new PixelRepository(context, mapper, BalanceChangedEventRepository);
+        LoginEventRepository = new LoginEventRepository(context, mapper, loggerFactory.CreateLogger<LoginEventRepository>());
+        BalanceChangedEventRepository = new BalanceChangedEventRepository(context, mapper, loggerFactory.CreateLogger<BalanceChangedEventRepository>());
+        CanvasRepository = new CanvasRepository(context, mapper, loggerFactory.CreateLogger<CanvasRepository>(), config);
+        ColorRepository = new ColorRepository(context, mapper, loggerFactory.CreateLogger<ColorRepository>());
+        SubscriptionRepository = new SubscriptionRepository(context, mapper, BalanceChangedEventRepository, loggerFactory.CreateLogger<SubscriptionRepository>());
+        UserRepository = new UserRepository(context, mapper, BalanceChangedEventRepository, SubscriptionRepository, config, loggerFactory.CreateLogger<UserRepository>());
+        PixelChangedEventRepository = new PixelChangedEventRepository(context, mapper, loggerFactory.CreateLogger<PixelChangedEventRepository>());
+        PixelRepository = new PixelRepository(context, mapper, BalanceChangedEventRepository, loggerFactory.CreateLogger<PixelRepository>());
     }
 }

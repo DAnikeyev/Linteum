@@ -1,8 +1,9 @@
 using Linteum.Infrastructure;
 using Linteum.Shared;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 
-namespace Linteum.Tests;
+namespace Linteum.Tests.Db;
 
 internal class SyntheticDataTest
 {
@@ -24,7 +25,7 @@ internal class SyntheticDataTest
         DbHelper = new DbHelper(DbContext);
         DbContext.Database.EnsureDeleted();
         DbContext.Database.EnsureCreated();
-        DbSeeder.SeedDefaults(DbContext,new DbConfig(), DbHelper.Mapper, RepoManager.CanvasRepository);
+        DbSeeder.SeedDefaults(DbContext,new DbConfig(), DbHelper.Mapper, RepoManager.CanvasRepository, DbHelper.LoggerFactoryInterface.CreateLogger<DbSeeder>());
         SeedData();
     }
 

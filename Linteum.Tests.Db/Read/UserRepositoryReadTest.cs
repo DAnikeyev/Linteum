@@ -6,7 +6,7 @@ using Linteum.Shared;
 using Linteum.Shared.DTO;
 using NUnit.Framework;
 
-namespace Linteum.Tests.Read;
+namespace Linteum.Tests.Db.Read;
 
 internal class UserRepositoryReadTest : SyntheticDataTest
 {

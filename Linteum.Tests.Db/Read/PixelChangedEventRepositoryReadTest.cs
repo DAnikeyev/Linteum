@@ -1,7 +1,7 @@
 using Linteum.Shared;
 using Linteum.Shared.DTO;
 
-namespace Linteum.Tests.Read;
+namespace Linteum.Tests.Db.Read;
 
 internal class PixelChangedRepositoryReadTest : SyntheticDataTest
 {

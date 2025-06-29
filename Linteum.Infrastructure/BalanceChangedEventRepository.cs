@@ -5,6 +5,7 @@ using Linteum.Domain;
 using Linteum.Domain.Repository;
 using Linteum.Shared;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using NLog;
 
 namespace Linteum.Infrastructure;
@@ -13,12 +14,13 @@ public class BalanceChangedEventRepository : IBalanceChangedEventRepository
 {
     private IMapper _mapper;
     private AppDbContext _context;
-    private readonly ILogger _logger = LogManager.GetCurrentClassLogger();
+    private readonly ILogger<BalanceChangedEventRepository> _logger;
     
-    public BalanceChangedEventRepository(AppDbContext context, IMapper mapper)
+    public BalanceChangedEventRepository(AppDbContext context, IMapper mapper, ILogger<BalanceChangedEventRepository> logger)
     {
         _mapper = mapper;
         _context = context;
+        _logger = logger;
     }
     
     public async Task<IEnumerable<BalanceChangedEventDto>> GetByUserIdAsync(Guid userId)
@@ -75,7 +77,7 @@ public class BalanceChangedEventRepository : IBalanceChangedEventRepository
         }
         catch (DbUpdateException ex)
         {
-            _logger.Error(ex, "Error updating balance for user {UserId} on canvas {CanvasId}", userId, canvasId);
+            _logger.LogError(ex, "Error updating balance for user {UserId} on canvas {CanvasId}", userId, canvasId);
             await transaction.RollbackAsync();
             return null;
         }

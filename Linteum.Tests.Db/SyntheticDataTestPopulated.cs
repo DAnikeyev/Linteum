@@ -1,4 +1,4 @@
-namespace Linteum.Tests;
+namespace Linteum.Tests.Db;
 
 public class SyntheticDataTestPopulated
 {

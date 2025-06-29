@@ -3,18 +3,25 @@ using AutoMapper;
 using Linteum.Domain;
 using Linteum.Shared;
 using Linteum.Shared.DTO;
-using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
+using NLog.Extensions.Logging;
 
 namespace Linteum.Tests
 {
     public class DbHelper
     {
+        public ILoggerFactory LoggerFactoryInterface { get; set; }
         public RepositoryManager RepositoryManager { get; set; }
-        
+
         public DbHelper(AppDbContext dbContext)
         {
-            RepositoryManager = new RepositoryManager(dbContext, Mapper, new DbConfig());
-            
+            LoggerFactoryInterface = LoggerFactory.Create(builder =>
+            {
+                builder.ClearProviders();
+                builder.AddNLog("nlog.config");
+            });
+
+            RepositoryManager = new RepositoryManager(dbContext, Mapper, new DbConfig(), LoggerFactoryInterface);
         }
 
         public static IMapper Mapper => TestMapper.Instance;
@@ -33,7 +40,7 @@ namespace Linteum.Tests
                 PasswordHashOrKey = "hash",
                 LoginMethod = LoginMethod.Password,
             };
-        
+
             return await userRepo.AddOrUpdateUserAsync(user, passwordDto);
         }
     }
