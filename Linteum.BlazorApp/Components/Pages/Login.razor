@@ -1,0 +1,65 @@
+@layout EmptyLayout
+@page "/"
+@page "/login"
+@using Linteum.BlazorApp.Components.Layout
+@inject NavigationManager Navigation
+@inject MyApiClient ApiClient
+
+<div class="background">
+    <div class="login-container">
+        <h3>Login</h3>
+        @if (!string.IsNullOrEmpty(_error))
+        {
+            <div class="alert alert-danger">@_error</div>
+        }
+        <div>
+            <button class="btn btn-outline-primary" @onclick="GoogleLogin">Login with Google</button>
+        </div>
+        <hr />
+        <EditForm Model="_loginModel" OnValidSubmit="HandleLogin">
+            <DataAnnotationsValidator />
+            <ValidationSummary />
+            <div class="mb-3">
+                <label>Email</label>
+                <InputText class="form-control" @bind-Value="_loginModel.Email" />
+            </div>
+            <div class="mb-3">
+                <label>Password</label>
+                <InputText class="form-control" @bind-Value="_loginModel.Password" type="password" />
+            </div>
+            <button class="btn btn-primary" type="submit">Login</button>
+        </EditForm>
+        <p>
+            Don't have an account? <a href="/signup">Sign up</a>
+        </p>
+    </div>
+</div>
+
+@code {
+    private LoginModel _loginModel = new();
+    private string? _error;
+
+    private async Task HandleLogin()
+    {
+        var result = await ApiClient.LoginAsync(_loginModel.Email, _loginModel.Password);
+        if (result)
+        {
+            Navigation.NavigateTo("/colors");
+        }
+        else
+        {
+            _error = "Invalid login credentials.";
+        }
+    }
+
+    private void GoogleLogin()
+    {
+        Navigation.NavigateTo("/auth/google", true);
+    }
+
+    public class LoginModel
+    {
+        public string Email { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+    }
+}

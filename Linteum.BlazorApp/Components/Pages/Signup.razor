@@ -1,0 +1,58 @@
+@page "/signup"
+@inject NavigationManager Navigation
+@inject MyApiClient ApiClient
+
+<h3>Sign Up</h3>
+
+@if (!string.IsNullOrEmpty(_error))
+{
+    <div class="alert alert-danger">@_error</div>
+}
+
+<EditForm Model="_signupModel" OnValidSubmit="HandleSignup">
+    <DataAnnotationsValidator />
+    <ValidationSummary />
+    <div class="mb-3">
+        <label>Email</label>
+        <InputText class="form-control" @bind-Value="_signupModel.Email" />
+    </div>
+    <div class="mb-3">
+        <label>Password</label>
+        <InputText class="form-control" @bind-Value="_signupModel.Password" type="password" />
+    </div>
+    <div class="mb-3">
+        <label>Username</label>
+        <InputText class="form-control" @bind-Value="_signupModel.UserName" />
+    </div>
+    <button class="btn btn-primary" type="submit">Sign Up</button>
+</EditForm>
+
+<p>
+    Already have an account? <a href="/login">Login</a>
+</p>
+
+@code {
+    private SignupModel _signupModel = new();
+    private string? _error;
+
+    private async Task HandleSignup()
+    {
+        var result = await ApiClient.SignupAsync(_signupModel.Email, _signupModel.Password, _signupModel.UserName);
+        if (result)
+        {
+            Navigation.NavigateTo("/login");
+        }
+        else
+        {
+            _error = "Sign up failed. Email may already be in use.";
+        }
+    }
+
+    public class SignupModel
+    {
+        public string Email { get; set; } = string.Empty;
+        public string Password { get; set; } = string.Empty;
+        public string UserName { get; set; } = string.Empty;
+    }
+}
+

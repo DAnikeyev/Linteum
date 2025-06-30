@@ -1,4 +1,5 @@
 using Linteum.Infrastructure;
+using Linteum.Shared;
 using Microsoft.EntityFrameworkCore;
 using NLog.Extensions.Logging;
 
@@ -13,7 +14,7 @@ namespace Linteum.Api.Services
             services.AddDbContext<AppDbContext>(options =>
                 options.UseNpgsql(configuration.GetConnectionString("DefaultConnection"),
                     b => b.MigrationsAssembly("Linteum.Api")));
-            
+            services.AddSingleton<DbConfig>(new DbConfig());
             DotNetEnv.Env.Load("../.env");
             var masterPass = Environment.GetEnvironmentVariable("MASTER_PASSWORD_HASH");
             if (string.IsNullOrEmpty(masterPass))
