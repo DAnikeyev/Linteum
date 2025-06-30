@@ -6,16 +6,16 @@ using Microsoft.EntityFrameworkCore;
 
 namespace Linteum.Api.Services
 {
-    public class DBMigrator
+    public class DbMigrator
     {
         private readonly IServiceProvider _serviceProvider;
-        private readonly ILogger<DBMigrator> _logger;
+        private readonly ILogger<DbMigrator> _logger;
         private readonly ILogger<DbSeeder> _loggerForSeeding;
 
-        public DBMigrator(IServiceProvider serviceProvider, ILoggerFactory loggerFactory)
+        public DbMigrator(IServiceProvider serviceProvider, ILoggerFactory loggerFactory)
         {
             _serviceProvider = serviceProvider;
-            _logger = loggerFactory.CreateLogger<DBMigrator>();
+            _logger = loggerFactory.CreateLogger<DbMigrator>();
             _loggerForSeeding = loggerFactory.CreateLogger<DbSeeder>();
         }
 
@@ -28,7 +28,7 @@ namespace Linteum.Api.Services
             {
                 var context = services.GetRequiredService<AppDbContext>();
                 var mapper = services.GetRequiredService<IMapper>();
-                var canvasRepository = services.GetRequiredService<ICanvasRepository>();
+                var canvasRepository = services.GetRequiredService<RepositoryManager>().CanvasRepository;
                 var dbConfig = services.GetRequiredService<DbConfig>();
 
                 _logger.LogInformation("Starting database migration...");
