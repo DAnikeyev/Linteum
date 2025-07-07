@@ -5,7 +5,7 @@
 
 <h2>Colors</h2>
 
-@if (_colors == null)
+@if (_colors is null)
 {
     <p><em>Loading...</em></p>
 }
@@ -14,19 +14,19 @@ else
     <table class="table">
         <thead>
         <tr>
-            <th>Name</th>
-            <th>Hex</th>
-            <th>Preview</th>
+            <th style="background-color: var(--accent0);">Name</th>
+            <th style="background-color: var(--accent0);">Hex</th>
+            <th style="background-color: var(--accent0);">Preview</th>
         </tr>
         </thead>
         <tbody>
         @foreach (var color in _colors)
         {
             <tr>
-                <td>@color.Name</td>
-                <td>@color.HexValue</td>
-                <td>
-                    <span style="display:inline-block;width:32px;height:16px;background:@color.HexValue"></span>
+                <td style="background-color: var(--accent0);">@color.Name</td>
+                <td style="background-color: var(--accent0);">@color.HexValue</td>
+                <td style="background-color: var(--accent0);">
+                    <span style="display:inline-block; width:32px; height:16px; background:@color.HexValue;"></span>
                 </td>
             </tr>
         }
@@ -40,6 +40,6 @@ else
     protected override async Task OnInitializedAsync()
     {
         _colors = await ApiClient.GetColorsAsync();
+        _colors.Sort((c1, c2) => string.Compare(c1.Name, c2.Name, StringComparison.OrdinalIgnoreCase));
     }
 }
-

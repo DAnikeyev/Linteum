@@ -1,0 +1,99 @@
+@using Linteum.Shared.DTO
+@inject MyApiClient ApiClient
+@inject NavigationManager Navigation
+@code {
+    [Parameter]
+    public EventCallback<bool> CollapseToggled { get; set; }
+
+    private bool _isCollapsed = false;
+    private bool _isLoading = true;
+    private List<CanvasDto>? _canvases;
+    private bool _hasRendered = false;
+
+    protected override Task OnInitializedAsync() => Task.CompletedTask;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_hasRendered)
+        {
+            _hasRendered = true;
+            await LoadCanvases();
+            StateHasChanged();
+        }
+    }
+    
+    private async Task LoadCanvases()
+    {
+        _isLoading = true;
+        try
+        { 
+            await ApiClient.LoadSessionAsync();
+            _canvases = await ApiClient.GetSubscribedCanvasesAsync();
+        }
+        catch
+        {
+            _canvases = new List<CanvasDto>();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task ToggleCollapse()
+    {
+        _isCollapsed = !_isCollapsed;
+        await CollapseToggled.InvokeAsync(_isCollapsed);
+    }
+
+    private void NavigateToCanvas(string canvasName)
+    {
+        Navigation.NavigateTo($"/canvas/{canvasName}");
+    }
+
+    private void GoToAddCanvas()
+    {
+        Navigation.NavigateTo("/canvas_add");
+    }
+
+    private void GoToSubscribeCanvas()
+    {
+        Navigation.NavigateTo("/canvas_subscribe");
+    }
+}
+<div class="sidebar @(_isCollapsed ? "collapsed" : "")">
+    <div class="sidebar-header d-flex align-items-center p-3">
+        <span class="fw-bold">Canvas</span>
+    </div>
+    <div class="sidebar-content" style="display:@(_isCollapsed ? "none" : "block");">
+        @if (_isLoading)
+        {
+            <div class="p-3">Loading...</div>
+        }
+        else if (_canvases == null || _canvases.Count == 0)
+        {
+            <div class="p-3 text-muted">No canvases</div>
+        }
+        else
+        {
+            <ul class="list-group list-group-flush sidebar-canvas-list">
+                @foreach (var canvas in _canvases)
+                {
+                    <li class="list-group-item sidebar-canvas-item" @onclick="() => NavigateToCanvas(canvas.Name)">
+                        <div class="d-flex align-items-center">
+                            <span class="me-2 fs-5">🎨</span>
+                            <span class="text-truncate">@canvas.Name</span>
+                        </div>
+                    </li>
+                }
+            </ul>
+        }
+    </div>
+    <div class="sidebar-bottom-actions">
+        <button class="btn btn-primary w-100 mb-2" @onclick="GoToAddCanvas">Add new canvas</button>
+        <button class="btn btn-outline-primary w-100" @onclick="GoToSubscribeCanvas">Subscribe to canvas</button>
+    </div>
+</div>
+<button class="btn sidebar-collapse-btn @(_isCollapsed ? "collapsed" : "")" @onclick="ToggleCollapse" title="Toggle sidebar">
+    <span>@(_isCollapsed ? ">" : "<")</span>
+</button>

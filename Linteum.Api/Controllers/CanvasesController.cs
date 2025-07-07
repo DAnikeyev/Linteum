@@ -1,6 +1,7 @@
 using Linteum.Infrastructure;
 using Linteum.Shared.DTO;
 using Microsoft.AspNetCore.Mvc;
+using Linteum.Api.Services;
 
 namespace Linteum.Api.Controllers
 {
@@ -9,10 +10,12 @@ namespace Linteum.Api.Controllers
     public class CanvasesController : ControllerBase
     {
         private readonly RepositoryManager _repoManager;
+        private readonly SessionService _sessionService;
 
-        public CanvasesController(RepositoryManager repoManager)
+        public CanvasesController(RepositoryManager repoManager, SessionService sessionService)
         {
             _repoManager = repoManager;
+            _sessionService = sessionService;
         }
 
         [HttpGet]
@@ -62,6 +65,19 @@ namespace Linteum.Api.Controllers
             var result = await _repoManager.CanvasRepository.CheckPassword(canvas, passwordHash);
             return Ok(result);
         }
+
+        [HttpGet("subscribed")]
+        public async Task<IActionResult> GetSubscribedCanvases()
+        {
+            if (!Request.Headers.TryGetValue("Session-Id", out var sessionIdStr) || !Guid.TryParse(sessionIdStr, out var sessionId))
+                return Unauthorized("Session-Id header missing or invalid.");
+
+            var userId = _sessionService.GetUserId(sessionId);
+            if (userId == null)
+                return Unauthorized("Invalid session.");
+
+            var canvases = await _repoManager.CanvasRepository.GetByUserIdAsync(userId.Value);
+            return Ok(canvases);
+        }
     }
 }
-

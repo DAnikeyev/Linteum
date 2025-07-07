@@ -18,6 +18,8 @@ services:
       context: .
       dockerfile: Linteum.Api/Dockerfile
     container_name: ${API_CONTAINER_NAME}
+    ports:
+      - "${API_HOST_PORT}:${API_CONTAINER_PORT}"
     environment:
       - ConnectionStrings__DefaultConnection=Host=${DB_CONTAINER_NAME};Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
       - MASTER_PASSWORD_HASH=${MASTER_PASSWORD_HASH}
@@ -26,6 +28,7 @@ services:
       - db
     networks:
       - linteum_dev
+    pull_policy: build
 
   blazor:
     build:
@@ -42,6 +45,9 @@ services:
       - api
     networks:
       - linteum_dev
+    pull_policy: build
+    volumes:
+      - "./keys:/app/keys"
 
 networks:
   linteum_dev:

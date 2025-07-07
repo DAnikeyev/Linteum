@@ -15,6 +15,7 @@ namespace Linteum.Api.Services
                 options.UseNpgsql(configuration.GetConnectionString("DefaultConnection"),
                     b => b.MigrationsAssembly("Linteum.Api")));
             services.AddSingleton<DbConfig>(new DbConfig());
+            services.AddSingleton<SessionService>();
             DotNetEnv.Env.Load("../.env");
             var masterPass = Environment.GetEnvironmentVariable("MASTER_PASSWORD_HASH");
             if (string.IsNullOrEmpty(masterPass))

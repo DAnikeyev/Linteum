@@ -1,9 +1,11 @@
-@layout EmptyLayout
 @page "/"
 @page "/login"
+@layout EmptyLayout
+@rendermode InteractiveServer
 @using Linteum.BlazorApp.Components.Layout
 @inject NavigationManager Navigation
 @inject MyApiClient ApiClient
+@inject ILogger<Login> Logger
 
 <div class="background">
     <div class="login-container">
@@ -12,22 +14,21 @@
         {
             <div class="alert alert-danger">@_error</div>
         }
-        <div>
-            <button class="btn btn-outline-primary" @onclick="GoogleLogin">Login with Google</button>
-        </div>
-        <hr />
-        <EditForm Model="_loginModel" OnValidSubmit="HandleLogin">
-            <DataAnnotationsValidator />
-            <ValidationSummary />
+        <EditForm Model="_loginModel" OnValidSubmit="HandleLogin" FormName="LoginForm">
+            <DataAnnotationsValidator/>
+            <ValidationSummary/>
             <div class="mb-3">
                 <label>Email</label>
-                <InputText class="form-control" @bind-Value="_loginModel.Email" />
+                <InputText class="form-control" @bind-Value="_loginModel.Email"/>
             </div>
             <div class="mb-3">
                 <label>Password</label>
-                <InputText class="form-control" @bind-Value="_loginModel.Password" type="password" />
+                <InputText class="form-control" @bind-Value="_loginModel.Password" type="password"/>
             </div>
-            <button class="btn btn-primary" type="submit">Login</button>
+            <div class="d-flex gap-2">
+                <button class="btn btn-primary flex-fill" type="submit">Login</button>
+                <button class="btn btn-outline-primary flex-fill" type="button" @onclick="GoogleLogin">Login with Google</button>
+            </div>
         </EditForm>
         <p>
             Don't have an account? <a href="/signup">Sign up</a>
@@ -41,13 +42,16 @@
 
     private async Task HandleLogin()
     {
-        var result = await ApiClient.LoginAsync(_loginModel.Email, _loginModel.Password);
-        if (result)
+        Logger.LogInformation("Login attempt for {Email}", _loginModel.Email);
+        var (user, sessionId) = await ApiClient.LoginAsync(_loginModel.Email, _loginModel.Password);
+        if (user != null)
         {
+            Logger.LogInformation("Login successful for {Email}", _loginModel.Email);
             Navigation.NavigateTo("/colors");
         }
         else
         {
+            Logger.LogWarning("Login failed for {Email}", _loginModel.Email);
             _error = "Invalid login credentials.";
         }
     }

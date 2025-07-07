@@ -1,4 +1,6 @@
-﻿<!DOCTYPE html>
+﻿@inject MyApiClient ApiClient
+
+<!DOCTYPE html>
 <html lang="en">
 
 <head>
@@ -9,13 +11,25 @@
     <link rel="stylesheet" href="@Assets["app.css"]"/>
     <link rel="stylesheet" href="@Assets["Linteum.BlazorApp.styles.css"]"/>
     <ImportMap/>
-    <link rel="icon" type="image/png" href="favicon.png"/>
+    <link rel="icon" type="image/png" href="logov2.png"/>
     <HeadOutlet/>
 </head>
 
 <body>
-<Routes/>
+<Routes @rendermode="RenderMode.InteractiveServer" />
 <script src="_framework/blazor.web.js"></script>
 </body>
 
 </html>
+
+@code {
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await ApiClient.LoadSessionAsync();
+        }
+    }
+
+}

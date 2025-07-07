@@ -58,3 +58,17 @@ h1:focus {
 .form-floating > .form-control-plaintext:focus::placeholder, .form-floating > .form-control:focus::placeholder {
     text-align: start;
 }
+
+:root {
+    --accent3: #1F2070;
+    --accent2p5: #4D4FB7;
+    --accent2: #7678edff;
+    --accent1p5: #969AEA;
+    --accent1: #b6bce6ff;
+    --accent0: #f6ffdeff;
+    --accent-1: #f7cea2ff;
+    --accent-1p5: #F7B684;
+    --accent-2: #f79d65ff;
+    --accent-2p5: #F7B684;
+    --accent-3: #C2510A;
+}

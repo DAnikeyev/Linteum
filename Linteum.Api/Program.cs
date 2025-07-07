@@ -3,7 +3,7 @@ using NLog;
 using NLog.Web;
 using Linteum.Api.Services;
 
-var logger = NLog.LogManager.Setup().LoadConfigurationFromAppSettings().GetCurrentClassLogger();
+var logger = LogManager.Setup().LoadConfigurationFromAppSettings().GetCurrentClassLogger();
 
 try
 {
@@ -30,6 +30,7 @@ try
     }
     app.UseHttpsRedirection();
     app.MapControllers();
+    logger.Info("Application started successfully");
     app.Run();
 }
 catch (Exception exception)

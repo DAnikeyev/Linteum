@@ -4,10 +4,11 @@ namespace Linteum.Shared;
 
 public class DbConfig
 {
-    public string DefaultCanvasName { get; set; } = "Home";
+    public string DefaultCanvasName { get; set; } = "home";
     public string MasterPasswordHash { get; set; } = "MasterPasswordHash";
     public int DefaultCanvasWidth { get; set; } = 24;
 
+    public int ExpiredSessionTimeoutMinutes { get; set; } = 60;
     public int DefaultCanvasHeight { get; set; } = 24;
     
     public List<ColorDto> Colors { get; set; } = new List<ColorDto>()
