@@ -2,17 +2,15 @@ using System.Security.Cryptography;
 using System.Text;
 using Linteum.Shared;
 using Linteum.Shared.DTO;
-using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage;
 
 namespace Linteum.BlazorApp;
 
 public class MyApiClient
 {
     private readonly HttpClient _httpClient;
-    private readonly ProtectedLocalStorage _localStorage;
-    private Guid? _sessionId;
+    private readonly LocalStorageService _localStorage;
 
-    public MyApiClient(HttpClient httpClient, ProtectedLocalStorage localStorage)
+    public MyApiClient(HttpClient httpClient, LocalStorageService localStorage)
     {
         _httpClient = httpClient;
         _localStorage = localStorage;
@@ -20,35 +18,33 @@ public class MyApiClient
 
     public async Task SetSessionAsync(Guid? sessionId)
     {
-        _sessionId = sessionId;
-        _httpClient.DefaultRequestHeaders.Remove("Session-Id");
+        _httpClient.DefaultRequestHeaders.Remove(CustomHeaders.SessionId);
 
         if (sessionId.HasValue)
         {
-            _httpClient.DefaultRequestHeaders.Add("Session-Id", sessionId.Value.ToString());
-            await _localStorage.SetAsync("SessionId", sessionId.Value.ToString());
+            _httpClient.DefaultRequestHeaders.Add(CustomHeaders.SessionId, sessionId.Value.ToString());
+            await _localStorage.SetItemAsync(LocalStorageKey.SessionId, sessionId.Value.ToString());
+            await _localStorage.SetItemAsync(LocalStorageKey.SessionCreatedAt, DateTime.UtcNow);
         }
         else
         {
-            await _localStorage.DeleteAsync("SessionId");
+            await _localStorage.RemoveItemAsync(LocalStorageKey.SessionId);
         }
     }
 
     public async Task LoadSessionAsync()
     {
-        var result = await _localStorage.GetAsync<string>("SessionId");
-        if (result.Success && Guid.TryParse(result.Value, out var sessionId))
+        var result = await _localStorage.GetItemAsync<string>(LocalStorageKey.SessionId);
+        if (result != null && Guid.TryParse(result, out var sessionId))
         {
-            _sessionId = sessionId;
-            _httpClient.DefaultRequestHeaders.Remove("Session-Id");
-            _httpClient.DefaultRequestHeaders.Add("Session-Id", sessionId.ToString());
+            _httpClient.DefaultRequestHeaders.Remove(CustomHeaders.SessionId);
+            _httpClient.DefaultRequestHeaders.Add(CustomHeaders.SessionId, sessionId.ToString());
         }
     }
 
     public void ClearSession()
     {
-        _sessionId = null;
-        _httpClient.DefaultRequestHeaders.Remove("Session-Id");
+        _httpClient.DefaultRequestHeaders.Remove(CustomHeaders.SessionId);
     }
     
     public async Task<List<ColorDto>?> GetColorsAsync()
@@ -65,8 +61,10 @@ public class MyApiClient
             return (null, null);
 
         var loginResponse = await response.Content.ReadFromJsonAsync<LoginResponse>();
-        if (loginResponse?.SessionId != null)
+        if (loginResponse?.SessionId != null && loginResponse?.User != null && loginResponse?.User?.UserName != null && loginResponse?.User?.Email != null)
         {
+            await _localStorage.SetItemAsync(LocalStorageKey.UserName, loginResponse.User?.UserName);
+            await _localStorage.SetItemAsync(LocalStorageKey.Email, loginResponse.User?.Email);
             await SetSessionAsync(loginResponse.SessionId);
         }
         

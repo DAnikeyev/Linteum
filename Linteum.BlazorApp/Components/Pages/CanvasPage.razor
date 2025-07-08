@@ -1,0 +1,30 @@
+@page "/canvas/{canvasName}"
+@layout Layout.BaseLayout
+@using Linteum.Shared.DTO
+@inject MyApiClient ApiClient
+
+<h2>Canvas: @canvasName</h2>
+
+@if (_canvas == null)
+{
+    <p><em>Loading...</em></p>
+}
+else
+{
+    <div>
+        <p>Name: @_canvas.Name</p>
+        <p>Width: @_canvas.Width</p>
+        <p>Height: @_canvas.Height</p>
+    </div>
+}
+
+@code {
+    [Parameter]
+    public string canvasName { get; set; } = default!;
+
+    private CanvasDto? _canvas;
+
+    protected override async Task OnInitializedAsync()
+    {
+    }
+}

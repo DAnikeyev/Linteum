@@ -17,11 +17,11 @@ public class UserRepository : IUserRepository
     private readonly IMapper _mapper;
     private readonly IBalanceChangedEventRepository _balanceChangedEventRepository;
     private readonly ISubscriptionRepository _subscriptionRepository;
-    private readonly DbConfig _defaultsConfig;
+    private readonly Config _defaultsConfig;
     private readonly ILogger<UserRepository> _logger;
     
 
-    public UserRepository(AppDbContext context, IMapper mapper, IBalanceChangedEventRepository balanceChangedEventRepository, ISubscriptionRepository subscriptionRepository, DbConfig defaultsConfig, ILogger<UserRepository> logger)
+    public UserRepository(AppDbContext context, IMapper mapper, IBalanceChangedEventRepository balanceChangedEventRepository, ISubscriptionRepository subscriptionRepository, Config defaultsConfig, ILogger<UserRepository> logger)
     {
         _context = context;
         _mapper = mapper;

@@ -3,8 +3,11 @@
 @layout EmptyLayout
 @rendermode InteractiveServer
 @using Linteum.BlazorApp.Components.Layout
+@using Linteum.Shared
 @inject NavigationManager Navigation
 @inject MyApiClient ApiClient
+@inject Config Config
+@inject LocalStorageService LocalStorageService
 @inject ILogger<Login> Logger
 
 <div class="background">
@@ -65,5 +68,39 @@
     {
         public string Email { get; set; } = string.Empty;
         public string Password { get; set; } = string.Empty;
+    }
+    
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            try
+            {
+
+                var sessionId = await LocalStorageService.GetItemAsync<string>(LocalStorageKey.SessionId);
+                var createdAt = await LocalStorageService.GetItemAsync<DateTime?>(LocalStorageKey.SessionCreatedAt);
+                var expiresAt = createdAt + TimeSpan.FromMinutes(Config.ExpiredSessionTimeoutMinutes);
+                if (createdAt == null || DateTime.UtcNow > expiresAt)
+                {
+                    Logger.LogInformation("Session expired, clearing local storage.");
+                    await LocalStorageService.ClearAsync();
+                }
+
+                if (sessionId != null)
+                {
+                    Logger.LogInformation("Session ID found, redirecting to home page.");
+                    Navigation.NavigateTo("/home");
+                }
+                else
+                {
+                    Logger.LogInformation("No session ID found, staying on login page.");
+                }
+            }
+            catch (Exception ex)
+            {
+                Logger.LogError(ex, "Error checking session validity on login page.");
+                await LocalStorageService.ClearAsync();
+            }
+        }
     }
 }

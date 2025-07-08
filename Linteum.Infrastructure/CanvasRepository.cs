@@ -18,12 +18,12 @@ public class CanvasRepository : ICanvasRepository
     private readonly AppDbContext _context;
     private readonly ILogger<CanvasRepository> _logger;
     
-    public CanvasRepository(AppDbContext context, IMapper mapper, ILogger<CanvasRepository> logger, DbConfig dbConfig)
+    public CanvasRepository(AppDbContext context, IMapper mapper, ILogger<CanvasRepository> logger, Config config)
     {
         _logger = logger;
         _mapper = mapper;
-        _masterPasswordHash = dbConfig.MasterPasswordHash;
-        _defaultCanvasName = dbConfig.DefaultCanvasName;
+        _masterPasswordHash = config.MasterPasswordHash;
+        _defaultCanvasName = config.DefaultCanvasName;
         _context = context;
     }
 

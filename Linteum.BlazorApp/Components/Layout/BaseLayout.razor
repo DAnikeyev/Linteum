@@ -1,0 +1,49 @@
+@inject LocalStorageService LocalStorageService
+@inject NavigationManager Navigation
+@inject ILogger<BaseLayout> Logger
+@inherits LayoutComponentBase
+
+<CanvasSidebar CollapseToggled="OnSidebarCollapseChanged" />
+
+<main style="margin-left:@_sidebarMargin; background-color: var(--accent0); min-height: 100vh; padding: 1rem;">
+    @Body
+</main>
+
+@code {
+    private string _sidebarMargin = "300px";
+
+    private void OnSidebarCollapseChanged(bool isCollapsed)
+    {
+        _sidebarMargin = isCollapsed ? "0px" : "300px";
+        StateHasChanged();
+    }
+    
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await ValidateLocally();
+        }
+    }
+
+    public async Task ValidateLocally()
+    {
+        try
+        {
+            var sessionId = await LocalStorageService.GetItemAsync<string>(LocalStorageKey.SessionId);
+            if (sessionId is null)
+            {
+                Logger.LogInformation("No session ID found, redirecting to login.");
+                await LocalStorageService.ClearAsync();
+                Navigation.NavigateTo("/login");
+            }
+        }
+        catch(Exception ex)
+        {
+            Logger.LogError($"Error {ex} validating local session, redirecting to login.");
+            await LocalStorageService.ClearAsync();
+            Navigation.NavigateTo("/login");
+        }
+    }
+
+}

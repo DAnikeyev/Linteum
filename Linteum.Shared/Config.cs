@@ -2,7 +2,7 @@ using Linteum.Shared.DTO;
 
 namespace Linteum.Shared;
 
-public class DbConfig
+public class Config
 {
     public string DefaultCanvasName { get; set; } = "home";
     public string MasterPasswordHash { get; set; } = "MasterPasswordHash";

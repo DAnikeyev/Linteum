@@ -9,7 +9,7 @@ namespace Linteum.Infrastructure;
 
 public class DbSeeder
 {
-    public static async Task SeedDefaultsAsync(AppDbContext context, DbConfig config, IMapper mapper, ICanvasRepository canvasRepository, ILogger logger)
+    public static async Task SeedDefaultsAsync(AppDbContext context, Config config, IMapper mapper, ICanvasRepository canvasRepository, ILogger logger)
     {
         logger.LogInformation("Starting database seeding...");
 
@@ -60,7 +60,7 @@ public class DbSeeder
         logger.LogInformation("Database seeding completed successfully");
     }
 
-    public static void SeedDefaults(AppDbContext context, DbConfig config, IMapper mapper, ICanvasRepository canvasRepository, ILogger<DbSeeder> logger)
+    public static void SeedDefaults(AppDbContext context, Config config, IMapper mapper, ICanvasRepository canvasRepository, ILogger<DbSeeder> logger)
     {
         logger.LogInformation("Starting synchronous database seeding...");
 

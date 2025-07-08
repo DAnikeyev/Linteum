@@ -2,6 +2,7 @@ using Linteum.Infrastructure;
 using Linteum.Shared.DTO;
 using Microsoft.AspNetCore.Mvc;
 using Linteum.Api.Services;
+using Linteum.Shared;
 
 namespace Linteum.Api.Controllers
 {
@@ -69,7 +70,7 @@ namespace Linteum.Api.Controllers
         [HttpGet("subscribed")]
         public async Task<IActionResult> GetSubscribedCanvases()
         {
-            if (!Request.Headers.TryGetValue("Session-Id", out var sessionIdStr) || !Guid.TryParse(sessionIdStr, out var sessionId))
+            if (!Request.Headers.TryGetValue(CustomHeaders.SessionId, out var sessionIdStr) || !Guid.TryParse(sessionIdStr, out var sessionId))
                 return Unauthorized("Session-Id header missing or invalid.");
 
             var userId = _sessionService.GetUserId(sessionId);

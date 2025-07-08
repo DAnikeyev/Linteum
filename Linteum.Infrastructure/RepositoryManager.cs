@@ -17,7 +17,7 @@ public class RepositoryManager
     public IPixelRepository PixelRepository { get; }
     
     
-    public RepositoryManager(AppDbContext context, IMapper mapper, DbConfig config, ILoggerFactory loggerFactory)
+    public RepositoryManager(AppDbContext context, IMapper mapper, Config config, ILoggerFactory loggerFactory)
     {
         LoginEventRepository = new LoginEventRepository(context, mapper, loggerFactory.CreateLogger<LoginEventRepository>());
         BalanceChangedEventRepository = new BalanceChangedEventRepository(context, mapper, loggerFactory.CreateLogger<BalanceChangedEventRepository>());

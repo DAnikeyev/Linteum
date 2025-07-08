@@ -1,0 +1,53 @@
+@page "/settings"
+@layout Layout.BaseLayout
+@inject LocalStorageService LocalStorageService
+@inject NavigationManager Navigation
+
+<h2>Settings</h2>
+
+<div class="mb-3">
+    <label for="usernameInput" class="form-label">Username</label>
+    <input id="usernameInput" class="form-control" @bind="_userName" />
+</div>
+<button class="btn btn-primary me-2" @onclick="SaveUsername">Save Username</button>
+<button class="btn btn-danger" @onclick="Logout">Logout</button>
+
+@if (!string.IsNullOrEmpty(_message))
+{
+    <div class="alert alert-info mt-3">@_message</div>
+}
+
+@code {
+    private string? _userName;
+    private string? _message;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _userName = await LocalStorageService.GetItemAsync<string>(LocalStorageKey.UserName);
+            StateHasChanged();
+        }
+    }
+
+    private async Task SaveUsername()
+    {
+        if (!string.IsNullOrWhiteSpace(_userName))
+        {
+            //ToDo: addToDb
+            await LocalStorageService.SetItemAsync(LocalStorageKey.UserName, _userName);
+            _message = "Username updated.";
+            StateHasChanged();
+        }
+        else
+        {
+            _message = "Username cannot be empty.";
+        }
+    }
+
+    private async Task Logout()
+    {
+        await LocalStorageService.ClearAsync();
+        Navigation.NavigateTo("/login", true);
+    }
+}

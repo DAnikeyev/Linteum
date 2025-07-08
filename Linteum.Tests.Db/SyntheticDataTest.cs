@@ -10,7 +10,7 @@ internal class SyntheticDataTest
     protected AppDbContext DbContext;
     protected DbContextOptions<AppDbContext> Options;
     protected DbHelper DbHelper;
-    protected DbConfig DefaultConfig = new DbConfig();
+    protected Config DefaultConfig = new Config();
     
     internal RepositoryManager RepoManager => DbHelper.RepositoryManager;
     
@@ -25,7 +25,7 @@ internal class SyntheticDataTest
         DbHelper = new DbHelper(DbContext);
         DbContext.Database.EnsureDeleted();
         DbContext.Database.EnsureCreated();
-        DbSeeder.SeedDefaults(DbContext,new DbConfig(), DbHelper.Mapper, RepoManager.CanvasRepository, DbHelper.LoggerFactoryInterface.CreateLogger<DbSeeder>());
+        DbSeeder.SeedDefaults(DbContext,new Config(), DbHelper.Mapper, RepoManager.CanvasRepository, DbHelper.LoggerFactoryInterface.CreateLogger<DbSeeder>());
         SeedData();
     }
 

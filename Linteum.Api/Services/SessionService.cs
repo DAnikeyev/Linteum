@@ -11,7 +11,7 @@ public class SessionService
     private readonly ConcurrentDictionary<Guid, Guid> _userToSession = new();
     private readonly TimeSpan _expiredSessionTimeout;
 
-    public SessionService(DbConfig config, ILogger<SessionService> logger)
+    public SessionService(Config config, ILogger<SessionService> logger)
     {
         _logger = logger;
         _expiredSessionTimeout = TimeSpan.FromMinutes(config.ExpiredSessionTimeoutMinutes);

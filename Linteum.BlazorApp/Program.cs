@@ -1,9 +1,8 @@
 using Linteum.BlazorApp;
 using Linteum.BlazorApp.Components;
-using System.Text;
+using Linteum.Shared;
 using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage;
 using Microsoft.AspNetCore.DataProtection;
-using Microsoft.AspNetCore.HttpsPolicy;
 using NLog;
 using NLog.Web;
 
@@ -19,8 +18,6 @@ try
 
     DotNetEnv.Env.Load("../.env");
 
-    var jwtKey = Environment.GetEnvironmentVariable("JWT_SECRET_KEY") ?? "your-secret-key-min-32-chars-long";
-    var key = Encoding.ASCII.GetBytes(jwtKey);
     builder.Services.AddScoped<ProtectedLocalStorage>();
 
 #if DEBUG
@@ -37,11 +34,13 @@ try
     builder.Services.AddHttpClient<MyApiClient>("ApiClient", client => {
         client.BaseAddress = new Uri(apiBaseAddress);
     });
-
+    
+    builder.Services.AddSingleton(new Config());
     builder.Services.AddScoped(sp => sp.GetRequiredService<IHttpClientFactory>().CreateClient("ApiClient"));
     builder.Services.AddDataProtection()
         .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(Directory.GetCurrentDirectory(), "keys")))
         .SetApplicationName("LinteumApp");
+    builder.Services.AddScoped<LocalStorageService>();
     builder.Services.AddRazorComponents()
         .AddInteractiveServerComponents();
     var app = builder.Build();

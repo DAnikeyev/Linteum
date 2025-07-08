@@ -25,20 +25,61 @@
 }
 
 .sidebar-header {
+    position: relative;
     border-bottom: 1px solid var(--accent3);
     background: var(--accent2);
     color: var(--accent3);
     font-size: 1.3rem;
     font-weight: bold;
     letter-spacing: 0.03em;
-    border-radius: 0 0 12px 12px;
+    border-radius: 0 0 2px 2px;
     padding: 1rem;
     min-height: 60px;
     display: flex;
     align-items: center;
+    justify-content: center;
+    gap: 1rem;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+
+.sidebar-username {
+    color: var(--accent3);
+    font-weight: 600;
+    font-size: 1.1rem;
+    max-width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.sidebar-cog-btn {
+    position: absolute;
+    right: 1rem;
+    top: 50%;
+    transform: translateY(-50%);
+    display: flex;
+    align-items: center;
+    padding: 0;
+    border: none;
+    background: none;
+    cursor: pointer;
+    width: 32px;
+    height: 32px;
+    justify-content: center;
+}
+
+.sidebar-cog-img {
+    transition: background 0.15s;
+    background: var(--accent1);
+    border-radius: 50%;
+    width: 24px;
+    height: 24px;
+}
+
+.sidebar-cog-btn:hover .sidebar-cog-img,
+.sidebar-cog-btn:focus .sidebar-cog-img {
+    background: var(--accent0);
 }
 
 .sidebar-content {
@@ -52,6 +93,17 @@
 .sidebar.collapsed .sidebar-content {
     opacity: 0;
     pointer-events: none;
+}
+
+.sidebar-section-title {
+    font-weight: bold;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    color: var(--accent3);
+    text-align: center;
+    margin-bottom: 0.5rem;
+    margin-top: 1.5rem;
+    font-size: 1.1rem;
 }
 
 .sidebar-canvas-list {
@@ -154,3 +206,4 @@
     background: var(--accent1p5) !important;
     color: var(--accent3) !important;
 }
+

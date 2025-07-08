@@ -1,5 +1,6 @@
 @using Linteum.Shared.DTO
 @inject MyApiClient ApiClient
+@inject LocalStorageService LocalStorageService
 @inject NavigationManager Navigation
 @code {
     [Parameter]
@@ -9,17 +10,17 @@
     private bool _isLoading = true;
     private List<CanvasDto>? _canvases;
     private bool _hasRendered = false;
-
-    protected override Task OnInitializedAsync() => Task.CompletedTask;
+    private string? _userName = string.Empty;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        _userName = await LocalStorageService.GetItemAsync<string>(LocalStorageKey.UserName);
         if (firstRender && !_hasRendered)
         {
             _hasRendered = true;
             await LoadCanvases();
-            StateHasChanged();
         }
+        StateHasChanged();
     }
     
     private async Task LoadCanvases()
@@ -60,11 +61,19 @@
     {
         Navigation.NavigateTo("/canvas_subscribe");
     }
+    private void GoToSettings()
+    {
+        Navigation.NavigateTo("/settings");
+    }
 }
 <div class="sidebar @(_isCollapsed ? "collapsed" : "")">
-    <div class="sidebar-header d-flex align-items-center p-3">
-        <span class="fw-bold">Canvas</span>
+    <div class="sidebar-header">
+        <span class="sidebar-username text-truncate" title="@_userName">@(_userName ?? "Guest")</span>
+        <button class="btn btn-link p-0 sidebar-cog-btn" title="Settings" @onclick="GoToSettings">
+            <img src="images/cog-2.svg" alt="Settings" class="sidebar-cog-img" />
+        </button>
     </div>
+    <h6 class="sidebar-section-title mb-2 mt-3">Canvases</h6>
     <div class="sidebar-content" style="display:@(_isCollapsed ? "none" : "block");">
         @if (_isLoading)
         {
