@@ -29,7 +29,7 @@ try
 #endif
     var apiBaseAddress = $"http://{apiContainerName}:{apiContainerPort}";
 
-    Console.WriteLine($"API Base Address: {apiBaseAddress}");
+    logger.Info($"API Base Address: {apiBaseAddress}");
 
     builder.Services.AddHttpClient<MyApiClient>("ApiClient", client => {
         client.BaseAddress = new Uri(apiBaseAddress);

@@ -6,5 +6,7 @@ public enum LocalStorageKey
     SessionCreatedAt,
     UserName,
     Email,
+    LoginMethod,
     Gold,
+    SidebarCollapsed,
 }

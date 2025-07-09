@@ -58,7 +58,7 @@ public class UserRepository : IUserRepository
             .FirstOrDefaultAsync();
     }
 
-    public async Task<UserDto?> AddOrUpdateUserAsync(UserDto userDto, PasswordDto passwordDto)
+    public async Task<UserDto?> AddOrUpdateUserAsync(UserDto userDto, PasswordDto? passwordDto = null)
     {
         await using var transaction = await _context.Database.BeginTransactionAsync();
         try
@@ -71,9 +71,13 @@ public class UserRepository : IUserRepository
             if (existingUser != null)
             {
                 existingUser.Email = userDto.Email;
+                if(userDto.UserName == null)
+                {
+                    throw new InvalidDataException($"User name is required for user: {userDto.Email}");
+                }
                 existingUser.UserName = userDto.UserName;
-                existingUser.PasswordHashOrKey = passwordDto.PasswordHashOrKey ?? existingUser.PasswordHashOrKey;
-                existingUser.LoginMethod = passwordDto.LoginMethod;
+                existingUser.PasswordHashOrKey = passwordDto?.PasswordHashOrKey ?? existingUser.PasswordHashOrKey;
+                existingUser.LoginMethod = passwordDto?.LoginMethod ?? existingUser.LoginMethod;
                 _context.Users.Update(existingUser);
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();

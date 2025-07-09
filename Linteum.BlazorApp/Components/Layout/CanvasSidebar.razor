@@ -18,6 +18,12 @@
         if (firstRender && !_hasRendered)
         {
             _hasRendered = true;
+            var savedState = await LocalStorageService.GetItemAsync<bool?>(LocalStorageKey.SidebarCollapsed);
+            if (savedState.HasValue)
+            {
+                _isCollapsed = savedState.Value;
+                await CollapseToggled.InvokeAsync(_isCollapsed);
+            }
             await LoadCanvases();
         }
         StateHasChanged();
@@ -28,7 +34,6 @@
         _isLoading = true;
         try
         { 
-            await ApiClient.LoadSessionAsync();
             _canvases = await ApiClient.GetSubscribedCanvasesAsync();
         }
         catch
@@ -44,9 +49,10 @@
     private async Task ToggleCollapse()
     {
         _isCollapsed = !_isCollapsed;
+        await LocalStorageService.SetItemAsync(LocalStorageKey.SidebarCollapsed, _isCollapsed);
         await CollapseToggled.InvokeAsync(_isCollapsed);
     }
-
+    
     private void NavigateToCanvas(string canvasName)
     {
         Navigation.NavigateTo($"/canvas/{canvasName}");

@@ -1,5 +1,6 @@
 using Linteum.Api.Services;
 using Linteum.Infrastructure;
+using Linteum.Shared;
 using Linteum.Shared.DTO;
 using Microsoft.AspNetCore.Mvc;
 
@@ -67,7 +68,7 @@ public class UsersController : ControllerBase
     }
 
     [HttpPost("login")]
-    public async Task<IActionResult> TryLogin([FromBody] UserDto userDto, [FromQuery] string? passwordHashOrKey)
+    public async Task<IActionResult> Login([FromBody] UserDto userDto, [FromQuery] string? passwordHashOrKey)
     {
         _logger.LogInformation("Login attempt for user: {Email}", userDto.Email);
 
@@ -89,7 +90,77 @@ public class UsersController : ControllerBase
         var sessionId = _sessionService.CreateSession(result.Id.Value);
         _logger.LogInformation("Login successful for user: {Email} with ID: {UserId}, session created: {SessionId}", userDto.Email, result.Id.Value, sessionId);
 
-        return Ok(new LoginResponse{ User = result, SessionId = sessionId });
+        return Ok(new LoginResponse { User = result, SessionId = sessionId });
+    }
+
+    [HttpPost("changeName")]
+    public async Task<IActionResult> ChangeUsername([FromBody] UserDto userDto)
+    {
+        _logger.LogInformation("Username change requested for user with username: {Username}", userDto.UserName);
+        
+        var userId = _sessionService.ProcessHeader(HttpContext.Request.Headers);
+        if (!userId.HasValue)
+        {
+            _logger.LogWarning("Unauthorized username change attempt");
+            return Unauthorized();
+        }
+
+        var currentUser = await _repoManager.UserRepository.GetByIdAsync(userId.Value);
+        if (currentUser == null)
+        {
+            _logger.LogWarning("User not found for ID: {UserId}", userId.Value);
+            return NotFound();
+        }
+
+        // Update only the username
+        currentUser.UserName = userDto.UserName;
+
+        var result = await _repoManager.UserRepository.AddOrUpdateUserAsync(currentUser);
+        if (result == null)
+        {
+            _logger.LogError("Failed to update username for user ID: {UserId}", userId.Value);
+            return BadRequest("Could not update username.");
+        }
+
+        _logger.LogInformation("Username updated successfully for user ID: {UserId}", userId.Value);
+        return Ok(result);
+    }
+
+    [HttpPost("changePassword")]
+    public async Task<IActionResult> ChangePassword([FromQuery] string passwordHashOrKey, [FromQuery] int loginMethod = (int)LoginMethod.Password)
+    {
+        _logger.LogInformation("Password change requested for user with login method: {LoginMethod}", (Linteum.Shared.LoginMethod)loginMethod);
+        var userId = _sessionService.ProcessHeader(HttpContext.Request.Headers);
+        if (!userId.HasValue)
+        {
+            _logger.LogWarning("Unauthorized username change attempt");
+            return Unauthorized();
+        }
+
+        _logger.LogInformation("Password change requested for user ID: {UserId}", userId.Value);
+
+        var user = await _repoManager.UserRepository.GetByIdAsync(userId.Value);
+        if (user == null)
+        {
+            _logger.LogWarning("User not found for ID: {UserId}", userId.Value);
+            return NotFound();
+        }
+
+        var passwordDto = new PasswordDto
+        {
+            PasswordHashOrKey = passwordHashOrKey,
+            LoginMethod = (Linteum.Shared.LoginMethod)loginMethod
+        };
+
+        var result = await _repoManager.UserRepository.AddOrUpdateUserAsync(user, passwordDto);
+        if (result == null)
+        {
+            _logger.LogError("Failed to update password for user ID: {UserId}", userId.Value);
+            return BadRequest("Could not update password.");
+        }
+
+        _logger.LogInformation("Password updated successfully for user ID: {UserId}", userId.Value);
+        return Ok();
     }
 }
 

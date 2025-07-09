@@ -16,7 +16,27 @@ public class SessionService
         _logger = logger;
         _expiredSessionTimeout = TimeSpan.FromMinutes(config.ExpiredSessionTimeoutMinutes);
     }
+    
+    public bool ValidateSession(Guid sessionId)
+    {
+        if (_sessionToUser.TryGetValue(sessionId, out var session))
+        {
+            if (session.CreatedAt + _expiredSessionTimeout > DateTime.UtcNow)
+            {
+                _logger.LogInformation($"Session {sessionId} is valid for user {session.UserId}");
+                return true;
+            }
 
+            RemoveSession(sessionId);
+            _logger.LogWarning($"Session {sessionId} has expired for user {session.UserId}");
+        }
+        else
+        {
+            _logger.LogWarning($"Session {sessionId} not found");
+        }
+        return false;
+    }
+    
     public Guid CreateSession(Guid userId)
     {
         var sessionId = Guid.NewGuid();
@@ -43,11 +63,31 @@ public class SessionService
     {
         if (_sessionToUser.TryGetValue(sessionId, out var session))
         {
-            if(session.CreatedAt + _expiredSessionTimeout > DateTime.UtcNow)
+            if (session.CreatedAt + _expiredSessionTimeout > DateTime.UtcNow)
+            {
+                _logger.LogInformation($"Session {sessionId} is valid for user {session.UserId}");
                 return session.UserId;
+            }
+
             RemoveSession(sessionId);
+            _logger.LogWarning($"Session {sessionId} has expired for user {session.UserId}");
+        }
+        else
+        {
+            _logger.LogWarning($"Session {sessionId} not found");
         }
         return null;
+    }
+
+    public Guid? ProcessHeader(IHeaderDictionary header)
+    {
+        var sessionIdString = header[CustomHeaders.SessionId];
+        if (string.IsNullOrEmpty(sessionIdString) || !Guid.TryParse(sessionIdString, out var sessionId))
+        {
+            _logger.LogWarning("Session-Id header missing or invalid.");
+            return null;
+        }
+        return GetUserId(sessionId);
     }
 
     public void RemoveSession(Guid sessionId)

@@ -1,5 +1,6 @@
 using System.Security.Cryptography;
 using System.Text;
+using Linteum.BlazorApp.ExtensionMethods;
 using Linteum.Shared;
 using Linteum.Shared.DTO;
 
@@ -18,27 +19,14 @@ public class MyApiClient
 
     public async Task SetSessionAsync(Guid? sessionId)
     {
-        _httpClient.DefaultRequestHeaders.Remove(CustomHeaders.SessionId);
-
         if (sessionId.HasValue)
         {
-            _httpClient.DefaultRequestHeaders.Add(CustomHeaders.SessionId, sessionId.Value.ToString());
             await _localStorage.SetItemAsync(LocalStorageKey.SessionId, sessionId.Value.ToString());
             await _localStorage.SetItemAsync(LocalStorageKey.SessionCreatedAt, DateTime.UtcNow);
         }
         else
         {
             await _localStorage.RemoveItemAsync(LocalStorageKey.SessionId);
-        }
-    }
-
-    public async Task LoadSessionAsync()
-    {
-        var result = await _localStorage.GetItemAsync<string>(LocalStorageKey.SessionId);
-        if (result != null && Guid.TryParse(result, out var sessionId))
-        {
-            _httpClient.DefaultRequestHeaders.Remove(CustomHeaders.SessionId);
-            _httpClient.DefaultRequestHeaders.Add(CustomHeaders.SessionId, sessionId.ToString());
         }
     }
 
@@ -65,6 +53,7 @@ public class MyApiClient
         {
             await _localStorage.SetItemAsync(LocalStorageKey.UserName, loginResponse.User?.UserName);
             await _localStorage.SetItemAsync(LocalStorageKey.Email, loginResponse.User?.Email);
+            await _localStorage.SetItemAsync(LocalStorageKey.LoginMethod, LoginMethod.Password);
             await SetSessionAsync(loginResponse.SessionId);
         }
         
@@ -82,6 +71,7 @@ public class MyApiClient
     public async Task<List<CanvasDto>> GetSubscribedCanvasesAsync()
     {
         var request = new HttpRequestMessage(HttpMethod.Get, "canvases/subscribed");
+        await request.AddSessionId(_localStorage);
         var response = await _httpClient.SendAsync(request);
         response.EnsureSuccessStatusCode();
         var canvases = await response.Content.ReadFromJsonAsync<List<CanvasDto>>();
@@ -93,6 +83,53 @@ public class MyApiClient
         using var sha256 = SHA256.Create();
         var hashedBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
         return Convert.ToBase64String(hashedBytes);
+    }
+
+    public async Task ChangeUsernameAsync(string userName)
+    {
+        if (string.IsNullOrEmpty(userName))
+            throw new ArgumentException("Username cannot be empty", nameof(userName));
+        var existingEmail = await _localStorage.GetItemAsync<string>(LocalStorageKey.Email);
+        if (string.IsNullOrEmpty(existingEmail))
+            throw new InvalidOperationException("Email is not set in local storage.");
+        var existingLoginMethod = await _localStorage.GetItemAsync<LoginMethod>(LocalStorageKey.LoginMethod);
+        var userDto = new UserDto { UserName = userName, Email = existingEmail, LoginMethod = existingLoginMethod };
+        var request = new HttpRequestMessage(HttpMethod.Post, "/users/changeName");
+        await request.AddSessionId(_localStorage);
+        request.SetJsonContent(userDto);
+        var response = await _httpClient.SendAsync(request);
+    
+        if (response.IsSuccessStatusCode)
+        {
+            await _localStorage.SetItemAsync(LocalStorageKey.UserName, userName);
+        }
+        else
+        {
+            throw new Exception("Failed to change username.");
+        }
+    }
+
+    public async Task ChangePasswordAsync(string password)
+    {
+        if (string.IsNullOrEmpty(password))
+            throw new ArgumentException("Password cannot be empty", nameof(password));
+
+        var existingEmail = await _localStorage.GetItemAsync<string>(LocalStorageKey.Email);
+        if (string.IsNullOrEmpty(existingEmail))
+            throw new InvalidOperationException("Email is not set in local storage.");
+        var existingLoginMethod = await _localStorage.GetItemAsync<LoginMethod>(LocalStorageKey.LoginMethod);
+
+        var passwordHash = HashPassword(password);
+        var userDto = new UserDto { Email = existingEmail, LoginMethod = existingLoginMethod };
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/users/changePassword?passwordHashOrKey={Uri.EscapeDataString(passwordHash)}&loginMethod={(int)existingLoginMethod}");
+        await request.AddSessionId(_localStorage);
+        request.SetJsonContent(userDto);
+        var response = await _httpClient.SendAsync(request);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new Exception("Failed to change password.");
+        }
     }
 }
 
