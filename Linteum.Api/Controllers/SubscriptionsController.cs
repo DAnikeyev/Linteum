@@ -9,10 +9,12 @@ namespace Linteum.Api.Controllers;
 public class SubscriptionsController : ControllerBase
 {
     private readonly RepositoryManager _repoManager;
+    private readonly ILogger<SubscriptionsController> _logger;
 
-    public SubscriptionsController(RepositoryManager repoManager)
+    public SubscriptionsController(RepositoryManager repoManager, ILogger<SubscriptionsController> logger)
     {
         _repoManager = repoManager;
+        _logger = logger;
     }
 
     [HttpGet("user/{userId}")]

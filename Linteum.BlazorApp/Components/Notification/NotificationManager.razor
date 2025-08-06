@@ -1,0 +1,59 @@
+@inject NotificationService NotificationService
+@inject ILogger<NotificationManager> Logger
+
+<div class="notification-container" style="@(Visible ? "display:block;" : "display:none;")">
+    @if (Visible && CurrentNotification is not null)
+    {
+        <div class="notification-box @CurrentNotification.Type.ToString().ToLower() @(NotFading ? "" : "fade-out")">
+            @CurrentNotification.Message
+        </div>
+    }
+</div>
+
+@code {
+    private CustomNotification? CurrentNotification;
+    private bool Visible;
+    private bool NotFading;
+    private bool _listenerStarted = false;
+
+    protected override void OnInitialized()
+    {
+        Logger.LogInformation("NotificationManager initialized, starting listener.");
+        ListenAsync();
+    }
+
+    private async Task ListenAsync()
+    {
+        try
+        {
+            await foreach (var notification in NotificationService.Reader.ReadAllAsync())
+            {
+                Logger.LogInformation(notification.Message);
+                CurrentNotification = notification;
+                Visible = true;
+                NotFading = true;
+                StateHasChanged();
+
+                await Task.Delay(1000);
+                if (NotificationService.Reader.Count == 0)
+                {
+                    NotFading = false;
+                    StateHasChanged();
+                    await Task.Delay(1000);
+                    CurrentNotification = null;
+                    Visible = false;
+                    NotFading = true;
+                    StateHasChanged();
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            Logger.LogInformation("Notification listener was canceled");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error in notification listener");
+        }
+    }
+}

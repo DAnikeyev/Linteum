@@ -12,15 +12,17 @@ namespace Linteum.Api.Controllers
     {
         private readonly RepositoryManager _repoManager;
         private readonly SessionService _sessionService;
+        private readonly ILogger<CanvasesController> _logger;
 
-        public CanvasesController(RepositoryManager repoManager, SessionService sessionService)
+        public CanvasesController(RepositoryManager repoManager, SessionService sessionService, ILogger<CanvasesController> logger)
         {
+            _logger = logger;
             _repoManager = repoManager;
             _sessionService = sessionService;
         }
 
         [HttpGet]
-        public async Task<IActionResult> GetAll([FromQuery] bool includePrivate = false)
+        public async Task<IActionResult> GetAll([FromQuery] bool includePrivate = true)
         {
             var canvases = await _repoManager.CanvasRepository.GetAllAsync(includePrivate);
             return Ok(canvases);
@@ -42,12 +44,28 @@ namespace Linteum.Api.Controllers
             return Ok(canvas);
         }
 
-        [HttpPost]
+        [HttpPost("Add")]
         public async Task<IActionResult> AddCanvas([FromBody] CanvasDto canvas, [FromQuery] string? passwordHash)
         {
+            _logger.LogInformation("Adding canvas with name: {CanvasName}", canvas.Name);
+            var userId = _sessionService.ProcessHeader(HttpContext.Request.Headers);
+            if (userId == null)
+            {
+                _logger.LogWarning("Unauthorized access attempt: Session-Id header missing or invalid.");
+                return Unauthorized("Session-Id header missing or invalid.");
+            }
             var result = await _repoManager.CanvasRepository.TryAddCanvas(canvas, passwordHash);
             if (result == null)
+            {
+                _logger.LogError("Canvas creation failed for user {UserId} with name {CanvasName}", userId, canvas.Name);
                 return BadRequest("Canvas could not be created.");
+            }
+            var sub = await _repoManager.SubscriptionRepository.Subscribe(userId.Value, result.Id, passwordHash);
+            if (sub == null)
+            {
+                _logger.LogError("Subscription failed for user {UserId} on canvas {CanvasName}", userId, canvas.Name);
+                return BadRequest("Canvas could not be subscribed to.");
+            }
             return Ok(result);
         }
 

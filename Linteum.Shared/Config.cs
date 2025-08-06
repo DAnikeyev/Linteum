@@ -6,6 +6,8 @@ public class Config
 {
     public string DefaultCanvasName { get; set; } = "home";
     public string MasterPasswordHash { get; set; } = "MasterPasswordHash";
+    
+    public string DefaultPage { get; set; } = "/colors";
     public int DefaultCanvasWidth { get; set; } = 24;
 
     public int ExpiredSessionTimeoutMinutes { get; set; } = 60;

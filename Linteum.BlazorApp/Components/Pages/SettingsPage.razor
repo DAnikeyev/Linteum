@@ -1,210 +1,193 @@
 @page "/settings"
+@using Linteum.BlazorApp.Components.Layout
+@using Linteum.BlazorApp.Components.Notification
 @layout Layout.BaseLayout
 @inject LocalStorageService LocalStorageService
 @inject NavigationManager Navigation
 @inject MyApiClient ApiClient
 @inject ILogger<SettingsPage> Logger
+@inject NotificationService NotificationService
 
-<h2>Settings</h2>
+<div class="settings-container">
+    <h2>Settings</h2>
 
-<div class="container">
+    <!-- Email (read-only) -->
     <div class="mb-4">
         <label for="emailInput" class="form-label">Email</label>
-        <div class="input-group">
-            <input id="emailInput" class="form-control fixed-width" value="@_email" disabled />
-            <span class="input-group-text"><i class="bi bi-lock-fill"></i></span>
+        <div class="input-group fixed-width">
+            <input id="emailInput" class="form-control" value="@_email" disabled />
+            <span class="input-group-text email-lock-bg"><i class="bi bi-lock-fill"></i></span>
         </div>
         <small class="text-muted">Email address cannot be changed.</small>
     </div>
 
+    <!-- Username -->
     <div class="mb-4">
         <label for="usernameInput" class="form-label">Username (4-32 characters)</label>
-        <div class="d-flex align-items-center">
-            <input id="usernameInput" class="form-control fixed-width me-2" @bind="_userName" />
+        <div class="d-flex align-items-center gap-2">
+            <input id="usernameInput" class="form-control fixed-width me-2" @bind="_userName" autocomplete="off"/>
             <button class="btn btn-primary" @onclick="SaveUsername">Update Username</button>
         </div>
-        @if (_usernameError != null)
-        {
-            <div class="text-danger mt-1">@_usernameError</div>
-        }
     </div>
 
+    <!-- New Password -->
     <div class="mb-3">
         <label for="passwordInput" class="form-label">New Password (4-32 characters)</label>
-        <div class="d-flex align-items-center">
-            <input type="password" id="passwordInput" class="form-control fixed-width me-2" @bind="_password" />
-            <button class="btn btn-primary" @onclick="SavePassword" disabled="@(!CanSavePassword())">Update Password</button>
-        </div>
-        @if (_passwordError != null)
-        {
-            <div class="text-danger mt-1">@_passwordError</div>
-        }
+        <input type="password" id="passwordInput" class="form-control fixed-width" @bind="_password" autocomplete="off"/>
     </div>
 
+    <!-- Confirm New Password and Update Button -->
     <div class="mb-4">
         <label for="confirmPasswordInput" class="form-label">Confirm New Password</label>
-        <div class="d-flex align-items-center">
-            <input type="password" id="confirmPasswordInput" class="form-control fixed-width" @bind="_confirmPassword" />
+        <div class="d-flex align-items-center gap-2">
+            <input type="password" id="confirmPasswordInput" class="form-control fixed-width me-2" @bind="_confirmPassword" />
+            <button class="btn btn-primary" @onclick="SavePassword" disabled="@(!CanSavePassword())">Update Password</button>
         </div>
-        @if (_confirmPasswordError != null)
-        {
-            <div class="text-danger mt-1">@_confirmPasswordError</div>
-        }
     </div>
 
-    <div class="mt-4">
+    <!-- Logout -->
+    <div class="mt-4 d-flex align-items-center gap-2">
         <button class="btn btn-danger" @onclick="Logout">Logout</button>
     </div>
-
-    @if (!string.IsNullOrEmpty(_message))
-    {
-        <div class="@_alertClass mt-3">@_message</div>
-    }
 </div>
 
-<style>
-    .fixed-width {
-        width: 300px;
-    }
-</style>
-
 @code {
+    [CascadingParameter]
+    private CanvasSidebar? Sidebar { get; set; }
     private string? _email;
     private string? _userName;
     private string? _originalUserName;
     private string? _password;
     private string? _confirmPassword;
-    private string? _message;
-    private string? _usernameError;
-    private string? _passwordError;
-    private string? _confirmPasswordError;
-    private string _alertClass = "alert alert-info";
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
-            Logger.LogDebug("Loading user data from local storage");
             _userName = await LocalStorageService.GetItemAsync<string>(LocalStorageKey.UserName);
             _originalUserName = _userName;
             _email = await LocalStorageService.GetItemAsync<string>(LocalStorageKey.Email);
-            Logger.LogDebug("Loaded username: {Username}, email: {Email}", _userName, _email);
             StateHasChanged();
         }
     }
 
     private async Task SaveUsername()
     {
-        Logger.LogInformation("Starting username update process");
-        ClearErrors();
-        
         if (ValidateUsername())
         {
-            try {
-                Logger.LogInformation("Validation passed, attempting to update username from {OldUsername} to {NewUsername}", 
-                    _originalUserName, _userName);
-                
+            try
+            {
                 await ApiClient.ChangeUsernameAsync(_userName);
                 await LocalStorageService.SetItemAsync(LocalStorageKey.UserName, _userName);
                 _originalUserName = _userName;
-                
-                Logger.LogInformation("Username updated successfully to: {Username}", _userName);
-                _message = "Username updated successfully.";
-                _alertClass = "alert alert-success";
+                await NotificationService.NotifyAsync(new CustomNotification
+                {
+                    Message = $"Username updated successfully to {_userName}.",
+                    Type = NotificationType.Success
+                });
+                if(Sidebar != null)
+                {
+                    await Sidebar.RefreshCanvases();
+                }
             }
             catch (Exception ex)
             {
-                Logger.LogError(ex, "Error updating username to: {Username}", _userName);
-                _message = $"Error updating username: {ex.Message}";
-                _alertClass = "alert alert-danger";
+                var error = $"Error updating username: {ex.Message}";
+                await NotificationService.NotifyAsync(new CustomNotification
+                {
+                    Message = error,
+                    Type = NotificationType.Error,
+                });
             }
         }
-
         StateHasChanged();
     }
 
     private async Task SavePassword()
     {
-        Logger.LogInformation("Starting password update process");
-        ClearErrors();
-        
         if (ValidatePassword())
         {
-            try {
-                Logger.LogInformation("Password validation passed, attempting to update password for user: {Username}", _userName);
-                
+            try
+            {
                 await ApiClient.ChangePasswordAsync(_password);
-                
-                Logger.LogInformation("Password updated successfully for user: {Username}", _userName);
-                _message = "Password updated successfully.";
-                _alertClass = "alert alert-success";
+                await NotificationService.NotifyAsync(new CustomNotification
+                {
+                    Message = "Password updated successfully.",
+                    Type = NotificationType.Success
+                });
                 _password = null;
                 _confirmPassword = null;
             }
             catch (Exception ex)
             {
-                Logger.LogError(ex, "Error updating password for user: {Username}", _userName);
-                _message = $"Error updating password: {ex.Message}";
-                _alertClass = "alert alert-danger";
+                var error = $"Error updating password: {ex.Message}";
+                _ = NotificationService.NotifyAsync(new CustomNotification
+                {
+                    Message = error,
+                    Type = NotificationType.Error,
+                });
             }
         }
-
         StateHasChanged();
     }
 
     private bool ValidateUsername()
     {
-        Logger.LogDebug("Validating username");
-        
         if (string.IsNullOrWhiteSpace(_userName))
         {
-            Logger.LogDebug("Username validation failed: empty username");
-            _usernameError = "Username cannot be empty.";
+            var error = "Username cannot be empty.";
+            _ = NotificationService.NotifyAsync(new CustomNotification
+            {
+                Message = error,
+                Type = NotificationType.Error,
+            });
             return false;
         }
         else if (_userName.Length < 4 || _userName.Length > 32)
         {
-            Logger.LogDebug("Username validation failed: length constraint (current length: {Length})", _userName.Length);
-            _usernameError = "Username must be between 4 and 32 characters.";
+            var error = "Username must be between 4 and 32 characters.";
+            _ = NotificationService.NotifyAsync(new CustomNotification
+            {
+                Message = error,
+                Type = NotificationType.Error,
+            });
             return false;
         }
-        
         return true;
     }
 
     private bool ValidatePassword()
     {
-        Logger.LogDebug("Validating password fields");
         bool isValid = true;
-        
-        // Validate password
+        var error = string.Empty;
         if (string.IsNullOrWhiteSpace(_password))
         {
-            Logger.LogDebug("Password validation failed: empty password");
-            _passwordError = "Password cannot be empty.";
+            error = "Password cannot be empty.";
             isValid = false;
         }
         else if (_password.Length < 4 || _password.Length > 32)
         {
-            Logger.LogDebug("Password validation failed: length constraint (current length: {Length})", _password.Length);
-            _passwordError = "Password must be between 4 and 32 characters.";
+            error = "Password must be between 4 and 32 characters.";
             isValid = false;
         }
-
-        // Validate confirm password
         if (string.IsNullOrWhiteSpace(_confirmPassword))
         {
-            Logger.LogDebug("Confirm password validation failed: empty confirmation");
-            _confirmPasswordError = "Please confirm your password.";
+            error = "Please confirm your password.";
             isValid = false;
         }
         else if (_password != _confirmPassword)
         {
-            Logger.LogDebug("Confirm password validation failed: passwords don't match");
-            _confirmPasswordError = "Passwords do not match.";
+            error = "Passwords do not match.";
             isValid = false;
         }
-
+        if (!isValid)
+        {
+            _ = NotificationService.NotifyAsync(new CustomNotification
+            {
+                Message = error,
+                Type = NotificationType.Error,
+            });
+        }
         return isValid;
     }
 
@@ -213,20 +196,9 @@
         return !string.IsNullOrWhiteSpace(_password) && !string.IsNullOrWhiteSpace(_confirmPassword);
     }
 
-    private void ClearErrors()
-    {
-        Logger.LogDebug("Clearing error messages");
-        _usernameError = null;
-        _passwordError = null;
-        _confirmPasswordError = null;
-        _message = null;
-    }
-
     private async Task Logout()
     {
-        Logger.LogInformation("User logout requested");
         await LocalStorageService.ClearAsync();
-        Logger.LogInformation("Local storage cleared, redirecting to login page");
         Navigation.NavigateTo("/login", true);
     }
 }

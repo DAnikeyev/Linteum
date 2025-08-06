@@ -1,5 +1,6 @@
 using Linteum.BlazorApp;
 using Linteum.BlazorApp.Components;
+using Linteum.BlazorApp.Components.Notification;
 using Linteum.Shared;
 using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage;
 using Microsoft.AspNetCore.DataProtection;
@@ -41,6 +42,7 @@ try
         .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(Directory.GetCurrentDirectory(), "keys")))
         .SetApplicationName("LinteumApp");
     builder.Services.AddScoped<LocalStorageService>();
+    builder.Services.AddScoped<NotificationService>();
     builder.Services.AddRazorComponents()
         .AddInteractiveServerComponents();
     var app = builder.Build();

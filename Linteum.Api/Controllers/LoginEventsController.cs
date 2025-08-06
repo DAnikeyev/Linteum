@@ -9,10 +9,12 @@ namespace Linteum.Api.Controllers;
 public class LoginEventsController : ControllerBase
 {
     private readonly RepositoryManager _repoManager;
+    private readonly ILogger<LoginEventsController> _logger;
 
-    public LoginEventsController(RepositoryManager repoManager)
+    public LoginEventsController(RepositoryManager repoManager, ILogger<LoginEventsController> logger)
     {
         _repoManager = repoManager;
+        _logger = logger;
     }
 
     [HttpGet("user/{userId}")]

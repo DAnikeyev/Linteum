@@ -5,6 +5,7 @@
 @inject MyApiClient ApiClient
 
 <div class="background">
+    <div class="brand-title">LINTEUM</div>
     <div class="login-container">
         <h3>Sign Up</h3>
 
@@ -13,24 +14,39 @@
             <div class="alert alert-danger">@_error</div>
         }
 
-        <EditForm Model="_signupModel" OnValidSubmit="HandleSignup">
-            <DataAnnotationsValidator />
-            <ValidationSummary />
-            <div class="mb-3">
-                <label>Email</label>
-                <InputText class="form-control" @bind-Value="_signupModel.Email" />
-            </div>
-            <div class="mb-3">
-                <label>Password</label>
-                <InputText class="form-control" @bind-Value="_signupModel.Password" type="password" />
-            </div>
-            <div class="mb-3">
-                <label>Username</label>
-                <InputText class="form-control" @bind-Value="_signupModel.UserName" />
-            </div>
-            <button class="btn btn-primary" type="submit">Sign Up</button>
-        </EditForm>
+        <!-- Email -->
+        <div class="mb-4">
+            <label for="emailInput" class="form-label">Email</label>
+            <input id="emailInput" class="form-control fixed-width" @bind="_signupModel.Email" @oninput="ClearError" />
+            @if (!string.IsNullOrEmpty(_emailError))
+            {
+                <div class="text-danger mt-1">@_emailError</div>
+            }
+        </div>
 
+        <!-- Password -->
+        <div class="mb-4">
+            <label for="passwordInput" class="form-label">Password</label>
+            <input id="passwordInput" type="password" class="form-control fixed-width" @bind="_signupModel.Password" @oninput="ClearError" />
+            @if (!string.IsNullOrEmpty(_passwordError))
+            {
+                <div class="text-danger mt-1">@_passwordError</div>
+            }
+        </div>
+
+        <!-- Username -->
+        <div class="mb-4">
+            <label for="usernameInput" class="form-label">Username</label>
+            <input id="usernameInput" class="form-control fixed-width" @bind="_signupModel.UserName" @oninput="ClearError" />
+            @if (!string.IsNullOrEmpty(_usernameError))
+            {
+                <div class="text-danger mt-1">@_usernameError</div>
+            }
+        </div>
+
+        <div class="d-flex gap-2">
+            <button class="btn btn-primary flex-fill" @onclick="HandleSignup">Sign Up</button>
+        </div>
         <p>
             Already have an account? <a href="/login">Login</a>
         </p>
@@ -40,9 +56,43 @@
 @code {
     private SignupModel _signupModel = new();
     private string? _error;
+    private string? _emailError;
+    private string? _passwordError;
+    private string? _usernameError;
+
+    private void ClearError(ChangeEventArgs e)
+    {
+        _emailError = null;
+        _passwordError = null;
+        _usernameError = null;
+        _error = null;
+    }
 
     private async Task HandleSignup()
     {
+        _emailError = null;
+        _passwordError = null;
+        _usernameError = null;
+        _error = null;
+
+        if (string.IsNullOrWhiteSpace(_signupModel.Email))
+            _emailError = "Email is required.";
+        else if (!_signupModel.Email.Contains("@") || !_signupModel.Email.Contains("."))
+            _emailError = "Enter a valid email address.";
+
+        if (string.IsNullOrWhiteSpace(_signupModel.Password))
+            _passwordError = "Password is required.";
+        else if (_signupModel.Password.Length < 4 || _signupModel.Password.Length > 32)
+            _passwordError = "Password must be 4-32 characters.";
+
+        if (string.IsNullOrWhiteSpace(_signupModel.UserName))
+            _usernameError = "Username is required.";
+        else if (_signupModel.UserName.Length < 4 || _signupModel.UserName.Length > 32)
+            _usernameError = "Username must be 4-32 characters.";
+
+        if (_emailError != null || _passwordError != null || _usernameError != null)
+            return;
+
         var result = await ApiClient.SignupAsync(_signupModel.Email, _signupModel.Password, _signupModel.UserName);
         if (result)
         {
@@ -61,4 +111,3 @@
         public string UserName { get; set; } = string.Empty;
     }
 }
-

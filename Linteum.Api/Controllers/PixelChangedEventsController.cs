@@ -9,10 +9,12 @@ namespace Linteum.Api.Controllers;
 public class PixelChangedEventsController : ControllerBase
 {
     private readonly RepositoryManager _repoManager;
+    private readonly ILogger<PixelChangedEventsController> _logger;
 
-    public PixelChangedEventsController(RepositoryManager repoManager)
+    public PixelChangedEventsController(RepositoryManager repoManager, ILogger<PixelChangedEventsController> logger)
     {
         _repoManager = repoManager;
+        _logger = logger;
     }
 
     [HttpGet("user/{userId}")]

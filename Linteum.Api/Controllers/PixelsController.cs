@@ -9,10 +9,12 @@ namespace Linteum.Api.Controllers;
 public class PixelsController : ControllerBase
 {
     private readonly RepositoryManager _repoManager;
+    private readonly ILogger<PixelsController> _logger;
 
-    public PixelsController(RepositoryManager repoManager)
+    public PixelsController(RepositoryManager repoManager, ILogger<PixelsController> logger)
     {
         _repoManager = repoManager;
+        _logger = logger;
     }
 
     [HttpGet("canvas/{canvasId}")]

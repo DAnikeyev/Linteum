@@ -1,3 +1,4 @@
+using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using Linteum.BlazorApp.ExtensionMethods;
@@ -38,6 +39,23 @@ public class MyApiClient
     public async Task<List<ColorDto>?> GetColorsAsync()
     {
         return await _httpClient.GetFromJsonAsync<List<ColorDto>>("/colors");
+    }    
+    
+    public async Task<CanvasDto?> AddCanvasAsync(CanvasDto canvasDto, string? password)
+    {
+        var passwordHash = string.IsNullOrEmpty(password) ? null : HashPassword(password);
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/canvases/Add?passwordHash={Uri.EscapeDataString(passwordHash ?? string.Empty)}");
+    
+        await request.AddSessionId(_localStorage);
+        request.SetJsonContent(canvasDto);
+
+        var response = await _httpClient.SendAsync(request);
+        if (!response.IsSuccessStatusCode)
+        {
+            throw new Exception($"Failed to add canvas. Status code: {response.StatusCode}");
+        }
+
+        return await response.Content.ReadFromJsonAsync<CanvasDto>();
     }
 
     public async Task<(UserDto? User, Guid? SessionId)> LoginAsync(string email, string password)
@@ -105,7 +123,12 @@ public class MyApiClient
         }
         else
         {
-            throw new Exception("Failed to change username.");
+            if(response.StatusCode == HttpStatusCode.ServiceUnavailable)
+                throw new Exception("Service is currently unavailable. Please try again later.");
+            if(response.StatusCode == HttpStatusCode.Unauthorized)
+                throw new UnauthorizedAccessException("You are not authorized to change the username. Please log in again.");
+            if(response.StatusCode == HttpStatusCode.BadRequest)
+                throw new Exception("Failed to change username. User already exists.");
         }
     }
 

@@ -1,0 +1,131 @@
+@page "/canvas_add"
+@using Linteum.BlazorApp.Components.Layout
+@using Linteum.BlazorApp.Components.Notification
+@using Linteum.Shared.DTO
+@layout Layout.BaseLayout
+@inject MyApiClient ApiClient
+@inject NotificationService NotificationService
+
+<div class="settings-container">
+    <h2>Add Canvas</h2>
+
+    <!-- Canvas Name -->
+    <div class="mb-4">
+        <label for="canvasNameInput" class="form-label">Canvas Name</label>
+        <div class="d-flex align-items-center gap-2">
+            <input id="canvasNameInput" class="form-control fixed-width me-2" @bind="_canvasName" autocomplete = "new-name"/>
+        </div>
+    </div>
+
+    <!-- Optional Password -->
+    <div class="mb-4">
+        <label for="canvasPasswordInput" class="form-label">Optional Password</label>
+        <div class="d-flex align-items-center gap-2">
+            <input type="password" id="canvasPasswordInput" class="form-control fixed-width me-2" @bind="_canvasPassword" autocomplete="new-password"/>
+        </div>
+        <small class="text-muted">Leave empty for no password.</small>
+    </div>
+
+    <!-- Canvas Width -->
+    <div class="mb-4">
+        <label for="canvasWidthInput" class="form-label">Canvas Width (pixels)</label>
+        <div class="d-flex align-items-center gap-2">
+            <input type="number" id="canvasWidthInput" class="form-control fixed-width me-2" @bind="_canvasWidth" />
+        </div>
+    </div>
+
+    <!-- Canvas Height -->
+    <div class="mb-4">
+        <label for="canvasHeightInput" class="form-label">Canvas Height (pixels)</label>
+        <div class="d-flex align-items-center gap-2">
+            <input type="number" id="canvasHeightInput" class="form-control fixed-width me-2" @bind="_canvasHeight" />
+        </div>
+    </div>
+
+    <!-- Submit Button -->
+    <div class="mt-4 d-flex align-items-center gap-2">
+        <button class="btn btn-primary" @onclick="AddCanvas">Add Canvas</button>
+    </div>
+</div>
+
+@code {
+    [CascadingParameter]
+    private CanvasSidebar? Sidebar { get; set; }
+    private string? _canvasName;
+    private string? _canvasPassword;
+    private int? _canvasWidth;
+    private int? _canvasHeight;
+
+    private async Task AddCanvas()
+    {
+        if (ValidateCanvasForm())
+        {
+            try
+            {
+                await ApiClient.AddCanvasAsync(new CanvasDto()
+                {
+                    Name = _canvasName!,
+                    Width = _canvasWidth!.Value,
+                    Height = _canvasHeight!.Value
+                }, _canvasPassword);
+
+                await NotificationService.NotifyAsync(new CustomNotification
+                {
+                    Message = $"Canvas '{_canvasName}' added successfully.",
+                    Type = NotificationType.Success
+                });
+
+                _canvasName = null;
+                _canvasPassword = null;
+                _canvasWidth = null;
+                _canvasHeight = null;
+                if (Sidebar != null)
+                    await Sidebar.RefreshCanvases();
+            }
+            catch (Exception ex)
+            {
+                var error = $"Error adding canvas: {ex.Message}";
+                await NotificationService.NotifyAsync(new CustomNotification
+                {
+                    Message = error,
+                    Type = NotificationType.Error
+                });
+            }
+        }
+    }
+
+    private bool ValidateCanvasForm()
+    {
+        if (string.IsNullOrWhiteSpace(_canvasName))
+        {
+            _ = NotificationService.NotifyAsync(new CustomNotification
+            {
+                Message = "Canvas name cannot be empty.",
+                Type = NotificationType.Error
+            });
+            return false;
+        }
+
+        if (_canvasWidth is null || _canvasWidth <= 0)
+        {
+            _ = NotificationService.NotifyAsync(new CustomNotification
+            {
+                Message = "Canvas width must be a positive number.",
+                Type = NotificationType.Error
+            });
+            return false;
+        }
+
+        if (_canvasHeight is null || _canvasHeight <= 0)
+        {
+            _ = NotificationService.NotifyAsync(new CustomNotification
+            {
+                Message = "Canvas height must be a positive number.",
+                Type = NotificationType.Error
+            });
+            return false;
+        }
+
+        return true;
+    }
+}

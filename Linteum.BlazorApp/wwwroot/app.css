@@ -60,15 +60,80 @@ h1:focus {
 }
 
 :root {
+    --black: #000;
+    /*Main text on left*/
     --accent3: #1F2070;
+    
+    /*Intermediate accent and important blocks*/
     --accent2p5: #4D4FB7;
-    --accent2: #7678edff;
+
+    /*Main items of type 1 including most of left sidebar*/
+    --accent2: #7678ED;
+
+    /*Main items of type 1 on hover*/
     --accent1p5: #969AEA;
-    --accent1: #b6bce6ff;
-    --accent0: #f6ffdeff;
-    --accent-1: #f7cea2ff;
+    
+    /*Background og left sidebar*/
+    --accent1: #B6BCE6;
+    
+    /*Background of middle components and light-theme containers*/
+    --accent0: #F6FFDE;
+    
+    /*Background of right sidebar and yellow-ish input boxes*/
+    --accent-1: #F7CEA2;
+    
+    /*Main items of type 2 on hover*/
     --accent-1p5: #F7B684;
-    --accent-2: #f79d65ff;
+    /*Main items of type 2 including most of right sidebar*/
+    --accent-2: #F79D65;
+
+    /*Intermediate accent and important blocks*/
     --accent-2p5: #F7B684;
+    
+    /*Main text of type 2 including most of right sidebar*/
     --accent-3: #C2510A;
+    
+    /*Accept and reject colors*/
+    --accept: #05CA3D;
+    --reject: #DE3000;
 }
+
+.notification-container {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 32px;
+    z-index: 9999;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    pointer-events: none;
+}
+
+.notification-box {
+    min-width: 120px;
+    max-width: 500px;
+    background: rgba(34, 34, 34, 0.82);
+    color: #fff;
+    padding: 0.32rem 0.8rem;
+    border-radius: 4px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.13);
+    opacity: 1;
+    transition: opacity 0.5s;
+    pointer-events: auto;
+    font-size: 0.88rem;
+    text-align: center;
+    margin:auto;
+}
+
+.notification-box { 
+    transition: opacity 1s ease-in-out;
+}
+
+.notification-box.fade-out {
+    opacity: 0;
+}
+
+.notification-box.success { background: var(--accept); }
+.notification-box.error { background: var(--reject); }
+.notification-box.info { background: var(--accent-1); }

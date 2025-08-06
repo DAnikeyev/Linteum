@@ -11,50 +11,88 @@
 @inject ILogger<Login> Logger
 
 <div class="background">
+    <div class="brand-title">LINTEUM</div>
     <div class="login-container">
         <h3>Login</h3>
         @if (!string.IsNullOrEmpty(_error))
         {
             <div class="alert alert-danger">@_error</div>
         }
-        <EditForm Model="_loginModel" OnValidSubmit="HandleLogin" FormName="LoginForm">
-            <DataAnnotationsValidator/>
-            <ValidationSummary/>
-            <div class="mb-3">
-                <label>Email</label>
-                <InputText class="form-control" @bind-Value="_loginModel.Email"/>
-            </div>
-            <div class="mb-3">
-                <label>Password</label>
-                <InputText class="form-control" @bind-Value="_loginModel.Password" type="password"/>
-            </div>
-            <div class="d-flex gap-2">
-                <button class="btn btn-primary flex-fill" type="submit">Login</button>
-                <button class="btn btn-outline-primary flex-fill" type="button" @onclick="GoogleLogin">Login with Google</button>
-            </div>
-        </EditForm>
+
+        <!-- Email -->
+        <div class="mb-4">
+            <label for="emailInput" class="form-label">Email</label>
+            <input id="emailInput" class="form-control fixed-width" @bind="_email" @oninput="ClearError" />
+            @if (!string.IsNullOrEmpty(_emailError))
+            {
+                <div class="text-danger mt-1">@_emailError</div>
+            }
+        </div>
+
+        <!-- Password -->
+        <div class="mb-4">
+            <label for="passwordInput" class="form-label">Password</label>
+            <input id="passwordInput" type="password" class="form-control fixed-width" @bind="_password" @oninput="ClearError" />
+            @if (!string.IsNullOrEmpty(_passwordError))
+            {
+                <div class="text-danger mt-1">@_passwordError</div>
+            }
+        </div>
+
+        <!-- Buttons -->
+        <div class="d-flex gap-2">
+            <button class="btn btn-primary flex-fill" @onclick="HandleLogin">Login</button>
+            <button class="btn btn-outline-primary flex-fill" type="button" @onclick="GoogleLogin">Login with Google</button>
+        </div>
         <p>
-            Don't have an account? <a href="/signup">Sign up</a>
+            Don&#39;t have an account? <a href="/signup">Sign up</a>
         </p>
     </div>
 </div>
 
 @code {
-    private LoginModel _loginModel = new();
+    private string _email = string.Empty;
+    private string _password = string.Empty;
+    private string? _emailError;
+    private string? _passwordError;
     private string? _error;
+
+    private void ClearError(ChangeEventArgs e)
+    {
+        _emailError = null;
+        _passwordError = null;
+        _error = null;
+    }
 
     private async Task HandleLogin()
     {
-        Logger.LogInformation("Login attempt for {Email}", _loginModel.Email);
-        var (user, sessionId) = await ApiClient.LoginAsync(_loginModel.Email, _loginModel.Password);
+        _emailError = null;
+        _passwordError = null;
+        _error = null;
+
+        if (string.IsNullOrWhiteSpace(_email))
+            _emailError = "Email is required.";
+        else if (!_email.Contains("@") || !_email.Contains("."))
+            _emailError = "Enter a valid email address.";
+
+        if (string.IsNullOrWhiteSpace(_password))
+            _passwordError = "Password is required.";
+        else if (_password.Length < 4 || _password.Length > 32)
+            _passwordError = "Password must be 4-32 characters.";
+
+        if (_emailError != null || _passwordError != null)
+            return;
+
+        Logger.LogInformation("Login attempt for {Email}", _email);
+        var (user, sessionId) = await ApiClient.LoginAsync(_email, _password);
         if (user != null)
         {
-            Logger.LogInformation("Login successful for {Email}", _loginModel.Email);
+            Logger.LogInformation("Login successful for {Email}", _email);
             Navigation.NavigateTo("/colors");
         }
         else
         {
-            Logger.LogWarning("Login failed for {Email}", _loginModel.Email);
+            Logger.LogWarning("Login failed for {Email}", _email);
             _error = "Invalid login credentials.";
         }
     }
@@ -64,19 +102,12 @@
         Navigation.NavigateTo("/auth/google", true);
     }
 
-    public class LoginModel
-    {
-        public string Email { get; set; } = string.Empty;
-        public string Password { get; set; } = string.Empty;
-    }
-    
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
             try
             {
-
                 var sessionId = await LocalStorageService.GetItemAsync<string>(LocalStorageKey.SessionId);
                 var createdAt = await LocalStorageService.GetItemAsync<DateTime?>(LocalStorageKey.SessionCreatedAt);
                 var expiresAt = createdAt + TimeSpan.FromMinutes(Config.ExpiredSessionTimeoutMinutes);
@@ -89,7 +120,7 @@
                 if (sessionId != null)
                 {
                     Logger.LogInformation("Session ID found, redirecting to home page.");
-                    Navigation.NavigateTo("/home");
+                    Navigation.NavigateTo(Config.DefaultPage);
                 }
                 else
                 {

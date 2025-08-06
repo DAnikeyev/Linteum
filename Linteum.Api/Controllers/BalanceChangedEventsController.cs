@@ -9,10 +9,12 @@ namespace Linteum.Api.Controllers
     public class BalanceChangedEventsController : ControllerBase
     {
         private readonly RepositoryManager _repoManager;
+        private readonly ILogger<BalanceChangedEventsController> _logger;
 
-        public BalanceChangedEventsController(RepositoryManager repoManager)
+        public BalanceChangedEventsController(RepositoryManager repoManager, ILogger<BalanceChangedEventsController> logger)
         {
             _repoManager = repoManager;
+            _logger = logger;
         }
 
         [HttpGet("user/{userId}")]

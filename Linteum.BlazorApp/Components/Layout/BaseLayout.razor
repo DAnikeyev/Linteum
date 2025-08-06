@@ -1,15 +1,19 @@
 @inject LocalStorageService LocalStorageService
 @inject NavigationManager Navigation
 @inject ILogger<BaseLayout> Logger
+@using Linteum.BlazorApp.Components.Notification
 @inherits LayoutComponentBase
 
-<CanvasSidebar CollapseToggled="OnSidebarCollapseChanged" />
+<CascadingValue Value="Sidebar">
+    <CanvasSidebar @ref="Sidebar" CollapseToggled="OnSidebarCollapseChanged" />
 
-<main style="margin-left:@_sidebarMargin; background-color: var(--accent0); min-height: 100vh; padding: 1rem;">
+<main style="margin-left:@_sidebarMargin; background-color: var(--accent0); min-height: 100vh; padding: 1rem; position: relative;">
     @Body
 </main>
-
+<NotificationManager />
+</CascadingValue>
 @code {
+    public CanvasSidebar? Sidebar { get; set; }
     private string _sidebarMargin = "300px";
 
     private void OnSidebarCollapseChanged(bool isCollapsed)
