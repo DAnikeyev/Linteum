@@ -30,7 +30,6 @@ namespace Linteum.Api.Services
                 var mapper = services.GetRequiredService<IMapper>();
                 var canvasRepository = services.GetRequiredService<RepositoryManager>().CanvasRepository;
                 var dbConfig = services.GetRequiredService<Config>();
-
                 _logger.LogInformation("Starting database migration...");
                 await context.Database.MigrateAsync();
 

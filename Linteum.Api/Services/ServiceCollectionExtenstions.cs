@@ -17,10 +17,10 @@ namespace Linteum.Api.Services
             services.AddSingleton(new Config());
             services.AddSingleton<SessionService>();
             DotNetEnv.Env.Load("../.env");
-            var masterPass = Environment.GetEnvironmentVariable("MASTER_PASSWORD_HASH");
+            var masterPass = Environment.GetEnvironmentVariable("MASTER_PASSWORD");
             if (string.IsNullOrEmpty(masterPass))
             {
-                throw new InvalidOperationException("MASTER_PASSWORD_HASH environment variable is not set.");
+                throw new InvalidOperationException("MASTER_PASSWORD environment variable is not set.");
             }
             services.AddScoped<RepositoryManager>();
             return services;

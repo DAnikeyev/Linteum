@@ -92,6 +92,47 @@ public class UsersController : ControllerBase
 
         return Ok(new LoginResponse { User = result, SessionId = sessionId });
     }
+    
+    [HttpPost("add")]
+    public async Task<IActionResult> Add([FromBody] UserDto userDto, [FromQuery] string? passwordHashOrKey)
+    {
+        _logger.LogInformation("Signup attempt for user: {Email}", userDto.Email);
+
+        var passwordDto = new PasswordDto { PasswordHashOrKey = passwordHashOrKey, LoginMethod = userDto.LoginMethod };
+        var userWithEmail = await _repoManager.UserRepository.GetByEmailAsync(userDto.Email);
+        
+        if(userDto.UserName is null || userDto.UserName.Length < 4)
+        {
+            _logger.LogWarning("Invalid username length for user: {Email}", userDto.Email);
+            return BadRequest("Username must be at least 4 characters long.");
+        }
+        
+        if (userWithEmail != null)
+        {
+            _logger.LogWarning("User already exists: {Email}", userDto.Email);
+            return BadRequest("User already exists.");
+        }
+        
+        var userWithUserName = await _repoManager.UserRepository.GetByUserNameAsync(userDto.UserName);
+        
+        if (userWithUserName != null)
+        {
+            _logger.LogWarning("Username already taken: {UserName}", userDto.UserName);
+            return BadRequest("Username already taken.");
+        }
+        var result = await _repoManager.UserRepository.AddOrUpdateUserAsync(userDto, passwordDto);
+        
+        if (result == null)
+        {
+            _logger.LogError("Failed to create user: {Email}", userDto.Email);
+            return BadRequest("Could not create user.");
+        }
+        
+        var sessionId = _sessionService.CreateSession(result.Id!.Value);
+        _logger.LogInformation("SignUp successful for user: {Email} with ID: {UserId}, session created: {SessionId}", result.Email, result.Id.Value, sessionId);
+
+        return Ok(new LoginResponse { User = result, SessionId = sessionId });
+    }
 
     [HttpPost("changeName")]
     public async Task<IActionResult> ChangeUsername([FromBody] UserDto userDto)

@@ -94,13 +94,13 @@
             return;
 
         var result = await ApiClient.SignupAsync(_signupModel.Email, _signupModel.Password, _signupModel.UserName);
-        if (result)
+        if (result.SessionId is not null)
         {
             Navigation.NavigateTo("/login");
         }
         else
         {
-            _error = "Sign up failed. Email may already be in use.";
+            _error = "Sign up failed. User may already exist.";
         }
     }
 

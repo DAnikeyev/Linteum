@@ -92,6 +92,7 @@ public class UserRepository : IUserRepository
                 newUser.PasswordHashOrKey = passwordDto.PasswordHashOrKey;
                 newUser.LoginMethod = passwordDto.LoginMethod;
                 newUser.Id = Guid.NewGuid();
+                newUser.CreatedAt = DateTime.UtcNow;
                 _context.Users.Add(newUser);
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();

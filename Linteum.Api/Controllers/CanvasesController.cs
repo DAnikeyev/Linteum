@@ -72,6 +72,34 @@ namespace Linteum.Api.Controllers
         [HttpDelete("name/{name}")]
         public async Task<IActionResult> DeleteCanvas(string name, [FromQuery] string passwordHash)
         {
+            
+            _logger.LogInformation("Trying to delete canvas with name: {CanvasName}", name);
+            var userId = _sessionService.ProcessHeader(HttpContext.Request.Headers);
+            if (userId == null)
+            {
+                _logger.LogWarning("Unauthorized access attempt: Session-Id header missing or invalid.");
+                return Unauthorized("Session-Id header missing or invalid.");
+            }
+            
+            var canvas = await _repoManager.CanvasRepository.GetByNameAsync(name);
+            if (canvas == null)
+            {
+                _logger.LogWarning("Canvas with name {CanvasName} not found.", name);
+                return NotFound("Canvas not found.");
+            }
+
+            if (canvas.CreatorId != userId)
+            {
+                _logger.LogWarning("Unauthorized deletion attempt for canvas with name {CanvasName} by user {UserId}.", name, userId);
+                return Unauthorized("You are not authorized to delete this canvas.");
+            }
+
+            if (!await _repoManager.CanvasRepository.CheckPassword(canvas, passwordHash))
+            {
+                _logger.LogWarning("Password check failed for canvas with name {CanvasName}.", name);
+                return Unauthorized("Invalid password.");
+            }
+
             var result = await _repoManager.CanvasRepository.TryDeleteCanvasByName(name, passwordHash);
             if (!result)
                 return BadRequest("Canvas could not be deleted.");

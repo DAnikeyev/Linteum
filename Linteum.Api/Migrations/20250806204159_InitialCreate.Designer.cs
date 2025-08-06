@@ -12,7 +12,7 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace Linteum.Api.Migrations
 {
     [DbContext(typeof(AppDbContext))]
-    [Migration("20250629002806_InitialCreate")]
+    [Migration("20250806204159_InitialCreate")]
     partial class InitialCreate
     {
         /// <inheritdoc />
@@ -67,6 +67,9 @@ namespace Linteum.Api.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<Guid>("CreatorId")
+                        .HasColumnType("uuid");
+
                     b.Property<int>("Height")
                         .HasColumnType("integer");
 
@@ -86,6 +89,8 @@ namespace Linteum.Api.Migrations
                         .HasColumnType("integer");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CreatorId");
 
                     b.HasIndex("Name")
                         .IsUnique();
@@ -287,6 +292,17 @@ namespace Linteum.Api.Migrations
                     b.Navigation("Canvas");
 
                     b.Navigation("User");
+                });
+
+            modelBuilder.Entity("Linteum.Domain.Canvas", b =>
+                {
+                    b.HasOne("Linteum.Domain.User", "Creator")
+                        .WithMany()
+                        .HasForeignKey("CreatorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Creator");
                 });
 
             modelBuilder.Entity("Linteum.Domain.LoginEvent", b =>

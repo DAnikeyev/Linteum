@@ -12,6 +12,11 @@ services:
       - linteum_dev
     volumes:
       - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}" ]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   api:
     build:
@@ -22,10 +27,14 @@ services:
       - "${API_HOST_PORT}:${API_CONTAINER_PORT}"
     environment:
       - ConnectionStrings__DefaultConnection=Host=${DB_CONTAINER_NAME};Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
-      - MASTER_PASSWORD_HASH=${MASTER_PASSWORD_HASH}
+      - MASTER_PASSWORD=${MASTER_PASSWORD}
+      - MASTER_USER=${MASTER_USER}
+      - MASTER_EMAIL=${MASTER_EMAIL}
+      - PASSWORD_SALT=${PASSWORD_SALT}
       - ASPNETCORE_URLS=http://*:${API_CONTAINER_PORT}
     depends_on:
-      - db
+      db:
+        condition: service_healthy
     networks:
       - linteum_dev
     pull_policy: build
@@ -36,6 +45,7 @@ services:
       dockerfile: Linteum.BlazorApp/Dockerfile
     container_name: ${BLAZOR_CONTAINER_NAME}
     environment:
+      - PASSWORD_SALT=${PASSWORD_SALT}
       - API_CONTAINER_NAME=${API_CONTAINER_NAME}
       - API_CONTAINER_PORT=${API_CONTAINER_PORT}
       - ASPNETCORE_URLS=http://*:${BLAZOR_CONTAINER_PORT}

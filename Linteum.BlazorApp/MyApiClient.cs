@@ -43,7 +43,7 @@ public class MyApiClient
     
     public async Task<CanvasDto?> AddCanvasAsync(CanvasDto canvasDto, string? password)
     {
-        var passwordHash = string.IsNullOrEmpty(password) ? null : HashPassword(password);
+        var passwordHash = string.IsNullOrEmpty(password) ? null : Processing.HashPassword(password);
         var request = new HttpRequestMessage(HttpMethod.Post, $"/canvases/Add?passwordHash={Uri.EscapeDataString(passwordHash ?? string.Empty)}");
     
         await request.AddSessionId(_localStorage);
@@ -60,7 +60,7 @@ public class MyApiClient
 
     public async Task<(UserDto? User, Guid? SessionId)> LoginAsync(string email, string password)
     {
-        var passwordHash = HashPassword(password);
+        var passwordHash = Processing.HashPassword(password);
         var userDto = new UserDto { Email = email, LoginMethod = LoginMethod.Password };
         var response = await _httpClient.PostAsJsonAsync($"/users/login?passwordHashOrKey={Uri.EscapeDataString(passwordHash)}", userDto);
         if (!response.IsSuccessStatusCode)
@@ -78,12 +78,24 @@ public class MyApiClient
         return (loginResponse?.User, loginResponse?.SessionId);
     }
 
-    public async Task<bool> SignupAsync(string email, string password, string userName)
+    public async Task<(UserDto? User, Guid? SessionId)> SignupAsync(string email, string password, string userName)
     {
-        var passwordHash = HashPassword(password);
+        var passwordHash = Processing.HashPassword(password);
         var userDto = new UserDto { Email = email, UserName = userName, LoginMethod = LoginMethod.Password };
-        var response = await _httpClient.PostAsJsonAsync($"/users/add-or-update?passwordHashOrKey={Uri.EscapeDataString(passwordHash)}&loginMethod={(int)LoginMethod.Password}", userDto);
-        return response.IsSuccessStatusCode;
+        var response = await _httpClient.PostAsJsonAsync($"/users/add?passwordHashOrKey={Uri.EscapeDataString(passwordHash)}&loginMethod={(int)LoginMethod.Password}", userDto);
+        if (!response.IsSuccessStatusCode)
+            return (null, null);
+
+        var loginResponse = await response.Content.ReadFromJsonAsync<LoginResponse>();
+        if (loginResponse?.SessionId != null && loginResponse?.User != null && loginResponse?.User?.UserName != null && loginResponse?.User?.Email != null)
+        {
+            await _localStorage.SetItemAsync(LocalStorageKey.UserName, loginResponse.User?.UserName);
+            await _localStorage.SetItemAsync(LocalStorageKey.Email, loginResponse.User?.Email);
+            await _localStorage.SetItemAsync(LocalStorageKey.LoginMethod, LoginMethod.Password);
+            await SetSessionAsync(loginResponse.SessionId);
+        }
+        
+        return (loginResponse?.User, loginResponse?.SessionId);
     }
     
     public async Task<List<CanvasDto>> GetSubscribedCanvasesAsync()
@@ -94,13 +106,6 @@ public class MyApiClient
         response.EnsureSuccessStatusCode();
         var canvases = await response.Content.ReadFromJsonAsync<List<CanvasDto>>();
         return canvases ?? new List<CanvasDto>();
-    }
-    
-    private static string HashPassword(string password)
-    {
-        using var sha256 = SHA256.Create();
-        var hashedBytes = sha256.ComputeHash(Encoding.UTF8.GetBytes(password));
-        return Convert.ToBase64String(hashedBytes);
     }
 
     public async Task ChangeUsernameAsync(string userName)
@@ -142,7 +147,7 @@ public class MyApiClient
             throw new InvalidOperationException("Email is not set in local storage.");
         var existingLoginMethod = await _localStorage.GetItemAsync<LoginMethod>(LocalStorageKey.LoginMethod);
 
-        var passwordHash = HashPassword(password);
+        var passwordHash = Processing.HashPassword(password);
         var userDto = new UserDto { Email = existingEmail, LoginMethod = existingLoginMethod };
         var request = new HttpRequestMessage(HttpMethod.Post, $"/users/changePassword?passwordHashOrKey={Uri.EscapeDataString(passwordHash)}&loginMethod={(int)existingLoginMethod}");
         await request.AddSessionId(_localStorage);

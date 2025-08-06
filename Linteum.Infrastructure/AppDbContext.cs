@@ -100,6 +100,11 @@ public class AppDbContext : DbContext
             entity.Property(c => c.UpdatedAt);
             entity.Property(c => c.PasswordHash);
             entity.HasMany(c => c.Pixels).WithOne(p => p.Canvas).HasForeignKey(p => p.CanvasId);
+            entity.Property(c => c.CreatorId);
+            entity.HasOne(c => c.Creator)
+                .WithMany()
+                .HasForeignKey(c => c.CreatorId)
+                .OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<Subscription>(entity =>

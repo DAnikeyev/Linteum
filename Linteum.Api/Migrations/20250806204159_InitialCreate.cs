@@ -13,23 +13,6 @@ namespace Linteum.Api.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.CreateTable(
-                name: "Canvases",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    Name = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false),
-                    Width = table.Column<int>(type: "integer", nullable: false),
-                    Height = table.Column<int>(type: "integer", nullable: false),
-                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    PasswordHash = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_Canvases", x => x.Id);
-                });
-
-            migrationBuilder.CreateTable(
                 name: "Colors",
                 columns: table => new
                 {
@@ -60,6 +43,51 @@ namespace Linteum.Api.Migrations
                 });
 
             migrationBuilder.CreateTable(
+                name: "Canvases",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    CreatorId = table.Column<Guid>(type: "uuid", nullable: false),
+                    Name = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false),
+                    Width = table.Column<int>(type: "integer", nullable: false),
+                    Height = table.Column<int>(type: "integer", nullable: false),
+                    CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    PasswordHash = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_Canvases", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_Canvases_Users_CreatorId",
+                        column: x => x.CreatorId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Restrict);
+                });
+
+            migrationBuilder.CreateTable(
+                name: "LoginEvents",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uuid", nullable: false),
+                    UserId = table.Column<Guid>(type: "uuid", nullable: false),
+                    Provider = table.Column<int>(type: "integer", nullable: false),
+                    LoggedInAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
+                    IpAddress = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: true)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_LoginEvents", x => x.Id);
+                    table.ForeignKey(
+                        name: "FK_LoginEvents_Users_UserId",
+                        column: x => x.UserId,
+                        principalTable: "Users",
+                        principalColumn: "Id",
+                        onDelete: ReferentialAction.Cascade);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "BalanceChangedEvents",
                 columns: table => new
                 {
@@ -82,27 +110,6 @@ namespace Linteum.Api.Migrations
                         onDelete: ReferentialAction.Cascade);
                     table.ForeignKey(
                         name: "FK_BalanceChangedEvents_Users_UserId",
-                        column: x => x.UserId,
-                        principalTable: "Users",
-                        principalColumn: "Id",
-                        onDelete: ReferentialAction.Cascade);
-                });
-
-            migrationBuilder.CreateTable(
-                name: "LoginEvents",
-                columns: table => new
-                {
-                    Id = table.Column<Guid>(type: "uuid", nullable: false),
-                    UserId = table.Column<Guid>(type: "uuid", nullable: false),
-                    Provider = table.Column<int>(type: "integer", nullable: false),
-                    LoggedInAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
-                    IpAddress = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: true)
-                },
-                constraints: table =>
-                {
-                    table.PrimaryKey("PK_LoginEvents", x => x.Id);
-                    table.ForeignKey(
-                        name: "FK_LoginEvents_Users_UserId",
                         column: x => x.UserId,
                         principalTable: "Users",
                         principalColumn: "Id",
@@ -205,6 +212,11 @@ namespace Linteum.Api.Migrations
                 name: "IX_BalanceChangedEvents_UserId_CanvasId",
                 table: "BalanceChangedEvents",
                 columns: new[] { "UserId", "CanvasId" });
+
+            migrationBuilder.CreateIndex(
+                name: "IX_Canvases_CreatorId",
+                table: "Canvases",
+                column: "CreatorId");
 
             migrationBuilder.CreateIndex(
                 name: "IX_Canvases_Name",

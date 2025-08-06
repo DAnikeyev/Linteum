@@ -3,6 +3,8 @@ namespace Linteum.Shared.DTO;
 public class CanvasDto
 {
     public Guid Id { get; set; }
+ 
+    public Guid CreatorId { get; set; }
     
     public string Name { get; set; } = null!;
     
