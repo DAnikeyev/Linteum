@@ -9,7 +9,7 @@ namespace Linteum.Infrastructure;
 
 public class DbSeeder
 {
-    public static void SeedDefaults(AppDbContext context, Config config, IMapper mapper, ICanvasRepository canvasRepository, ILogger<DbSeeder> logger)
+    public static async Task SeedDefaults(AppDbContext context, Config config, IMapper mapper, RepositoryManager repositoryManager, ILogger<DbSeeder> logger)
     {
         logger.LogInformation("Starting synchronous database seeding...");
 
@@ -50,7 +50,7 @@ public class DbSeeder
                 Id = Guid.NewGuid(),
                 UserName = masterUser,
                 Email = masterEmail,
-                PasswordHashOrKey = Shared.Processing.HashPassword(masterPassword),
+                PasswordHashOrKey = Shared.SecurityHelper.HashPassword(masterPassword),
                 CreatedAt = DateTime.UtcNow,
                 LoginMethod = LoginMethod.Password,
             };
@@ -86,7 +86,7 @@ public class DbSeeder
             
             try
             {
-                var addedDefaultTask = canvasRepository.TryAddCanvas(canvas, null);
+                var addedDefaultTask = repositoryManager.CanvasRepository.TryAddCanvas(canvas, null);
                 addedDefaultTask.Wait();
                 var addedDefault = addedDefaultTask.Result;
                 
@@ -108,8 +108,22 @@ public class DbSeeder
         {
             logger.LogDebug("Default canvas already exists: {CanvasName}", defaultCanvasName);
         }
-
+        
+        await DeleteCanvasesWithoutSubscriptions(repositoryManager, logger, config);
         context.SaveChanges();
         logger.LogInformation("Database seeding completed successfully");
+    }
+
+    private static async Task DeleteCanvasesWithoutSubscriptions(RepositoryManager repositoryManager, ILogger<DbSeeder> logger, Config config)
+    {
+        foreach (var canvas in await repositoryManager.CanvasRepository.GetAllAsync())
+        {
+            var subs = await repositoryManager.SubscriptionRepository.GetByCanvasIdAsync(canvas.Id);
+            if (!subs.Any() && canvas.Name != config.DefaultCanvasName)
+            {
+                logger.LogInformation("Deleting canvas without subscriptions: {CanvasName}", canvas.Name);
+                await repositoryManager.CanvasRepository.TryDeleteCanvasByName(canvas.Name);
+            }
+        }
     }
 }

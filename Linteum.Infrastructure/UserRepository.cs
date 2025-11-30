@@ -58,7 +58,7 @@ public class UserRepository : IUserRepository
             .FirstOrDefaultAsync();
     }
 
-    public async Task<UserDto?> AddOrUpdateUserAsync(UserDto userDto, PasswordDto? passwordDto = null)
+    public async Task<UserDto?> AddOrUpdateUserAsync(UserDto userDto, UserPaswordDto? passwordDto = null)
     {
         await using var transaction = await _context.Database.BeginTransactionAsync();
         try
@@ -131,11 +131,11 @@ public class UserRepository : IUserRepository
         return _mapper.Map<UserDto>(user);
     }
 
-    public Task<UserDto?> TryLogin(UserDto userDto, PasswordDto passwordDto)
+    public Task<UserDto?> TryLogin(UserDto userDto, UserPaswordDto userPaswordDto)
     {
         return _context.Users
         .AsNoTracking()
-        .Where(u => u.Email == userDto.Email && u.PasswordHashOrKey == passwordDto.PasswordHashOrKey && u.LoginMethod == passwordDto.LoginMethod)
+        .Where(u => u.Email == userDto.Email && u.PasswordHashOrKey == userPaswordDto.PasswordHashOrKey && u.LoginMethod == userPaswordDto.LoginMethod)
         .ProjectTo<UserDto>(_mapper.ConfigurationProvider)
         .FirstOrDefaultAsync();
     }

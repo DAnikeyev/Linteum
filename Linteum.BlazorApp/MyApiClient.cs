@@ -43,7 +43,7 @@ public class MyApiClient
     
     public async Task<CanvasDto?> AddCanvasAsync(CanvasDto canvasDto, string? password)
     {
-        var passwordHash = string.IsNullOrEmpty(password) ? null : Processing.HashPassword(password);
+        var passwordHash = string.IsNullOrEmpty(password) ? null : SecurityHelper.HashPassword(password);
         var request = new HttpRequestMessage(HttpMethod.Post, $"/canvases/Add?passwordHash={Uri.EscapeDataString(passwordHash ?? string.Empty)}");
     
         await request.AddSessionId(_localStorage);
@@ -52,7 +52,8 @@ public class MyApiClient
         var response = await _httpClient.SendAsync(request);
         if (!response.IsSuccessStatusCode)
         {
-            throw new Exception($"Failed to add canvas. Status code: {response.StatusCode}");
+            var errorContent = await response.Content.ReadAsStringAsync() ?? "No additional error information.";
+            throw new Exception($"Failed to add canvas. {errorContent}");
         }
 
         return await response.Content.ReadFromJsonAsync<CanvasDto>();
@@ -60,7 +61,7 @@ public class MyApiClient
 
     public async Task<(UserDto? User, Guid? SessionId)> LoginAsync(string email, string password)
     {
-        var passwordHash = Processing.HashPassword(password);
+        var passwordHash = SecurityHelper.HashPassword(password);
         var userDto = new UserDto { Email = email, LoginMethod = LoginMethod.Password };
         var response = await _httpClient.PostAsJsonAsync($"/users/login?passwordHashOrKey={Uri.EscapeDataString(passwordHash)}", userDto);
         if (!response.IsSuccessStatusCode)
@@ -80,7 +81,7 @@ public class MyApiClient
 
     public async Task<(UserDto? User, Guid? SessionId)> SignupAsync(string email, string password, string userName)
     {
-        var passwordHash = Processing.HashPassword(password);
+        var passwordHash = SecurityHelper.HashPassword(password);
         var userDto = new UserDto { Email = email, UserName = userName, LoginMethod = LoginMethod.Password };
         var response = await _httpClient.PostAsJsonAsync($"/users/add?passwordHashOrKey={Uri.EscapeDataString(passwordHash)}&loginMethod={(int)LoginMethod.Password}", userDto);
         if (!response.IsSuccessStatusCode)
@@ -96,6 +97,62 @@ public class MyApiClient
         }
         
         return (loginResponse?.User, loginResponse?.SessionId);
+    }
+
+    public async Task<bool> SubscribeAsync(string canvasName, string? password)
+    {
+        var passwordHash = string.IsNullOrEmpty(password) ? null : SecurityHelper.HashPassword(password);
+        var canvasDto = new CanvasDto { Name = canvasName };
+        var passwordDto = new CanvasPasswordDto { PasswordHash = passwordHash };
+        var requestDto = new SubscribeCanvasRequestDto
+        {
+            Canvas = canvasDto,
+            Password = passwordDto
+        };
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "/canvases/subscribe");
+        await request.AddSessionId(_localStorage);
+        request.SetJsonContent(requestDto);
+        var response = await _httpClient.SendAsync(request);
+    
+        if (response.IsSuccessStatusCode)
+        {
+            return true;
+        }
+
+        if(response.StatusCode == HttpStatusCode.ServiceUnavailable)
+            throw new Exception("Service is currently unavailable. Please try again later.");
+        if(response.StatusCode == HttpStatusCode.BadRequest)
+            throw new Exception("Cannot subscribe to canvas");
+        if(response.StatusCode == HttpStatusCode.NotFound)
+            throw new Exception("Canvas is not found.");
+        if(response.StatusCode == HttpStatusCode.Unauthorized)
+            throw new Exception("Password is incorrect.");
+        throw new Exception($"Failed to subscribe to {canvasName}. This exception is unexpected.");
+    }
+
+    public async Task<bool> UnsubscribeAsync(string canvasName)
+    {
+        var canvasDto = new CanvasDto { Name = canvasName };
+        var request = new HttpRequestMessage(HttpMethod.Post, "/canvases/unsubscribe");
+        await request.AddSessionId(_localStorage);
+        request.SetJsonContent(canvasDto);
+        var response = await _httpClient.SendAsync(request);
+    
+        if (response.IsSuccessStatusCode)
+        {
+            return true;
+        }
+
+        if(response.StatusCode == HttpStatusCode.ServiceUnavailable)
+            throw new Exception("Service is currently unavailable. Please try again later.");
+        if(response.StatusCode == HttpStatusCode.BadRequest)
+            throw new Exception($"Cannot unsubscribe from canvas {canvasName}");
+        if(response.StatusCode == HttpStatusCode.NotFound)
+            throw new Exception("Canvas is not found.");
+        if(response.StatusCode == HttpStatusCode.Unauthorized)
+            throw new Exception("Password is incorrect.");
+        throw new Exception($"Failed to unsubscribe from {canvasName}. This exception is unexpected.");
     }
     
     public async Task<List<CanvasDto>> GetSubscribedCanvasesAsync()
@@ -147,7 +204,7 @@ public class MyApiClient
             throw new InvalidOperationException("Email is not set in local storage.");
         var existingLoginMethod = await _localStorage.GetItemAsync<LoginMethod>(LocalStorageKey.LoginMethod);
 
-        var passwordHash = Processing.HashPassword(password);
+        var passwordHash = SecurityHelper.HashPassword(password);
         var userDto = new UserDto { Email = existingEmail, LoginMethod = existingLoginMethod };
         var request = new HttpRequestMessage(HttpMethod.Post, $"/users/changePassword?passwordHashOrKey={Uri.EscapeDataString(passwordHash)}&loginMethod={(int)existingLoginMethod}");
         await request.AddSessionId(_localStorage);

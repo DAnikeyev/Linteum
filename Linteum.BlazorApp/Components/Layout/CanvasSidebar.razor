@@ -1,16 +1,29 @@
+@using System.Net
+@using Linteum.BlazorApp.Components.Notification
+@using Linteum.Shared
 @using Linteum.Shared.DTO
+@using NLog
+@inject Config DefaultConfig
 @inject MyApiClient ApiClient
 @inject LocalStorageService LocalStorageService
 @inject NavigationManager Navigation
+@inject NotificationService NotificationService
+
 @code {
     [Parameter]
     public EventCallback<bool> CollapseToggled { get; set; }
-
+    [CascadingParameter]
+    public NotificationManager? NotificationManager { get; set; }
     private bool _isCollapsed = false;
     private bool _isLoading = true;
     private List<CanvasDto>? _canvases;
     private bool _hasRendered = false;
     private string? _userName = string.Empty;
+    private static readonly Logger _nlog = LogManager.GetCurrentClassLogger();
+
+    // single pending unsubscribe at a time
+    private string? _pendingCanvasName;
+    private CancellationTokenSource? _pendingCts;
 
     public async Task RefreshCanvases()
     {
@@ -18,7 +31,7 @@
         await LoadCanvases();
         StateHasChanged();
     }
-    
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender && !_hasRendered)
@@ -35,7 +48,7 @@
             StateHasChanged();
         }
     }
-    
+
     private async Task LoadCanvases()
     {
         _isLoading = true;
@@ -49,8 +62,9 @@
             Navigation.NavigateTo("/login");
             _canvases = new List<CanvasDto>();
         }
-        catch
+        catch (Exception ex)
         {
+            _nlog.Error(ex, "Failed to load subscribed canvases");
             _canvases = new List<CanvasDto>();
         }
         finally
@@ -65,7 +79,7 @@
         await LocalStorageService.SetItemAsync(LocalStorageKey.SidebarCollapsed, _isCollapsed);
         await CollapseToggled.InvokeAsync(_isCollapsed);
     }
-    
+
     private void NavigateToCanvas(string canvasName)
     {
         Navigation.NavigateTo($"/canvas/{canvasName}");
@@ -84,6 +98,166 @@
     {
         Navigation.NavigateTo("/settings");
     }
+
+    private async Task NotifyAsync(CustomNotification note)
+    {
+        try
+        {
+            await NotificationService.Writer.WriteAsync(note);
+        }
+        catch (Exception ex)
+        {
+            _nlog.Warn(ex, "NotificationService.Writer.WriteAsync failed");
+        }
+    }
+    
+    private static Exception Unwrap(Exception ex)
+    {
+        while (ex is AggregateException ae && ae.InnerException != null)
+            ex = ae.InnerException;
+        while (ex.InnerException != null)
+            ex = ex.InnerException;
+        return ex;
+    }
+    
+    private static string ParseExceptionMessage(Exception ex, string? canvasName = null)
+    {
+        ex = Unwrap(ex);
+
+        if (ex is HttpRequestException httpEx)
+        {
+            if (httpEx.StatusCode.HasValue)
+            {
+                switch (httpEx.StatusCode.Value)
+                {
+                    case HttpStatusCode.ServiceUnavailable:
+                        return "Service is currently unavailable. Please try again later.";
+                    case HttpStatusCode.BadRequest:
+                        return canvasName is null ? "Bad request." : $"Cannot unsubscribe from {canvasName}.";
+                    case HttpStatusCode.NotFound:
+                        return "Canvas is not found.";
+                    case HttpStatusCode.Unauthorized:
+                        return "You are not authorized. Please log in again.";
+                    default:
+                        return httpEx.Message ?? "Network error occurred.";
+                }
+            }
+            return httpEx.Message ?? "Network error occurred.";
+        }
+
+        if (ex is TaskCanceledException)
+            return "Request timed out or was canceled.";
+
+        return !string.IsNullOrEmpty(ex.Message) ? ex.Message : "An unexpected error occurred.";
+    }
+    private async Task OnUnsubscribeClicked(string canvasName)
+    {
+        if (_pendingCanvasName != canvasName)
+        {
+            try
+            {
+                _pendingCts?.Cancel();
+                _pendingCts?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                _nlog.Warn(ex, "Error while cancelling previous pending unsubscribe CTS");
+            }
+
+            _pendingCanvasName = canvasName;
+
+            try
+            {
+                var note = new CustomNotification { Message = $"Press again to unsubscribe from {canvasName}", Type = NotificationType.Info };
+                await NotifyAsync(note);
+            }
+            catch (Exception ex)
+            {
+                _nlog.Warn(ex, "Failed to send 'press again' notification");
+            }
+
+            _pendingCts = new CancellationTokenSource();
+            var ct = _pendingCts.Token;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(3000, ct);
+                    await InvokeAsync(() =>
+                    {
+                        _pendingCanvasName = null;
+                        StateHasChanged();
+                    });
+                }
+                catch (TaskCanceledException) { /* expected when canceled */ }
+                catch (Exception ex)
+                {
+                    _nlog.Warn(ex, "Error in pending timeout task");
+                }
+            });
+
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        try
+        {
+            var success = await ApiClient.UnsubscribeAsync(canvasName);
+            if (success)
+            {
+                var item = _canvases?.FirstOrDefault(c => c.Name == canvasName);
+                if (item != null)
+                    _canvases?.Remove(item);
+
+                _nlog.Info("Successfully unsubscribed from {0}", canvasName);
+
+                try
+                {
+                    var note = new CustomNotification { Message = $"Unsubscribed from {canvasName}", Type = NotificationType.Success };
+                    await NotifyAsync(note);
+                }
+                catch (Exception ex)
+                {
+                    _nlog.Warn(ex, "Failed to send success notification for unsubscribe {0}", canvasName);
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            _nlog.Error(ex, "Unsubscribe failed for {0}", canvasName);
+            var friendly = ParseExceptionMessage(ex, canvasName);
+            try
+            {
+                var note = new CustomNotification { Message = friendly, Type = NotificationType.Error };
+                await NotifyAsync(note);
+            }
+            catch (Exception logEx)
+            {
+                _nlog.Warn(logEx, "Failed to send error notification after unsubscribe failure for {0}", canvasName);
+            }
+        }
+        finally
+        {
+            try
+            {
+                _pendingCts?.Cancel();
+                _pendingCts?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                _nlog.Warn(ex, "Error while disposing pending CTS in finally");
+            }
+
+            _pendingCts = null;
+            _pendingCanvasName = null;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private bool IsPending(string canvasName) => _pendingCanvasName == canvasName;
+
+    private bool IsHome(string? name) =>
+        !string.IsNullOrEmpty(name) && string.Equals(name, DefaultConfig.DefaultCanvasName, StringComparison.OrdinalIgnoreCase);
 }
 <div class="sidebar @(_isCollapsed ? "collapsed" : "")">
     <div class="sidebar-header">
@@ -105,12 +279,24 @@
         else
         {
             <ul class="list-group list-group-flush sidebar-canvas-list">
+
                 @foreach (var canvas in _canvases)
                 {
-                    <li class="list-group-item sidebar-canvas-item" @onclick="() => NavigateToCanvas(canvas.Name)">
-                        <div class="d-flex align-items-center">
-                            <span class="me-2 fs-5">🎨</span>
+                    var isHome = IsHome(canvas.Name);
+                    <li class="list-group-item sidebar-canvas-item d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center" @onclick="@(() => NavigateToCanvas(canvas.Name))" style="cursor: pointer; flex:1;">
+                            <span class="me-2 fs-5">@(isHome ? "🏠" : "🎨") </span>
                             <span class="text-truncate">@canvas.Name</span>
+                        </div>
+                        <div class="d-flex align-items-center">
+                            @if (!isHome)
+                            {
+                                <button class="btn btn-danger btn-unsubscribe" title="Unsubscribe"
+                                        @onclick="async () => await OnUnsubscribeClicked(canvas.Name)"
+                                        @onclick:stopPropagation="true">
+                                    Unsubscribe
+                                </button>
+                            }
                         </div>
                     </li>
                 }

@@ -54,7 +54,7 @@ public class CanvasRepository : ICanvasRepository
 
     
     //ToDo: Do we need to remove subsciptions and pixels?
-    public async Task<bool> TryDeleteCanvasByName(string name, string passwordHash)
+    public async Task<bool> TryDeleteCanvasByName(string name)
     {
         var canvas = await _context.Canvases
             .FirstOrDefaultAsync(c => c.Name == name);
@@ -71,13 +71,6 @@ public class CanvasRepository : ICanvasRepository
             return false;
         }
         
-        var passwordMatch = (canvas.PasswordHash is not null && canvas.PasswordHash == passwordHash) || passwordHash == _masterPasswordHash;
-        
-        if(!passwordMatch)
-        {
-            _logger.LogWarning($"Canvas with name {name} found, but password hash does not match.");
-            return false;
-        }
         _context.Canvases.Remove(canvas);
         try
         {

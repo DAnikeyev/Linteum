@@ -136,4 +136,4 @@ h1:focus {
 
 .notification-box.success { background: var(--accept); }
 .notification-box.error { background: var(--reject); }
-.notification-box.info { background: var(--accent-1); }
+.notification-box.info { background: var(--accent-2); }

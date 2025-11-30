@@ -1,3 +1,4 @@
+using Linteum.Api.Configuration;
 using Linteum.Infrastructure;
 using NLog;
 using NLog.Web;
@@ -11,7 +12,7 @@ try
 
     builder.Logging.ClearProviders();
     builder.Host.UseNLog();
-
+    builder.Services.Configure<CanvasSizeOptions>(builder.Configuration.GetSection("CanvasSize"));
     builder.Services.AddApplicationServices(builder.Configuration);
     builder.Services.AddControllers();
 

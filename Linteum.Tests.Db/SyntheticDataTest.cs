@@ -25,7 +25,7 @@ internal class SyntheticDataTest
         DbHelper = new DbHelper(DbContext);
         DbContext.Database.EnsureDeleted();
         DbContext.Database.EnsureCreated();
-        DbSeeder.SeedDefaults(DbContext,new Config(), DbHelper.Mapper, RepoManager.CanvasRepository, DbHelper.LoggerFactoryInterface.CreateLogger<DbSeeder>());
+        DbSeeder.SeedDefaults(DbContext,new Config(), DbHelper.Mapper, RepoManager, DbHelper.LoggerFactoryInterface.CreateLogger<DbSeeder>());
         SeedData();
     }
 

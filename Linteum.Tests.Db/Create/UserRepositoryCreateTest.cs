@@ -15,7 +15,7 @@ namespace Linteum.Tests.Db.Create
                 UserName = "TestUser",
                 LoginMethod = LoginMethod.Password,
             };
-            var passwordDto = new PasswordDto
+            var passwordDto = new UserPaswordDto
             {
                 PasswordHashOrKey = "hash",
                 LoginMethod = LoginMethod.Password,

@@ -4,6 +4,7 @@ namespace Linteum.Tests.Db.Delete;
 
 internal class CanvasRepositoryDeleteTest : SyntheticDataTest
 {
+    [Explicit("For now deleting Canvas is automatic during startUp and does not require password")]
     [Test]
     public async Task TryDeleteCanvas()
     {
@@ -32,16 +33,16 @@ internal class CanvasRepositoryDeleteTest : SyntheticDataTest
         Assert.That(allPublicCanvases.Count, Is.EqualTo(2));
         Assert.That(allCanvases.Count, Is.EqualTo(3));
         
-        var deleteWithWrongPassword = await canvasRepo.TryDeleteCanvasByName(newCanvasWithPassword.Name, "Please");
+        var deleteWithWrongPassword = await canvasRepo.TryDeleteCanvasByName(newCanvasWithPassword.Name);
         Assert.IsFalse(deleteWithWrongPassword);
         
-        var deleteDefault = await canvasRepo.TryDeleteCanvasByName(DefaultConfig.DefaultCanvasName, DefaultConfig.MasterPasswordHash);
+        var deleteDefault = await canvasRepo.TryDeleteCanvasByName(DefaultConfig.DefaultCanvasName);
         Assert.IsFalse(deleteDefault);
         
-        var deleteWithPassword = await canvasRepo.TryDeleteCanvasByName(newCanvasWithPassword.Name, password);
+        var deleteWithPassword = await canvasRepo.TryDeleteCanvasByName(newCanvasWithPassword.Name);
         Assert.IsTrue(deleteWithPassword);
         
-        var deleteWithoutPassword = await canvasRepo.TryDeleteCanvasByName(newCanvasWithoutPassword.Name, DefaultConfig.MasterPasswordHash);
+        var deleteWithoutPassword = await canvasRepo.TryDeleteCanvasByName(newCanvasWithoutPassword.Name);
         Assert.True(deleteWithoutPassword);
         
         

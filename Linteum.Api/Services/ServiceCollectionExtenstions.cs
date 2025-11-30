@@ -11,12 +11,19 @@ namespace Linteum.Api.Services
         {
             services.AddAutoMapper(typeof(MappingProfile));
             
+            DotNetEnv.Env.Load("../.env");
+            var isWindows = System.Runtime.InteropServices.RuntimeInformation
+                .IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows);
+
+            var connectionString = isWindows
+                ? Environment.GetEnvironmentVariable("DEFAULT_DB_HOST_CONNECTION")
+                : configuration.GetConnectionString("DefaultConnection");
+
             services.AddDbContext<AppDbContext>(options =>
-                options.UseNpgsql(configuration.GetConnectionString("DefaultConnection"),
+                options.UseNpgsql(connectionString,
                     b => b.MigrationsAssembly("Linteum.Api")));
             services.AddSingleton(new Config());
             services.AddSingleton<SessionService>();
-            DotNetEnv.Env.Load("../.env");
             var masterPass = Environment.GetEnvironmentVariable("MASTER_PASSWORD");
             if (string.IsNullOrEmpty(masterPass))
             {

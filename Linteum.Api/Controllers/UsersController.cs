@@ -51,7 +51,7 @@ public class UsersController : ControllerBase
     [HttpPost("add-or-update")]
     public async Task<IActionResult> AddOrUpdateUser([FromBody] UserDto userDto, [FromQuery] string? passwordHashOrKey, [FromQuery] int loginMethod = 0)
     {
-        var passwordDto = new PasswordDto { PasswordHashOrKey = passwordHashOrKey, LoginMethod = (Linteum.Shared.LoginMethod)loginMethod };
+        var passwordDto = new UserPaswordDto { PasswordHashOrKey = passwordHashOrKey, LoginMethod = (Linteum.Shared.LoginMethod)loginMethod };
         var result = await _repoManager.UserRepository.AddOrUpdateUserAsync(userDto, passwordDto);
         if (result == null)
             return BadRequest("Could not add or update user.");
@@ -72,7 +72,7 @@ public class UsersController : ControllerBase
     {
         _logger.LogInformation("Login attempt for user: {Email}", userDto.Email);
 
-        var passwordDto = new PasswordDto { PasswordHashOrKey = passwordHashOrKey, LoginMethod = userDto.LoginMethod };
+        var passwordDto = new UserPaswordDto { PasswordHashOrKey = passwordHashOrKey, LoginMethod = userDto.LoginMethod };
         var result = await _repoManager.UserRepository.TryLogin(userDto, passwordDto);
 
         if (result == null)
@@ -98,7 +98,7 @@ public class UsersController : ControllerBase
     {
         _logger.LogInformation("Signup attempt for user: {Email}", userDto.Email);
 
-        var passwordDto = new PasswordDto { PasswordHashOrKey = passwordHashOrKey, LoginMethod = userDto.LoginMethod };
+        var passwordDto = new UserPaswordDto { PasswordHashOrKey = passwordHashOrKey, LoginMethod = userDto.LoginMethod };
         var userWithEmail = await _repoManager.UserRepository.GetByEmailAsync(userDto.Email);
         
         if(userDto.UserName is null || userDto.UserName.Length < 4)
@@ -187,7 +187,7 @@ public class UsersController : ControllerBase
             return NotFound();
         }
 
-        var passwordDto = new PasswordDto
+        var passwordDto = new UserPaswordDto
         {
             PasswordHashOrKey = passwordHashOrKey,
             LoginMethod = (Linteum.Shared.LoginMethod)loginMethod

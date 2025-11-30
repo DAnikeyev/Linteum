@@ -28,13 +28,13 @@ namespace Linteum.Api.Services
             {
                 var context = services.GetRequiredService<AppDbContext>();
                 var mapper = services.GetRequiredService<IMapper>();
-                var canvasRepository = services.GetRequiredService<RepositoryManager>().CanvasRepository;
+                var repoManager = services.GetRequiredService<RepositoryManager>();
                 var dbConfig = services.GetRequiredService<Config>();
                 _logger.LogInformation("Starting database migration...");
                 await context.Database.MigrateAsync();
 
                 _logger.LogInformation("Starting database seeding...");
-                DbSeeder.SeedDefaults(context, dbConfig, mapper, canvasRepository, _loggerForSeeding);
+                await DbSeeder.SeedDefaults(context, dbConfig, mapper, repoManager, _loggerForSeeding);
 
                 _logger.LogInformation("Database initialization completed successfully");
             }

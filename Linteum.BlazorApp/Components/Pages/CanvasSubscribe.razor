@@ -1,0 +1,97 @@
+@page "/canvas_subscribe"
+@using Linteum.BlazorApp.Components.Layout
+@using Linteum.BlazorApp.Components.Notification
+@using Linteum.Shared.DTO
+@layout Layout.BaseLayout
+@inject MyApiClient ApiClient
+@inject NotificationService NotificationService
+
+<div class="settings-container">
+    <h2>Subscribe to Canvas</h2>
+
+    <!-- Canvas Name -->
+    <div class="mb-4">
+        <label for="canvasNameInput" class="form-label">Canvas Name</label>
+        <div class="d-flex align-items-center gap-2">
+            <input id="canvasNameInput"
+                   class="form-control fixed-width me-2"
+                   @bind="_canvasName"
+                   autocomplete="new-name" />
+        </div>
+    </div>
+
+    <!-- Optional Password -->
+    <div class="mb-4">
+        <label for="canvasPasswordInput" class="form-label">Canvas Password (optional)</label>
+        <div class="d-flex align-items-center gap-2">
+            <input type="password"
+                   id="canvasPasswordInput"
+                   class="form-control fixed-width me-2"
+                   @bind="_canvasPassword"
+                   autocomplete="new-password" />
+        </div>
+        <small class="text-muted">Leave empty if the canvas has no password.</small>
+    </div>
+
+    <!-- Submit Button -->
+    <div class="mt-4 d-flex align-items-center gap-2">
+        <button class="btn btn-primary" @onclick="SubscribeToCanvas">Subscribe</button>
+    </div>
+</div>
+
+@code {
+    
+    [CascadingParameter]
+    private CanvasSidebar? Sidebar { get; set; }
+    private string? _canvasName;
+    private string? _canvasPassword;
+
+    private async Task SubscribeToCanvas()
+    {
+        if (!ValidateForm())
+        {
+            return;
+        }
+
+        try
+        {
+            await ApiClient.SubscribeAsync(_canvasName!, _canvasPassword);
+
+            await NotificationService.NotifyAsync(new CustomNotification
+            {
+                Message = $"Subscribed to canvas '{_canvasName}' successfully.",
+                Type = NotificationType.Success
+            });
+            
+            _canvasName = null;
+            _canvasPassword = null;
+            if (Sidebar != null)
+                await Sidebar.RefreshCanvases();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            var error = $"Error subscribing to canvas: {ex?.Message ?? "No message"}";
+            await NotificationService.NotifyAsync(new CustomNotification
+            {
+                Message = error,
+                Type = NotificationType.Error
+            });
+        }
+    }
+
+    private bool ValidateForm()
+    {
+        if (string.IsNullOrWhiteSpace(_canvasName))
+        {
+            _ = NotificationService.NotifyAsync(new CustomNotification
+            {
+                Message = "Canvas name cannot be empty.",
+                Type = NotificationType.Error
+            });
+            return false;
+        }
+
+        return true;
+    }
+}

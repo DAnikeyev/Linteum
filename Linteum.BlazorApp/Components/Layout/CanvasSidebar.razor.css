@@ -1,10 +1,11 @@
+/* File: Linteum.BlazorApp/Components/Layout/CanvasSidebar.razor.css */
 .sidebar {
     width: 300px;
     min-width: 300px;
     background: var(--accent1);
     border-right: 1px solid var(--accent3);
     transition: width 0.2s, min-width 0.2s, visibility 0.2s;
-    min-height: 100vh;
+    height: 100vh; /* use fixed height so flex children size correctly */
     position: fixed;
     left: 0;
     top: 0;
@@ -84,8 +85,10 @@
 
 .sidebar-content {
     flex: 1 1 auto;
+    min-height: 0; /* allow the flex child to shrink and enable scrolling */
     overflow-y: auto;
     padding: 0.5rem 0;
+    padding-bottom: 1rem; /* ensure a little space above the bottom actions */
     transition: opacity 0.2s;
     opacity: 1;
 }
@@ -135,21 +138,21 @@
     box-shadow: 0 2px 8px rgba(31,32,112,0.13);
 }
 
+/* Converted from absolute footer to a flex footer so it never overlaps content */
 .sidebar-bottom-actions {
-    position: absolute;
-    bottom: 1.5rem;
-    left: 1rem;
-    right: 1rem;
+    flex: 0 0 auto;
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
     z-index: 1050;
+    margin: 0 1rem 1.5rem; /* place at the bottom via normal flow */
     width: calc(100% - 2rem);
     min-width: 0;
     max-width: 276px;
     transition: opacity 0.2s;
     overflow: hidden;
     opacity: 1;
+    align-self: stretch;
 }
 
 .sidebar.collapsed .sidebar-bottom-actions {
@@ -207,3 +210,15 @@
     color: var(--accent3) !important;
 }
 
+/* File: `Linteum.BlazorApp/Components/Layout/CanvasSidebar.razor.css` */
+.btn-unsubscribe {
+    font-size: 0.72rem;        /* smaller text */
+    padding: 0.18rem 0.36rem;  /* tighter padding */
+    height: 28px;              /* reduce overall height */
+    line-height: 1;            /* align text vertically */
+    min-width: 0;              /* avoid wide minimum */
+    border-radius: 4px;        /* slightly rounded */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}

@@ -1,0 +1,208 @@
+/* CanvasSubscribe.razor.css */
+.settings-container {
+    background-color: transparent;
+    padding: 0;
+    border-radius: 0;
+    box-shadow: none;
+    width: 100%;
+    margin-left: 3rem;
+    border: none;
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    position: relative;
+}
+
+.settings-container h2 {
+    color: var(--accent3);
+    font-weight: 700;
+    text-align: left;
+    margin-bottom: 0.5rem;
+}
+
+.settings-container label {
+    color: var(--accent3);
+    font-weight: 600;
+    margin-bottom: 0.08rem;
+    font-size: 0.98rem;
+}
+
+.settings-container .form-control {
+    background: var(--accent-1);
+    border: 1.5px solid var(--accent2);
+    color: var(--accent3);
+    border-radius: 6px;
+    padding: 0.32rem 0.55rem;
+    font-size: 0.98rem;
+    transition: border 0.2s;
+}
+
+.settings-container .form-control:focus {
+    border-color: var(--accent2);
+    outline: none;
+    background: var(--accent0);
+}
+
+.settings-container .form-control:disabled {
+    background-color: #e0e0e0 !important;
+    color: #888 !important;
+    border-color: #cccccc !important;
+    opacity: 1;
+}
+
+.settings-container .input-group-text {
+    background: var(--accent1);
+    color: var(--accent3);
+    border: 1.5px solid var(--accent2);
+    border-radius: 0 6px 6px 0;
+}
+
+.settings-container .input-group-text.email-lock-bg {
+    background-color: #e0e0e0 !important;
+    color: #888 !important;
+    border-color: #cccccc !important;
+}
+
+.settings-container .btn-primary {
+    background: var(--accent2);
+    border: 2px solid var(--accent-2);
+    color: #fff;
+    font-weight: 600;
+    border-radius: 6px;
+    transition: background 0.2s, border 0.2s;
+    font-size: 0.98rem;
+    padding: 0.32rem 0.5rem;
+}
+
+.settings-container .btn-primary:hover {
+    background: var(--accent2p5);
+    border-color: var(--accent-2p5);
+}
+
+.settings-container .btn-danger {
+    background: var(--reject);
+    border: none;
+    color: #fff;
+    font-weight: 600;
+    border-radius: 6px;
+    transition: background 0.2s;
+    font-size: 0.98rem;
+    padding: 0.32rem 0.5rem;
+}
+
+.settings-container .btn-danger:hover {
+    background: #b22200;
+}
+
+.settings-container .alert-success {
+    background: var(--accept);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-weight: 500;
+    font-size: 0.97rem;
+    padding: 0.32rem 0.8rem;
+    display: flex;
+    align-items: center;
+    height: 2.25rem;
+    box-sizing: border-box;
+}
+
+.settings-container .alert-danger {
+    background: var(--reject);
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-weight: 500;
+    font-size: 0.97rem;
+    padding: 0.32rem 0.8rem;
+    display: flex;
+    align-items: center;
+    height: 2.25rem;
+    box-sizing: border-box;
+}
+
+.settings-container .alert-info {
+    background: var(--accent1);
+    color: var(--accent3);
+    border: none;
+    border-radius: 6px;
+    font-weight: 500;
+    font-size: 0.97rem;
+    padding: 0.32rem 0.8rem;
+    display: flex;
+    align-items: center;
+    height: 2.25rem;
+    box-sizing: border-box;
+}
+
+.settings-container .fixed-alert {
+    min-width: 220px;
+    max-width: 360px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-align: center;
+    display: flex;
+    align-items: center;
+    height: 2.25rem;
+    box-sizing: border-box;
+    padding: 0.32rem 0.8rem;
+    margin-left: 0;
+}
+
+.settings-notification-area {
+    min-height: 2.5rem;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: flex-end;
+    gap: 0.3rem;
+    margin-top: 1.2rem;
+}
+
+.settings-container small.text-muted {
+    color: var(--accent3);
+    opacity: 0.7;
+}
+
+.settings-container .fixed-width {
+    width: 260px;
+}
+
+.settings-container .me-2 {
+    margin-right: 0.5rem;
+}
+
+.settings-container .mt-1 {
+    margin-top: 0.12rem;
+}
+
+.settings-container .mt-3 {
+    margin-top: 0.18rem;
+}
+
+.settings-container .mb-3 {
+    margin-bottom: 0.18rem;
+}
+
+.settings-container .mb-4 {
+    margin-bottom: 0.15rem;
+}
+
+.settings-container .d-flex {
+    display: flex;
+}
+
+.settings-container .align-items-center {
+    align-items: center;
+}
+
+.settings-container .gap-2 {
+    gap: 0.22rem;
+}
+
+.settings-container .text-danger {
+    color: var(--reject) !important;
+    font-size: 0.95rem;
+}

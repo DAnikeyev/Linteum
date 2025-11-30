@@ -84,7 +84,7 @@
             }
             catch (Exception ex)
             {
-                var error = $"Error adding canvas: {ex.Message}";
+                var error = $"Error adding canvas: {ex?.Message ?? "No message"}";
                 await NotificationService.NotifyAsync(new CustomNotification
                 {
                     Message = error,

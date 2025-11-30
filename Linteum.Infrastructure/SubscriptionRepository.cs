@@ -4,6 +4,7 @@ using Linteum.Domain;
 using Linteum.Domain.Repository;
 using Linteum.Shared;
 using Linteum.Shared.DTO;
+using Linteum.Shared.Exceptions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using NLog;
@@ -58,17 +59,17 @@ public class SubscriptionRepository : ISubscriptionRepository
             if (canvas == null)
             {
                 _logger.LogWarning("Canvas not found. userId={UserId}, canvasId={CanvasId}", userId, canvasId);
-                throw new InvalidOperationException("Canvas not found.");
+                throw new CanvasNotFoundException(canvasId);
             }
             if (canvas.PasswordHash != passwordHash)
             {
                 _logger.LogWarning("Invalid password for the canvas. userId={UserId}, canvasId={CanvasId}", userId, canvasId);
-                throw new InvalidOperationException("Invalid password for the canvas.");
+                throw new InvalidCanvasPasswordException(canvasId);
             }
             if (existing != null)
             {
                 _logger.LogInformation("User already subscribed. userId={UserId}, canvasId={CanvasId}", userId, canvasId);
-                return _mapper.Map<SubscriptionDto>(existing);
+                throw new UserAlreadySubscribedException(userId, canvasId);
             }
 
             var subscription = new Subscription
@@ -88,7 +89,7 @@ public class SubscriptionRepository : ISubscriptionRepository
         {
             await transaction.RollbackAsync();
             _logger.LogError(ex, "Error subscribing user. userId={UserId}, canvasId={CanvasId}", userId, canvasId);
-            return null;
+            throw;
         }
     }
 
@@ -98,7 +99,8 @@ public class SubscriptionRepository : ISubscriptionRepository
 
         if (sub is null)
         {
-            return null;
+            _logger.LogWarning("Subscription not found for unsubscription. userId={UserId}, canvasId={CanvasId}", userId, canvasId);
+            throw new CanvasNotFoundException(canvasId);
         }
 
         var balance = await _balanceChangedEventRepository.GetByUserAndCanvasIdAsync(userId, canvasId);
@@ -107,7 +109,12 @@ public class SubscriptionRepository : ISubscriptionRepository
         {
             // ReSharper disable once PossibleMultipleEnumeration
             var delta = -balance.Last().NewBalance;
-            await _balanceChangedEventRepository.TryChangeBalanceAsync(userId, canvasId, delta, BalanceChangedReason.Unsubscription);
+            var balanceChangedEventDto = await _balanceChangedEventRepository.TryChangeBalanceAsync(userId, canvasId, delta, BalanceChangedReason.Unsubscription);
+            if (balanceChangedEventDto is null)
+            {
+                _logger.LogError("Failed to adjust balance during unsubscription. userId={UserId}, canvasId={CanvasId}", userId, canvasId);
+                throw new BalanceUpdateException(canvasId, userId);
+            }
         }
 
         _context.Subscriptions.Remove(sub);

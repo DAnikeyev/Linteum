@@ -22,8 +22,9 @@ try
     builder.Services.AddScoped<ProtectedLocalStorage>();
 
 #if DEBUG
-    var apiContainerName = "localhost";
-    var apiContainerPort = "8080";
+    var apiContainerName = "localhost"; 
+    var apiContainerPort = "5182";
+   //For docker api var apiContainerPort = "8080";
 #else
     var apiContainerName = Environment.GetEnvironmentVariable("API_CONTAINER_NAME") ?? "api";
     var apiContainerPort = Environment.GetEnvironmentVariable("API_CONTAINER_PORT") ?? "8080";
