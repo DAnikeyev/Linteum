@@ -11,7 +11,9 @@
     </CascadingValue>
 
     <main style="margin-left:@_sidebarMargin; background-color: var(--accent0); min-height: 100vh; padding: 1rem; position: relative;">
-        @Body
+        <CascadingValue Value="_sidebarMargin" Name="SidebarMargin">
+            @Body
+        </CascadingValue>
     </main>
 
     <NotificationManager @ref="_notificationManagerRef" />
@@ -20,13 +22,13 @@
     public CanvasSidebar? Sidebar { get; set; }
     private string _sidebarMargin = "300px";
     private NotificationManager? _notificationManagerRef;
-    
+
     private void OnSidebarCollapseChanged(bool isCollapsed)
     {
         _sidebarMargin = isCollapsed ? "0px" : "300px";
         StateHasChanged();
     }
-    
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)

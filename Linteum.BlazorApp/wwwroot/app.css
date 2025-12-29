@@ -76,9 +76,12 @@ h1:focus {
     /*Background og left sidebar*/
     --accent1: #B6BCE6;
     
+    --accent0p5: #DDE1F5;
+    
     /*Background of middle components and light-theme containers*/
     --accent0: #F6FFDE;
     
+    --accent-0p5: #FFF7D1;
     /*Background of right sidebar and yellow-ish input boxes*/
     --accent-1: #F7CEA2;
     

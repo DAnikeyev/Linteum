@@ -5,8 +5,11 @@
 @using NLog
 @using Linteum.BlazorApp.Components.Layout
 @using Microsoft.AspNetCore.Components.Web
+@using Linteum.Shared
 @inject MyApiClient ApiClient
 @inject NotificationService NotificationService
+@inject IJSRuntime JSRuntime
+@inject LocalStorageService LocalStorageService
 
 @if (_canvas == null)
 {
@@ -14,14 +17,71 @@
 }
 else
 {
-    <div class="canvas-viewport"
-         style="width:900px; height:600px; overflow:hidden; position:relative;"
-         @onwheel="OnWheel"
-         @onwheel:preventDefault="true">
-        <div class="canvas-renderer"
-             style=@RendererStyle
-             @onmousedown="OnCanvasMouseDown">
-            <!-- optional overlay or content -->
+    <div class="d-flex align-items-start">
+        <div class="canvas-viewport"
+             style="width:@(ViewportWidth)px; height:@(ViewportHeight)px; overflow:hidden; position:relative;">
+
+            <div class="canvas-renderer"
+                 style=@RendererStyle>
+                <!-- optional overlay or content -->
+            </div>
+
+            <!-- Canvas Boundary (Unscaled) -->
+            <div style="position:absolute;
+            left:@(_offsetX)px;
+            top:@(_offsetY)px;
+            width:@(_canvas.Width * _scale)px;
+            height:@(_canvas.Height * _scale)px;
+            outline: 1px dashed #ccc;
+            pointer-events: none;
+            z-index: 4;">
+            </div>
+
+            <!-- Highlight Hovered Pixel -->
+            @if (_hoveredPixel.HasValue)
+            {
+                <div style="position:absolute;
+                        left:@(_offsetX + _hoveredPixel.Value.X * _scale)px;
+                        top:@(_offsetY + _hoveredPixel.Value.Y * _scale)px;
+                        width:@(_scale)px;
+                        height:@(_scale)px;
+                        border: 1px solid grey;
+                        pointer-events: none;
+                        z-index: 5;">
+                </div>
+            }
+
+            <!-- Highlight Clicked Pixel -->
+            @if (_clickedPixel.HasValue)
+            {
+                <div style="position:absolute;
+                        left:@(_offsetX + _clickedPixel.Value.X * _scale)px;
+                        top:@(_offsetY + _clickedPixel.Value.Y * _scale)px;
+                        width:@(_scale)px;
+                        height:@(_scale)px;
+                        border: 2px solid var(--accent-3);
+                        pointer-events: none;
+                        z-index: 6;">
+                </div>
+            }
+
+            <!-- Coordinates Display -->
+            @if (_hoveredPixel.HasValue)
+            {
+                <div style="position:absolute; top:0; right:0px; background:var(--accent-1); color:var(--accent-3); padding:4px 8px; font-family:monospace; z-index:20; pointer-events:none;">
+                    X: @_hoveredPixel.Value.X, Y: @_hoveredPixel.Value.Y
+                </div>
+            }
+
+            <!-- Transparent overlay to capture mouse events in viewport coordinates -->
+            <div style="position:absolute; top:0; left:0; width:100%; height:100%; z-index:10; cursor:@(_isDragging ? "grabbing" : "crosshair");"
+                 @onmousedown="OnCanvasMouseDown"
+                 @onmousemove="OnCanvasMouseMove"
+                 @onmouseout="OnCanvasMouseOut"
+                 @onmouseup="OnCanvasMouseUp"
+                 @onwheel="OnWheel"
+                 @onwheel:preventDefault="true">
+            </div>
         </div>
 
         <PixelManager Canvas="@_canvas" ClickedPixel="@_clickedPixel" />
@@ -31,26 +91,97 @@ else
 @code {
     [Parameter]
     public string canvasName { get; set; } = default!;
+
+    [CascadingParameter(Name = "SidebarMargin")]
+    public string SidebarMargin { get; set; } = "300px";
+
     private static readonly Logger _nlog = LogManager.GetCurrentClassLogger();
 
     private CanvasDto? _canvas;
     private string? _loadedCanvasName;
     private (int X, int Y)? _clickedPixel;
+    private (int X, int Y)? _hoveredPixel;
+
+    // Viewport dimensions
+    private double ViewportWidth { get; set; } = 900;
+    private double ViewportHeight { get; set; } = 600;
 
     // Zoom / pan state
     private double _scale = 1.0;
     private double _minScale = 0.1;
-    private double _maxScale = 20.0;
+    private double _maxScale = 50.0;
     private double _offsetX = 0.0;
     private double _offsetY = 0.0;
+
+    // Drag state
+    private bool _isDragging;
+    private double _lastMouseX;
+    private double _lastMouseY;
+
+    // State tracking
+    private bool _hasRendered = false;
+    private string _lastSidebarMargin = "300px";
 
     private string RendererStyle =>
         _canvas == null
             ? "display:inline-block;"
-            : $"width:{_canvas.Width}px; height:{_canvas.Height}px; background:#ffffff; border:1px dashed #ccc; cursor:crosshair; display:inline-block; transform: translate({_offsetX}px, {_offsetY}px) scale({_scale}); transform-origin: 0 0;";
+            : $"width:{_canvas.Width}px; height:{_canvas.Height}px; background:#ffffff; display:inline-block; transform: translate({_offsetX}px, {_offsetY}px) scale({_scale}); transform-origin: 0 0;";
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _hasRendered = true;
+            _lastSidebarMargin = SidebarMargin;
+            await CalculateViewportDimensions();
+            FitCanvas();
+            StateHasChanged();
+        }
+    }
+
+    private async Task CalculateViewportDimensions()
+    {
+        try
+        {
+            // Get window dimensions
+            var windowWidth = await JSRuntime.InvokeAsync<double>("eval", "window.innerWidth");
+            var windowHeight = await JSRuntime.InvokeAsync<double>("eval", "window.innerHeight");
+
+            // Determine sidebar width from cascading parameter string (e.g. "300px")
+            double sidebarWidth = 300;
+            if (!string.IsNullOrEmpty(SidebarMargin) && double.TryParse(SidebarMargin.Replace("px", ""), out var marginVal))
+            {
+                sidebarWidth = marginVal;
+            }
+
+            // Estimate PixelManager width (or measure if possible)
+            var pixelManagerWidth = await JSRuntime.InvokeAsync<double>("eval", "document.querySelector('.pixelmanager') ? document.querySelector('.pixelmanager').offsetWidth : 300");
+
+            // Padding from BaseLayout (1rem = approx 16px, on both sides = 32px) + extra buffer for scrollbar (~18px)
+            const double paddingX = 50;
+            // Padding from BaseLayout (1rem = approx 16px, on both sides = 32px)
+            const double paddingY = 32;
+
+            ViewportWidth = Math.Max(100, windowWidth - sidebarWidth - pixelManagerWidth - paddingX);
+            ViewportHeight = Math.Max(100, windowHeight - paddingY);
+        }
+        catch (Exception ex)
+        {
+            _nlog.Warn(ex, "Failed to calculate viewport dimensions");
+        }
+    }
+
 
     protected override async Task OnParametersSetAsync()
     {
+        // Recalculate if sidebar margin changed and we have rendered (JS is available)
+        if (_hasRendered && _lastSidebarMargin != SidebarMargin)
+        {
+            _lastSidebarMargin = SidebarMargin;
+            await CalculateViewportDimensions();
+            ClampOffsets();
+        }
+
         if (_loadedCanvasName == canvasName && _canvas != null)
             return;
 
@@ -60,27 +191,10 @@ else
         try
         {
             _canvas = await ApiClient.GetCanvas(canvasName);
+            _clickedPixel = null;
+            _hoveredPixel = null;
 
-            const double defaultViewWidth = 900;
-            const double defaultViewHeight = 600;
-            const double margin = 20; // keep some space from edges
-
-            if (_canvas != null && _canvas.Width > 0 && _canvas.Height > 0)
-            {
-                var availW = Math.Max(1.0, defaultViewWidth - margin * 2);
-                var availH = Math.Max(1.0, defaultViewHeight - margin * 2);
-
-                var targetScale = Math.Min(availW / _canvas.Width, availH / _canvas.Height);
-
-                // optional: don't upscale beyond 1.0 by default; remove Math.Min(...) if upscaling desired
-                targetScale = Math.Min(1.0, targetScale);
-
-                _scale = Math.Clamp(targetScale, _minScale, _maxScale);
-
-                // center the scaled canvas inside the assumed viewport
-                _offsetX = (defaultViewWidth - _canvas.Width * _scale) / 2.0;
-                _offsetY = (defaultViewHeight - _canvas.Height * _scale) / 2.0;
-            }
+            FitCanvas();
         }
         catch (Exception ex)
         {
@@ -88,10 +202,78 @@ else
         }
     }
 
+    private void FitCanvas()
+    {
+        const double margin = 1; // keep some space from edges
+
+        if (_canvas != null && _canvas.Width > 0 && _canvas.Height > 0)
+        {
+            var availW = Math.Max(1.0, ViewportWidth - margin * 2);
+            var availH = Math.Max(1.0, ViewportHeight - margin * 2);
+
+            var targetScale = Math.Min(availW / _canvas.Width, availH / _canvas.Height);
+            targetScale = Math.Min(1.0, targetScale);
+
+            _scale = Math.Clamp(targetScale, _minScale, _maxScale);
+
+            _offsetX = (ViewportWidth - _canvas.Width * _scale) / 2.0;
+            _offsetY = (ViewportHeight - _canvas.Height * _scale) / 2.0;
+        }
+    }
+
     private void OnCanvasMouseDown(MouseEventArgs e)
     {
-        if (_canvas == null)
-            return;
+        if (e.Button == 0)
+        {
+            _isDragging = true;
+            _lastMouseX = e.ClientX;
+            _lastMouseY = e.ClientY;
+        }
+
+        var pixel = GetPixelFromMouse(e);
+        if (pixel.HasValue)
+        {
+            _clickedPixel = pixel;
+        }
+    }
+
+    private void OnCanvasMouseMove(MouseEventArgs e)
+    {
+        if (_isDragging)
+        {
+            var deltaX = e.ClientX - _lastMouseX;
+            var deltaY = e.ClientY - _lastMouseY;
+
+            _offsetX += deltaX;
+            _offsetY += deltaY;
+
+            ClampOffsets();
+
+            _lastMouseX = e.ClientX;
+            _lastMouseY = e.ClientY;
+        }
+
+        var pixel = GetPixelFromMouse(e);
+        if (_hoveredPixel != pixel)
+        {
+            _hoveredPixel = pixel;
+        }
+    }
+
+    private void OnCanvasMouseUp(MouseEventArgs e)
+    {
+        _isDragging = false;
+    }
+
+    private void OnCanvasMouseOut(MouseEventArgs e)
+    {
+        _isDragging = false;
+        _hoveredPixel = null;
+    }
+
+    private (int X, int Y)? GetPixelFromMouse(MouseEventArgs e)
+    {
+        if (_canvas == null) return null;
 
         // Convert the mouse position from display coords into canvas pixel coords accounting for pan/zoom
         var logicalX = (e.OffsetX - _offsetX) / _scale;
@@ -100,11 +282,11 @@ else
         var x = (int)Math.Floor(logicalX);
         var y = (int)Math.Floor(logicalY);
 
-        // clamp for safety
-        x = Math.Max(0, Math.Min(_canvas.Width - 1, x));
-        y = Math.Max(0, Math.Min(_canvas.Height - 1, y));
-
-        _clickedPixel = (x, y);
+        if (x >= 0 && x < _canvas.Width && y >= 0 && y < _canvas.Height)
+        {
+            return (x, y);
+        }
+        return null;
     }
 
     private void OnWheel(WheelEventArgs e)
@@ -112,12 +294,9 @@ else
         if (_canvas == null)
             return;
 
-        // Determine zoom factor (wheel up -> zoom in)
         var factor = e.DeltaY < 0 ? 1.1 : 0.9;
         var newScale = Math.Clamp(_scale * factor, _minScale, _maxScale);
 
-        // Keep the canvas point under the cursor fixed:
-        // world = (mouse - offset) / scale
         var mouseX = e.OffsetX;
         var mouseY = e.OffsetY;
         var worldX = (mouseX - _offsetX) / _scale;
@@ -125,11 +304,33 @@ else
 
         _scale = newScale;
 
-        // recompute offset so that world point stays under mouse
         _offsetX = mouseX - worldX * _scale;
         _offsetY = mouseY - worldY * _scale;
 
+        ClampOffsets();
+
         StateHasChanged();
+    }
+
+    private void ClampOffsets()
+    {
+        if (_canvas == null) return;
+
+        // Ensure at least this many pixels of the canvas remain visible inside the viewport
+        const double visibilityMargin = 50;
+
+        var renderedWidth = _canvas.Width * _scale;
+        var renderedHeight = _canvas.Height * _scale;
+
+        // X Constraints
+        var minX = visibilityMargin - renderedWidth;
+        var maxX = ViewportWidth - visibilityMargin;
+        _offsetX = Math.Clamp(_offsetX, minX, maxX);
+
+        // Y Constraints
+        var minY = visibilityMargin - renderedHeight;
+        var maxY = ViewportHeight - visibilityMargin;
+        _offsetY = Math.Clamp(_offsetY, minY, maxY);
     }
 
     private async Task NotifyAsync(CustomNotification note)
