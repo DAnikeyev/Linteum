@@ -1,0 +1,117 @@
+/* Right-side mirror of CanvasSidebar styles; text follows the same accent palette */
+
+.pixelmanager {
+    width: 300px;
+    min-width: 300px;
+    background: var(--accent-1);
+    border-left: 1px solid var(--accent-3);
+    transition: width 0.2s, min-width 0.2s;
+    height: 100vh;
+    position: fixed;
+    right: 0;
+    top: 0;
+    z-index: 1000;
+    box-shadow: -2px 0 8px rgba(31,32,112,0.08);
+    overflow: hidden;
+    pointer-events: auto;
+    display: flex;
+    flex-direction: column;
+}
+
+/* header uses the same header background and primary text color as the left sidebar */
+.pm-header {
+    position: relative;
+    border-bottom: 1px solid var(--accent-3);
+    background: var(--accent-2);
+    color: var(--accent-3);
+    font-size: 1.2rem;
+    font-weight: bold;
+    padding: 1rem;
+    min-height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* title color follows the accent palette */
+.pm-title {
+    color: var(--accent-3);
+    font-weight: 600;
+    font-size: 1.05rem;
+}
+
+/* content area text uses the primary accent text color */
+.pm-content {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 0.5rem 0;
+    padding-bottom: 1rem;
+    transition: opacity 0.2s;
+    opacity: 1;
+    color: var(--accent-3); /* default text color inside the panel */
+}
+
+/* headings and small labels follow the same accent */
+.pm-content h6 {
+    color: var(--accent-3);
+    font-weight: 600;
+    font-size: 0.95rem;
+    margin: 0.25rem 1rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+/* paragraphs and values use the palette */
+.pm-content p {
+    color: var(--accent-3);
+    margin: 0.25rem 1rem;
+    line-height: 1.3;
+}
+
+/* muted helper text — same accent but reduced opacity */
+.pm-content .text-muted {
+    color: var(--accent-3);
+    opacity: 0.68;
+}
+
+/* small metadata (like numeric values) can use a slightly stronger weight */
+.pm-content .meta {
+    color: var(--accent-3);
+    font-weight: 600;
+}
+
+/* buttons inside the pixel manager follow same button treatment as sidebar bottom actions */
+.pm-content .btn {
+    background: var(--accent-1p5);
+    color: var(--accent-3);
+    border: none;
+    padding: 0.45rem 0.8rem;
+    border-radius: 6px;
+    cursor: pointer;
+}
+
+.pm-content .btn:hover,
+.pm-content .btn:focus {
+    background: var(--accent-1);
+    color: var(--accent0);
+}
+
+/* ensure any inline badges or icons match the palette */
+.pm-content .badge,
+.pm-content .icon {
+    color: var(--accent-3);
+}
+
+/* small utility: ensure links inside panel use accent0 for contrast when on darker backgrounds */
+.pm-content a {
+    color: var(--accent0);
+}
+
+/* keep responsive behavior consistent with left sidebar */
+@media (max-width: 900px) {
+    .pixelmanager {
+        width: 260px;
+        min-width: 260px;
+    }
+}

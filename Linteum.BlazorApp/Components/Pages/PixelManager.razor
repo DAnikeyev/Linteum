@@ -1,0 +1,59 @@
+@using Linteum.Shared.DTO
+@using Linteum.BlazorApp.Components.Notification
+@inject NotificationService NotificationService
+
+@code {
+    [Parameter]
+    public CanvasDto? Canvas { get; set; }
+
+    [Parameter]
+    public (int X, int Y)? ClickedPixel { get; set; }
+
+    private static readonly NLog.Logger _nlog = NLog.LogManager.GetCurrentClassLogger();
+
+    private async Task NotifyAsync(CustomNotification note)
+    {
+        try
+        {
+            await NotificationService.Writer.WriteAsync(note);
+        }
+        catch (Exception ex)
+        {
+            _nlog.Warn(ex, "NotificationService.Writer.WriteAsync failed in PixelManager");
+        }
+    }
+}
+
+<div class="pixelmanager">
+    <div class="pm-header">
+        <span class="pm-title">Pixel Manager</span>
+    </div>
+
+    <div class="pm-content">
+        @if (Canvas == null)
+        {
+            <div class="p-3 text-muted">Canvas not loaded</div>
+        }
+        else
+        {
+            <div class="p-3">
+                <h6>Canvas</h6>
+                <p><strong>Name:</strong> @Canvas.Name</p>
+                <p><strong>Width:</strong> @Canvas.Width</p>
+                <p><strong>Height:</strong> @Canvas.Height</p>
+            </div>
+        }
+
+        <div class="p-3">
+            <h6>Clicked Pixel</h6>
+            @if (ClickedPixel.HasValue)
+            {
+                <p>X: @ClickedPixel.Value.X, Y: @ClickedPixel.Value.Y</p>
+            }
+            else
+            {
+                <p class="text-muted">No pixel selected</p>
+            }
+        </div>
+    </div>
+</div>

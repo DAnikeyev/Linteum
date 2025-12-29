@@ -43,7 +43,14 @@ namespace Linteum.Api.Controllers
 
         [HttpGet("name/{name}")]
         public async Task<IActionResult> GetByName(string name)
-        {
+        {            
+            _logger.LogInformation($"Getting info of canvas {name}");
+            var userId = _sessionService.ProcessHeader(HttpContext.Request.Headers);
+            if (userId == null)
+            {
+                _logger.LogWarning("Unauthorized access attempt: Session-Id header missing or invalid.");
+                return Unauthorized("Session-Id header missing or invalid.");
+            }
             var canvas = await _repoManager.CanvasRepository.GetByNameAsync(name);
             if (canvas == null)
                 return NotFound();

@@ -130,6 +130,29 @@ public class MyApiClient
             throw new Exception("Password is incorrect.");
         throw new Exception($"Failed to subscribe to {canvasName}. This exception is unexpected.");
     }
+    
+    public async Task<CanvasDto> GetCanvas(string canvasName)
+    {
+        // TODO: Add check if user is already subscribed to canvas
+
+        var request = new HttpRequestMessage(HttpMethod.Get, $"/canvases/name/{canvasName}");
+        await request.AddSessionId(_localStorage);
+        var response = await _httpClient.SendAsync(request);
+    
+        if (response.IsSuccessStatusCode)
+        {
+            var canvas = await response.Content.ReadFromJsonAsync<CanvasDto>();
+            if (canvas == null)
+                throw new Exception($"Canvas {canvasName} data is null.");
+            return canvas;
+        }
+
+        if(response.StatusCode == HttpStatusCode.NotFound)
+            throw new Exception($"Canvas {canvasName} is not found.");
+        if(response.StatusCode == HttpStatusCode.Unauthorized)
+            throw new Exception("Password is incorrect.");
+        throw new Exception($"Failed to get info of {canvasName}. This exception is unexpected.");
+    }
 
     public async Task<bool> UnsubscribeAsync(string canvasName)
     {

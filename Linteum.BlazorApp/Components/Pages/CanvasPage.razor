@@ -1,9 +1,12 @@
 @page "/canvas/{canvasName}"
 @layout Layout.BaseLayout
+@using Linteum.BlazorApp.Components.Notification
 @using Linteum.Shared.DTO
+@using NLog
+@using Linteum.BlazorApp.Components.Layout
+@using Microsoft.AspNetCore.Components.Web
 @inject MyApiClient ApiClient
-
-<h2>Canvas: @canvasName</h2>
+@inject NotificationService NotificationService
 
 @if (_canvas == null)
 {
@@ -11,20 +14,133 @@
 }
 else
 {
-    <div>
-        <p>Name: @_canvas.Name</p>
-        <p>Width: @_canvas.Width</p>
-        <p>Height: @_canvas.Height</p>
+    <div class="canvas-viewport"
+         style="width:900px; height:600px; overflow:hidden; position:relative;"
+         @onwheel="OnWheel"
+         @onwheel:preventDefault="true">
+        <div class="canvas-renderer"
+             style=@RendererStyle
+             @onmousedown="OnCanvasMouseDown">
+            <!-- optional overlay or content -->
+        </div>
+
+        <PixelManager Canvas="@_canvas" ClickedPixel="@_clickedPixel" />
     </div>
 }
 
 @code {
     [Parameter]
     public string canvasName { get; set; } = default!;
+    private static readonly Logger _nlog = LogManager.GetCurrentClassLogger();
 
     private CanvasDto? _canvas;
+    private string? _loadedCanvasName;
+    private (int X, int Y)? _clickedPixel;
 
-    protected override async Task OnInitializedAsync()
+    // Zoom / pan state
+    private double _scale = 1.0;
+    private double _minScale = 0.1;
+    private double _maxScale = 20.0;
+    private double _offsetX = 0.0;
+    private double _offsetY = 0.0;
+
+    private string RendererStyle =>
+        _canvas == null
+            ? "display:inline-block;"
+            : $"width:{_canvas.Width}px; height:{_canvas.Height}px; background:#ffffff; border:1px dashed #ccc; cursor:crosshair; display:inline-block; transform: translate({_offsetX}px, {_offsetY}px) scale({_scale}); transform-origin: 0 0;";
+
+    protected override async Task OnParametersSetAsync()
     {
+        if (_loadedCanvasName == canvasName && _canvas != null)
+            return;
+
+        _canvas = null;
+        _loadedCanvasName = canvasName;
+
+        try
+        {
+            _canvas = await ApiClient.GetCanvas(canvasName);
+
+            const double defaultViewWidth = 900;
+            const double defaultViewHeight = 600;
+            const double margin = 20; // keep some space from edges
+
+            if (_canvas != null && _canvas.Width > 0 && _canvas.Height > 0)
+            {
+                var availW = Math.Max(1.0, defaultViewWidth - margin * 2);
+                var availH = Math.Max(1.0, defaultViewHeight - margin * 2);
+
+                var targetScale = Math.Min(availW / _canvas.Width, availH / _canvas.Height);
+
+                // optional: don't upscale beyond 1.0 by default; remove Math.Min(...) if upscaling desired
+                targetScale = Math.Min(1.0, targetScale);
+
+                _scale = Math.Clamp(targetScale, _minScale, _maxScale);
+
+                // center the scaled canvas inside the assumed viewport
+                _offsetX = (defaultViewWidth - _canvas.Width * _scale) / 2.0;
+                _offsetY = (defaultViewHeight - _canvas.Height * _scale) / 2.0;
+            }
+        }
+        catch (Exception ex)
+        {
+            _nlog.Warn(ex, "Failed to load canvas {0}", canvasName);
+        }
+    }
+
+    private void OnCanvasMouseDown(MouseEventArgs e)
+    {
+        if (_canvas == null)
+            return;
+
+        // Convert the mouse position from display coords into canvas pixel coords accounting for pan/zoom
+        var logicalX = (e.OffsetX - _offsetX) / _scale;
+        var logicalY = (e.OffsetY - _offsetY) / _scale;
+
+        var x = (int)Math.Floor(logicalX);
+        var y = (int)Math.Floor(logicalY);
+
+        // clamp for safety
+        x = Math.Max(0, Math.Min(_canvas.Width - 1, x));
+        y = Math.Max(0, Math.Min(_canvas.Height - 1, y));
+
+        _clickedPixel = (x, y);
+    }
+
+    private void OnWheel(WheelEventArgs e)
+    {
+        if (_canvas == null)
+            return;
+
+        // Determine zoom factor (wheel up -> zoom in)
+        var factor = e.DeltaY < 0 ? 1.1 : 0.9;
+        var newScale = Math.Clamp(_scale * factor, _minScale, _maxScale);
+
+        // Keep the canvas point under the cursor fixed:
+        // world = (mouse - offset) / scale
+        var mouseX = e.OffsetX;
+        var mouseY = e.OffsetY;
+        var worldX = (mouseX - _offsetX) / _scale;
+        var worldY = (mouseY - _offsetY) / _scale;
+
+        _scale = newScale;
+
+        // recompute offset so that world point stays under mouse
+        _offsetX = mouseX - worldX * _scale;
+        _offsetY = mouseY - worldY * _scale;
+
+        StateHasChanged();
+    }
+
+    private async Task NotifyAsync(CustomNotification note)
+    {
+        try
+        {
+            await NotificationService.Writer.WriteAsync(note);
+        }
+        catch (Exception ex)
+        {
+            _nlog.Warn(ex, "NotificationService.Writer.WriteAsync failed");
+        }
     }
 }
