@@ -1,30 +1,7 @@
 @using Linteum.Shared.DTO
 @using Linteum.BlazorApp.Components.Notification
+@inject MyApiClient ApiClient
 @inject NotificationService NotificationService
-
-@code {
-    [Parameter]
-    public CanvasDto? Canvas { get; set; }
-
-    [Parameter]
-    public (int X, int Y)? ClickedPixel { get; set; }
-
-    public long Gold { get; set; }
-
-    private static readonly NLog.Logger _nlog = NLog.LogManager.GetCurrentClassLogger();
-
-    private async Task NotifyAsync(CustomNotification note)
-    {
-        try
-        {
-            await NotificationService.Writer.WriteAsync(note);
-        }
-        catch (Exception ex)
-        {
-            _nlog.Warn(ex, "NotificationService.Writer.WriteAsync failed in PixelManager");
-        }
-    }
-}
 
 <div class="pixelmanager">
     <div class="pm-header">
@@ -39,16 +16,114 @@
     </div>
 
     <div class="pm-content">
-        <h6>Gold: @Gold 🪙</h6>
+        <span style="margin-left:20px;">Gold: @Gold 🪙</span>
+        <div class="pm-drawing" style="display:flex;flex-direction:column;align-items:center;">
+            <h6 style="margin:0 0 0.5rem 0;text-align:center;">Pixel Drawing</h6>
 
-        <h6>Clicked Pixel</h6>
-        @if (ClickedPixel.HasValue)
-        {
-            <p>X: @ClickedPixel.Value.X, Y: @ClickedPixel.Value.Y</p>
-        }
-        else
-        {
-            <p class="text-muted">No pixel selected</p>
-        }
+            <div style="display:flex;flex-direction:column;gap:0.75rem;width:100%;">
+                <div>
+                    <label class="form-label" style="display:block;margin-bottom:0.25rem;">Selected Pixel</label>
+                    @if (ClickedPixel.HasValue)
+                    {
+                        <div>X: @ClickedPixel.Value.X, Y: @ClickedPixel.Value.Y</div>
+                    }
+                    else
+                    {
+                        <div class="text-muted">No pixel selected</div>
+                    }
+                </div>
+
+                <div>
+                    <div class="color-dropdown">
+                        <button type="button" class="color-dropdown-toggle" @onclick="ToggleColorDropdown" aria-expanded="@_colorDropdownOpen">
+                            <div style="display:flex;align-items:center;gap:0.5rem;width:100%;">
+                                <div class="color-swatch" style="background:@(SelectedColor?.HexValue ?? "#ffffff");"></div>
+                                <span class="color-label">@(SelectedColor == null ? "-- Select color --" : (string.IsNullOrEmpty(SelectedColor.Name) ? SelectedColor.HexValue : SelectedColor.Name))</span>
+                                <span style="margin-left:auto;opacity:0.7;">▾</span>
+                            </div>
+                        </button>
+
+
+                        @if (_colorDropdownOpen && _colors != null)
+                        {
+                            <ul class="color-dropdown-menu" role="listbox">
+                                @foreach (var c in _colors)
+                                {
+                                    <li class="color-option" role="option" @onclick="() => SelectColor(c)">
+                                        <div class="color-swatch" style="background:@c.HexValue;"></div>
+                                        <span>@(string.IsNullOrEmpty(c.Name) ? c.HexValue : c.Name)</span>
+                                    </li>
+                                }
+                            </ul>
+                        }
+                    </div>
+                </div>
+
+                <div style="padding:0.25rem 0;">
+                    <button class="btn" style="display:block;width:100%;padding:0.75rem 0;font-weight:600;border-radius:6px;" @onclick="PaintClick" disabled="@(SelectedColor == null || !ClickedPixel.HasValue)">PAINT</button>
+                </div>
+            </div>
+        </div>
+        
     </div>
 </div>
+
+@code {
+    [Parameter]
+    public CanvasDto? Canvas { get; set; }
+
+    [Parameter]
+    public (int X, int Y)? ClickedPixel { get; set; }
+
+    [Parameter]
+    public PixelDto ClickedPixelData { get; set; }
+
+    public long Gold { get; set; }
+
+    private static readonly NLog.Logger _nlog = NLog.LogManager.GetCurrentClassLogger();
+    private List<ColorDto>? _colors;
+
+    private int? _selectedColorId;
+    private ColorDto? SelectedColor => _colors?.FirstOrDefault(c => c.Id == _selectedColorId);
+
+    private bool _colorDropdownOpen = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _colors = await ApiClient.GetColorsAsync();
+        _colors.Sort((c1, c2) => string.Compare(c1.Name ?? string.Empty, c2.Name ?? string.Empty, StringComparison.OrdinalIgnoreCase));
+    }
+    
+    protected override void OnParametersSet()
+    {
+        _colorDropdownOpen = false;
+    }
+
+    private void ToggleColorDropdown()
+    {
+        _colorDropdownOpen = !_colorDropdownOpen;
+    }
+
+    private void SelectColor(ColorDto c)
+    {
+        _selectedColorId = c.Id;
+        _colorDropdownOpen = false;
+    }
+
+    private Task PaintClick()
+    {
+        return Task.CompletedTask;
+    }
+
+    private async Task NotifyAsync(CustomNotification note)
+    {
+        try
+        {
+            await NotificationService.Writer.WriteAsync(note);
+        }
+        catch (Exception ex)
+        {
+            _nlog.Warn(ex, "NotificationService.Writer.WriteAsync failed in PixelManager");
+        }
+    }
+}

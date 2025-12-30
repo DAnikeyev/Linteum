@@ -1,4 +1,6 @@
+using Linteum.Api.Services;
 using Linteum.Infrastructure;
+using Linteum.Shared;
 using Linteum.Shared.DTO;
 using Microsoft.AspNetCore.Mvc;
 
@@ -10,18 +12,46 @@ public class PixelsController : ControllerBase
 {
     private readonly RepositoryManager _repoManager;
     private readonly ILogger<PixelsController> _logger;
+    private readonly SessionService _sessionService;
 
-    public PixelsController(RepositoryManager repoManager, ILogger<PixelsController> logger)
+    public PixelsController(RepositoryManager repoManager, SessionService sessionService, ILogger<PixelsController> logger)
     {
+        _sessionService = sessionService;
         _repoManager = repoManager;
         _logger = logger;
     }
 
-    [HttpGet("canvas/{canvasId}")]
+    [HttpGet("canvases/{canvasId}")]
     public async Task<IActionResult> GetByCanvasId(Guid canvasId)
     {
         var pixels = await _repoManager.PixelRepository.GetByCanvasIdAsync(canvasId);
         return Ok(pixels);
+    }
+    
+    
+    [HttpGet("canvases/{canvasName}/pixels")]
+    public async Task<IActionResult> GetByPixelDto(string canvasName, [FromQuery]PixelDto pixelDto)
+    {
+        if (!Request.Headers.TryGetValue(CustomHeaders.SessionId, out var sessionIdStr) || !Guid.TryParse(sessionIdStr, out var sessionId))
+            return Unauthorized("Session-Id header missing or invalid.");
+
+        var userId = _sessionService.GetUserId(sessionId);
+        if (userId == null)
+            return Unauthorized("Invalid session.");
+
+        var canvas = await _repoManager.CanvasRepository.GetByNameAsync(canvasName);
+        if (canvas == null)
+            return NotFound("Canvas not found.");
+        var pixelDtoFull = new PixelDto
+        {
+            CanvasId = canvas.Id,
+            X = pixelDto.X,
+            Y = pixelDto.Y,
+        };
+        var pixelExtracted = await _repoManager.PixelRepository.GetByPixelDto(pixelDtoFull);
+        if (pixelExtracted == null)
+            return NotFound("Pixel not found.");
+        return Ok(pixelExtracted);
     }
 
     [HttpGet("owner/{ownerId}")]

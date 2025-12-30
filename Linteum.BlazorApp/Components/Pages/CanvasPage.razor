@@ -23,7 +23,10 @@ else
 
             <div class="canvas-renderer"
                  style=@RendererStyle>
-                <!-- optional overlay or content -->
+                @if (!string.IsNullOrEmpty(_canvasImageSrc))
+                {
+                    <img src="@_canvasImageSrc" style="width:100%; height:100%; image-rendering: pixelated; display: block; pointer-events: none;" draggable="false" />
+                }
             </div>
 
             <!-- Canvas Boundary (Unscaled) -->
@@ -84,7 +87,7 @@ else
             </div>
         </div>
 
-        <PixelManager Canvas="@_canvas" ClickedPixel="@_clickedPixel" />
+        <PixelManager Canvas="@_canvas" ClickedPixel="@_clickedPixel" ClickedPixelData="@_clickedPixelData" />
     </div>
 }
 
@@ -99,7 +102,9 @@ else
 
     private CanvasDto? _canvas;
     private string? _loadedCanvasName;
+    private string? _canvasImageSrc;
     private (int X, int Y)? _clickedPixel;
+    private PixelDto _clickedPixelData;
     private (int X, int Y)? _hoveredPixel;
 
     // Viewport dimensions
@@ -121,6 +126,7 @@ else
     // State tracking
     private bool _hasRendered = false;
     private string _lastSidebarMargin = "300px";
+    private List<ColorDto>? _colors;
 
     private string RendererStyle =>
         _canvas == null
@@ -174,7 +180,6 @@ else
 
     protected override async Task OnParametersSetAsync()
     {
-        // Recalculate if sidebar margin changed and we have rendered (JS is available)
         if (_hasRendered && _lastSidebarMargin != SidebarMargin)
         {
             _lastSidebarMargin = SidebarMargin;
@@ -186,11 +191,24 @@ else
             return;
 
         _canvas = null;
+        _canvasImageSrc = null;
         _loadedCanvasName = canvasName;
 
         try
         {
+            _colors = await ApiClient.GetColorsAsync();
             _canvas = await ApiClient.GetCanvas(canvasName);
+            
+            try
+            {
+                var imageBytes = await ApiClient.GetCanvasImage(_canvas);
+                _canvasImageSrc = $"data:image/png;base64,{Convert.ToBase64String(imageBytes)}";
+            }
+            catch (Exception ex)
+            {
+                _nlog.Warn(ex, "Failed to load image for canvas {0}", canvasName);
+            }
+
             _clickedPixel = null;
             _hoveredPixel = null;
 
@@ -234,6 +252,10 @@ else
         if (pixel.HasValue)
         {
             _clickedPixel = pixel;
+            _clickedPixelData = ApiClient.GetPixelData(_canvas.Name, pixel.Value.X, pixel.Value.Y).Result;
+            var colorId = _clickedPixelData.ColorId;
+            var color = _colors.Where(x => x.Id == colorId).FirstOrDefault();
+            
         }
     }
 

@@ -7,6 +7,9 @@ using Microsoft.Extensions.Options;
 using Linteum.Api.Services;
 using Linteum.Shared;
 using Linteum.Shared.Exceptions;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Drawing.Processing;
+using SixLabors.ImageSharp.Processing;
 
 namespace Linteum.Api.Controllers
 {
@@ -229,8 +232,47 @@ namespace Linteum.Api.Controllers
             return Ok(result);
         }
 
+        [HttpGet("image/{name}")]
+        public async Task<IActionResult> GetImage(string name)
+        {
+            //ToDo: AddCaching
+            if (!Request.Headers.TryGetValue(CustomHeaders.SessionId, out var sessionIdStr) || !Guid.TryParse(sessionIdStr, out var sessionId))
+                return Unauthorized("Session-Id header missing or invalid.");
+
+            var userId = _sessionService.GetUserId(sessionId);
+            if (userId == null)
+                return Unauthorized("Invalid session.");
+
+            var canvas = await _repoManager.CanvasRepository.GetByNameAsync(name);
+            if (canvas == null)
+                return NotFound("Canvas not found.");
+
+            var pixels = await _repoManager.PixelRepository.GetByCanvasIdAsync(canvas.Id);
+            var colors = await _repoManager.ColorRepository.GetAllAsync();
+            var colorMap = colors.ToDictionary(c => c.Id, c => c.HexValue);
+            
+            using var image = new Image<SixLabors.ImageSharp.PixelFormats.Rgba32>(canvas.Width, canvas.Height);
+            
+            image.Mutate(x => x.Fill(Color.White));
+
+            foreach (var pixel in pixels)
+            {
+                if (colorMap.TryGetValue(pixel.ColorId, out var hexColor))
+                {
+                    // Parse hex string to Color
+                    var color = Color.ParseHex(hexColor);
+                    image[pixel.X, pixel.Y] = color;
+                }
+            }
+
+            using var ms = new MemoryStream();
+            await image.SaveAsPngAsync(ms);
+            return File(ms.ToArray(), "image/png");
+        }
+
+        
         [HttpGet("subscribed")]
-        public async Task<IActionResult> GetSubscribedCanvases()
+        public async Task<IActionResult> GetImage()
         {
             if (!Request.Headers.TryGetValue(CustomHeaders.SessionId, out var sessionIdStr) || !Guid.TryParse(sessionIdStr, out var sessionId))
                 return Unauthorized("Session-Id header missing or invalid.");

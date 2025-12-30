@@ -239,5 +239,74 @@ public class MyApiClient
             throw new Exception("Failed to change password.");
         }
     }
+
+    public async Task<byte[]> GetCanvasImage(CanvasDto canvasDto)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, $"/canvases/image/{canvasDto.Name}");
+        await request.AddSessionId(_localStorage);
+        var response = await _httpClient.SendAsync(request);
+    
+        if (response.IsSuccessStatusCode)
+        {
+            return await response.Content.ReadAsByteArrayAsync();
+        }
+
+        if(response.StatusCode == HttpStatusCode.NotFound)
+            throw new Exception($"Image for canvas {canvasDto.Name} is not found.");
+        if(response.StatusCode == HttpStatusCode.Unauthorized)
+            throw new Exception("Password is incorrect.");
+        throw new Exception($"Failed to get image of {canvasDto.Name}. This exception is unexpected.");
+    }
+    
+    public async Task<PixelDto> GetPixelData(string canvasName, int x, int y)
+    {
+        var pixelDto = new PixelDto
+        {
+            X = x,
+            Y = y,
+        };
+        var request = new HttpRequestMessage(HttpMethod.Get, $"canvases/{canvasName}/pixels");
+        await request.AddSessionId(_localStorage);
+        request.SetJsonContent(pixelDto);
+        var response = await _httpClient.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        var pixel = await response.Content.ReadFromJsonAsync<PixelDto>();
+        return pixel ?? new PixelDto();
+    }
+    
+    public async Task<PixelDto> Paint((int X, int Y) clickedPixel, CanvasDto canvasDto, int colorId)
+    {
+        var pixelDto = new PixelDto
+        {
+            X = clickedPixel.X,
+            Y = clickedPixel.Y,
+            ColorId = colorId,
+            Price = 0,
+            CanvasId = canvasDto.Id,
+        };
+        var request = new HttpRequestMessage(HttpMethod.Post, "/pixels/paint");
+        await request.AddSessionId(_localStorage);
+        request.SetJsonContent(pixelDto);
+        var response = await _httpClient.SendAsync(request);
+    
+        if (response.IsSuccessStatusCode)
+        {
+            var paintedPixel = await response.Content.ReadFromJsonAsync<PixelDto>();
+            if (paintedPixel == null)
+                throw new Exception("Painted pixel data is null.");
+            return paintedPixel;
+        }
+
+        if(response.StatusCode == HttpStatusCode.ServiceUnavailable)
+            throw new Exception("Service is currently unavailable. Please try again later.");
+        if(response.StatusCode == HttpStatusCode.BadRequest)
+            throw new Exception("Cannot paint pixel. Possibly insufficient funds.");
+        if(response.StatusCode == HttpStatusCode.NotFound)
+            throw new Exception("Canvas or color is not found.");
+        if(response.StatusCode == HttpStatusCode.Unauthorized)
+            throw new Exception("You are not authorized to paint on this canvas.");
+        throw new Exception($"Failed to paint pixel at ({pixelDto.X}, {pixelDto.Y}). This exception is unexpected.");
+    }
+    
 }
 

@@ -43,6 +43,15 @@ public class PixelRepository : IPixelRepository
         return pixels;
     }
 
+    public async Task<PixelDto?> GetByPixelDto(PixelDto pixelDto)
+    {
+        var pixel = await _context.Pixels
+            .Where(p => p.CanvasId == pixelDto.CanvasId && p.X == pixelDto.X && p.Y == pixelDto.Y)
+            .Select(p => _mapper.Map<PixelDto>(p))
+            .FirstOrDefaultAsync();
+        return _mapper.Map<PixelDto>(pixel);
+    }
+
     public async Task<PixelDto?> TryChangePixelAsync(Guid ownerId, PixelDto pixel)
     {
         var canvas = await _context.Canvases
