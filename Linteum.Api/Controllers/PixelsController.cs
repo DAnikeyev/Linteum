@@ -29,7 +29,7 @@ public class PixelsController : ControllerBase
     }
     
     
-    [HttpGet("canvases/{canvasName}/pixels")]
+    [HttpGet("getpixel/{canvasName}")]
     public async Task<IActionResult> GetByPixelDto(string canvasName, [FromQuery]PixelDto pixelDto)
     {
         if (!Request.Headers.TryGetValue(CustomHeaders.SessionId, out var sessionIdStr) || !Guid.TryParse(sessionIdStr, out var sessionId))
@@ -61,10 +61,21 @@ public class PixelsController : ControllerBase
         return Ok(pixels);
     }
 
-    [HttpPost("change")]
-    public async Task<IActionResult> TryChangePixel(Guid ownerId, [FromBody] PixelDto pixel)
+    [HttpPost("change/{canvasName}")]
+    public async Task<IActionResult> TryChangePixel(string canvasName, [FromBody] PixelDto pixel)
     {
-        var result = await _repoManager.PixelRepository.TryChangePixelAsync(ownerId, pixel);
+        if (!Request.Headers.TryGetValue(CustomHeaders.SessionId, out var sessionIdStr) || !Guid.TryParse(sessionIdStr, out var sessionId))
+            return Unauthorized("Session-Id header missing or invalid.");
+
+        var userId = _sessionService.GetUserId(sessionId);
+        if (userId == null)
+            return Unauthorized("Invalid session.");
+        
+        var canvas = await _repoManager.CanvasRepository.GetByNameAsync(canvasName);
+        if (canvas == null)
+            return NotFound("Canvas not found.");
+        pixel.CanvasId = canvas.Id;
+        var result = await _repoManager.PixelRepository.TryChangePixelAsync(userId.Value, pixel);
         if (result == null)
             return BadRequest("Could not change pixel.");
         return Ok(result);

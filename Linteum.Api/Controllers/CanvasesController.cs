@@ -235,7 +235,6 @@ namespace Linteum.Api.Controllers
         [HttpGet("image/{name}")]
         public async Task<IActionResult> GetImage(string name)
         {
-            //ToDo: AddCaching
             if (!Request.Headers.TryGetValue(CustomHeaders.SessionId, out var sessionIdStr) || !Guid.TryParse(sessionIdStr, out var sessionId))
                 return Unauthorized("Session-Id header missing or invalid.");
 

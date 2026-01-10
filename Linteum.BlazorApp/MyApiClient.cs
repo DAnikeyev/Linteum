@@ -265,7 +265,7 @@ public class MyApiClient
             X = x,
             Y = y,
         };
-        var request = new HttpRequestMessage(HttpMethod.Get, $"canvases/{canvasName}/pixels");
+        var request = new HttpRequestMessage(HttpMethod.Get, $"pixels/getpixel/{canvasName}");
         await request.AddSessionId(_localStorage);
         request.SetJsonContent(pixelDto);
         var response = await _httpClient.SendAsync(request);
@@ -284,7 +284,7 @@ public class MyApiClient
             Price = 0,
             CanvasId = canvasDto.Id,
         };
-        var request = new HttpRequestMessage(HttpMethod.Post, "/pixels/paint");
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/pixels/change/{canvasDto.Name}");
         await request.AddSessionId(_localStorage);
         request.SetJsonContent(pixelDto);
         var response = await _httpClient.SendAsync(request);

@@ -14,14 +14,12 @@ public class PixelRepository : IPixelRepository
 {
     private readonly AppDbContext _context;
     private readonly IMapper _mapper;
-    private readonly IBalanceChangedEventRepository _balanceChangedEventRepository;
     private readonly ILogger<PixelRepository> _logger;
 
-    public PixelRepository(AppDbContext context, IMapper mapper, IBalanceChangedEventRepository balanceChangedEventRepository, ILogger<PixelRepository> logger)
+    public PixelRepository(AppDbContext context, IMapper mapper, ILogger<PixelRepository> logger)
     {
         _context = context;
         _mapper = mapper;
-        _balanceChangedEventRepository = balanceChangedEventRepository;
         _logger = logger;
     }
 
@@ -67,6 +65,73 @@ public class PixelRepository : IPixelRepository
             _logger.LogWarning($"Pixel coordinates ({pixel.X}, {pixel.Y}) are out of bounds for canvas {canvas.Name} (Width: {canvas.Width}, Height: {canvas.Height}).");
             return null;
         }
+        switch (canvas.CanvasMode)
+        {
+            case CanvasMode.Sandbox:
+                return await TryChangePixelSandbox(pixel, ownerId);
+            case CanvasMode.Economy:
+                return await TryChangePixelEconomy(pixel, ownerId);
+            default:
+                _logger.LogWarning($"Unknown canvas mode: {canvas.CanvasMode}");
+                return null;
+        }
+    }
+
+    private async Task<PixelDto?> TryChangePixelSandbox(PixelDto pixel, Guid ownerId)
+    {
+        await using var transaction = await _context.Database.BeginTransactionAsync();
+        try
+        {
+            var existingPixel = await _context.Pixels
+                .FirstOrDefaultAsync(p => p.CanvasId == pixel.CanvasId && pixel.X == p.X && pixel.Y == p.Y);
+            if (existingPixel == null)
+            {
+                //Add pixel
+                var addedPixel = new Pixel()
+                {
+                    Id = new Guid(),
+                    CanvasId = pixel.CanvasId,
+                    OwnerId = null,
+                    ColorId = pixel.ColorId,
+                    X = pixel.X,
+                    Y = pixel.Y,
+                    Price = 0,
+                };
+                _context.Pixels.Add(addedPixel);
+                await _context.SaveChangesAsync();
+                existingPixel = addedPixel;
+            }
+            
+            var pixelChangedEvent = new PixelChangedEvent
+            {
+                Id = Guid.NewGuid(),
+                PixelId = existingPixel.Id,
+                OldOwnerUserId = existingPixel.OwnerId, 
+                OwnerUserId= ownerId,
+                OldColorId = existingPixel.ColorId,
+                NewColorId = pixel.ColorId,
+                NewPrice = 0,
+                ChangedAt = DateTime.UtcNow,
+            };
+            existingPixel.OwnerId = ownerId;
+            existingPixel.ColorId = pixel.ColorId;
+            _context.Pixels.Update(existingPixel);
+            await _context.PixelChangedEvents.AddAsync(pixelChangedEvent);
+            await _context.SaveChangesAsync();
+            _logger.LogInformation($"Pixel changed successfully. PixelId={existingPixel.Id}, OwnerId={ownerId}, CanvasId={pixel.CanvasId}, Price={0}");
+            await transaction.CommitAsync();
+            return _mapper.Map<PixelDto>(existingPixel);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex.Message, "Error changing pixel. OwnerId={OwnerId}, Pixel={Pixel}", ownerId, pixel);
+            await transaction.RollbackAsync();
+            return null;
+        }
+    }
+
+    private async Task<PixelDto?> TryChangePixelEconomy(PixelDto pixel, Guid ownerId)
+    {
         await using var transaction = await _context.Database.BeginTransactionAsync();
         try
         {
