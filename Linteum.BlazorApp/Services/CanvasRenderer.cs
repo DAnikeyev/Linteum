@@ -40,8 +40,8 @@ public class CanvasRenderer : IAsyncDisposable
 
     private async Task RenderLoop()
     {
-        // Run at approx 30 FPS
-        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(33));
+        // Run at approx 10 FPS
+        using var timer = new PeriodicTimer(TimeSpan.FromMilliseconds(100));
         
         while (await timer.WaitForNextTickAsync(_cts.Token))
         {

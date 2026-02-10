@@ -189,8 +189,8 @@ public class UsersController : ControllerBase
 
         var passwordDto = new UserPaswordDto
         {
-            PasswordHashOrKey = passwordHashOrKey,
-            LoginMethod = (Linteum.Shared.LoginMethod)loginMethod
+            PasswordHashOrKey = Uri.EscapeDataString(passwordHashOrKey),
+            LoginMethod = (Linteum.Shared.LoginMethod)loginMethod,
         };
 
         var result = await _repoManager.UserRepository.AddOrUpdateUserAsync(user, passwordDto);

@@ -30,7 +30,7 @@ public class PixelsController : ControllerBase
     
     
     [HttpGet("getpixel/{canvasName}")]
-    public async Task<IActionResult> GetByPixelDto(string canvasName, [FromQuery]PixelDto pixelDto)
+    public async Task<IActionResult> GetByPixelDto(string canvasName, [FromBody]PixelDto pixelDto)
     {
         if (!Request.Headers.TryGetValue(CustomHeaders.SessionId, out var sessionIdStr) || !Guid.TryParse(sessionIdStr, out var sessionId))
             return Unauthorized("Session-Id header missing or invalid.");
@@ -42,16 +42,35 @@ public class PixelsController : ControllerBase
         var canvas = await _repoManager.CanvasRepository.GetByNameAsync(canvasName);
         if (canvas == null)
             return NotFound("Canvas not found.");
-        var pixelDtoFull = new PixelDto
+        var pixelDtoReq = new PixelDto
         {
             CanvasId = canvas.Id,
             X = pixelDto.X,
             Y = pixelDto.Y,
         };
-        var pixelExtracted = await _repoManager.PixelRepository.GetByPixelDto(pixelDtoFull);
+        var pixelExtracted = await _repoManager.PixelRepository.GetByPixelDto(pixelDtoReq);
         if (pixelExtracted == null)
-            return NotFound("Pixel not found.");
+        {
+            _logger.LogInformation("Pixel not found, returning default pixel.");
+            pixelExtracted = await GetDefaultPixel(pixelDtoReq);
+        }
         return Ok(pixelExtracted);
+    }
+
+    private async Task<PixelDto> GetDefaultPixel(PixelDto pixelDtoReq)
+    {
+        var defaultColor = await _repoManager.ColorRepository.GetDefautColor();
+         // Should depend on canvas type.
+        return new PixelDto
+        {
+            CanvasId = pixelDtoReq.CanvasId,
+            X = pixelDtoReq.X,
+            Y = pixelDtoReq.Y,
+            OwnerId = null,
+            Id = null,
+            Price = 0,
+            ColorId = defaultColor.Id,
+        };
     }
 
     [HttpGet("owner/{ownerId}")]

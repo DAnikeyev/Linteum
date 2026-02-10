@@ -1,5 +1,6 @@
 @using Linteum.Shared.DTO
 @using Linteum.BlazorApp.Components.Notification
+@using Linteum.BlazorApp.Services
 @inject MyApiClient ApiClient
 @inject NotificationService NotificationService
 
@@ -76,6 +77,9 @@
     public (int X, int Y)? ClickedPixel { get; set; }
 
     [Parameter]
+    public CanvasRenderer? CanvasRenderer { get; set; }
+
+    [Parameter]
     public PixelDto ClickedPixelData { get; set; }
 
     public long Gold { get; set; }
@@ -110,9 +114,51 @@
         _colorDropdownOpen = false;
     }
 
-    private Task PaintClick()
+    private async Task PaintClick()
     {
-        return Task.CompletedTask;
+        if (Canvas == null)
+        {
+            await NotifyAsync( new CustomNotification
+            {
+                Message = "No canvas loaded.",
+                Type = NotificationType.Info,
+            });
+            return;
+        }
+        
+        if(SelectedColor == null || !ClickedPixel.HasValue)
+        {
+            await NotifyAsync( new CustomNotification
+            {
+                Message = "No color selected or pixel clicked.",
+                Type = NotificationType.Info,
+            });
+            return;
+        }
+
+        try
+        {
+            var newPixel = await ApiClient.Paint(ClickedPixel.Value, Canvas, SelectedColor.Id);
+            if (CanvasRenderer != null)
+            {
+                CanvasRenderer.EnqueuePixel(newPixel.X, newPixel.Y, SelectedColor.HexValue);
+            }
+
+            await NotifyAsync(new CustomNotification
+            {
+                Message = $"Painted pixel at ({newPixel.X}, {newPixel.Y}) with color {SelectedColor.Name ?? SelectedColor.HexValue}.",
+                Type = NotificationType.Success,
+            });
+        }
+        catch (Exception ex)
+        {
+            _nlog.Error(ex, "Error painting pixel");
+            await NotifyAsync( new CustomNotification
+            {
+                Message = $"Error painting pixel: {ex.Message}",
+                Type = NotificationType.Error,
+            });
+        }
     }
 
     private async Task NotifyAsync(CustomNotification note)

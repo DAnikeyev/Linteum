@@ -24,4 +24,15 @@ public class ColorRepository : IColorRepository
     {
         return await _context.Colors.ProjectTo<ColorDto>(_mapper.ConfigurationProvider).ToListAsync();
     }
+
+    public async Task<ColorDto> GetDefautColor()
+    {
+        var defaultColor = await _context.Colors.AsNoTracking().FirstOrDefaultAsync(c => c.HexValue == "#FFFFFF");
+        if (defaultColor == null)
+        {
+            _logger.LogWarning("Default color #FFFFFF not found in the database.");
+            return null;
+        }
+        return _mapper.Map<ColorDto>(defaultColor);
+    }
 }

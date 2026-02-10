@@ -37,7 +37,7 @@ internal class PixelChangedEventRepositoryCreateTest : SyntheticDataTest
         Assert.IsNotNull(pixel2);
         Assert.That(pixel2.CanvasId, Is.EqualTo(pixel1.CanvasId));
         Assert.That(pixel2.Id, Is.EqualTo(pixel1.Id));
-        var pixelChangedEvent = (await pixelChangedRepo.GetByPixelIdAsync(pixel1.Id)).ToList();
+        var pixelChangedEvent = (await pixelChangedRepo.GetByPixelIdAsync(pixel1.Id.Value)).ToList();
         Assert.That(pixelChangedEvent.Count, Is.EqualTo(2));
         Assert.That(pixelChangedEvent[0].OwnerUserId, Is.EqualTo(user.Id));
         Assert.That(pixelChangedEvent[0].OldOwnerUserId, Is.Null);

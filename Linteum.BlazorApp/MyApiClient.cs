@@ -276,6 +276,8 @@ public class MyApiClient
     
     public async Task<PixelDto> Paint((int X, int Y) clickedPixel, CanvasDto canvasDto, int colorId)
     {
+        
+        //ToDo: Add price calculation logic here.
         var pixelDto = new PixelDto
         {
             X = clickedPixel.X,
@@ -307,6 +309,5 @@ public class MyApiClient
             throw new Exception("You are not authorized to paint on this canvas.");
         throw new Exception($"Failed to paint pixel at ({pixelDto.X}, {pixelDto.Y}). This exception is unexpected.");
     }
-    
 }
 

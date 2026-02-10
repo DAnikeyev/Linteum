@@ -93,7 +93,7 @@ else
             </div>
         </div>
 
-        <PixelManager Canvas="@_canvas" ClickedPixel="@_clickedPixel" ClickedPixelData="@_clickedPixelData" />
+        <PixelManager Canvas="@_canvas" ClickedPixel="@_clickedPixel" ClickedPixelData="@_clickedPixelData" CanvasRenderer="@_renderer" />
     </div>
 }
 
@@ -108,7 +108,6 @@ else
 
     private CanvasDto? _canvas;
     private string? _loadedCanvasName;
-    // private string? _canvasImageSrc; // Removed
     private (int X, int Y)? _clickedPixel;
     private PixelDto _clickedPixelData;
     private (int X, int Y)? _hoveredPixel;
@@ -141,7 +140,7 @@ else
     private string RendererStyle =>
         _canvas == null
             ? "display:inline-block;"
-            : $"width:{_canvas.Width}px; height:{_canvas.Height}px; background:#ffffff; display:inline-block; transform: translate({_offsetX}px, {_offsetY}px) scale({_scale}); transform-origin: 0 0;";
+            : $"position: absolute; left: {_offsetX}px; top: {_offsetY}px; width:{_canvas.Width}px; height:{_canvas.Height}px; background:#ffffff; transform: scale({_scale}); transform-origin: 0 0;";
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -150,13 +149,16 @@ else
             _hasRendered = true;
             _lastSidebarMargin = SidebarMargin;
             await CalculateViewportDimensions();
-            
-            // Initialize Renderer
+        }
+
+        // MOVED INITIALIZATION HERE
+        // Only initialize if we have the canvas data AND we haven't initialized the renderer yet.
+        // This ensures the <canvas> element actually exists in the DOM.
+        if (_canvas != null && _renderer == null)
+        {
             _renderer = new CanvasRenderer(JSRuntime);
             await _renderer.InitializeAsync(_canvasRef);
-            
-            // If we already have data loaded (rare in first render but possible), load it
-            if (_canvas != null) await LoadCanvasImage();
+            await LoadCanvasImage();
 
             FitCanvas();
             StateHasChanged();
@@ -204,9 +206,14 @@ else
             return;
 
         _canvas = null;
-        // _canvasImageSrc = null; // Removed
         _loadedCanvasName = canvasName;
-
+        
+        if (_renderer != null)
+        {
+            await _renderer.DisposeAsync();
+            _renderer = null; 
+        }
+        
         try
         {
             _colors = await ApiClient.GetColorsAsync();
@@ -258,7 +265,7 @@ else
         }
     }
 
-    private void OnCanvasMouseDown(MouseEventArgs e)
+    private async Task OnCanvasMouseDown(MouseEventArgs e)
     {
         if (e.Button == 0)
         {
@@ -271,14 +278,12 @@ else
         if (pixel.HasValue)
         {
             _clickedPixel = pixel;
-            _clickedPixelData = ApiClient.GetPixelData(_canvas.Name, pixel.Value.X, pixel.Value.Y).Result;
+            _clickedPixelData = await ApiClient.GetPixelData(_canvas.Name, pixel.Value.X, pixel.Value.Y);
             var colorId = _clickedPixelData.ColorId;
             var color = _colors.Where(x => x.Id == colorId).FirstOrDefault();
 
-            // Draw that pixel on canvas using the renderer
             if (color != null && _renderer != null)
             {
-                // Assuming color.Hex is the property, adjust if it's different
                 _renderer.EnqueuePixel(pixel.Value.X, pixel.Value.Y, color.HexValue); 
             }
         }
