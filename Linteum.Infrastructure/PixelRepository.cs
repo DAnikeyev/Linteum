@@ -15,12 +15,14 @@ public class PixelRepository : IPixelRepository
     private readonly AppDbContext _context;
     private readonly IMapper _mapper;
     private readonly ILogger<PixelRepository> _logger;
+    private readonly IPixelNotifier _notifier;
 
-    public PixelRepository(AppDbContext context, IMapper mapper, ILogger<PixelRepository> logger)
+    public PixelRepository(AppDbContext context, IMapper mapper, ILogger<PixelRepository> logger, IPixelNotifier notifier)
     {
         _context = context;
         _mapper = mapper;
         _logger = logger;
+        _notifier = notifier;
     }
 
     public async Task<IEnumerable<PixelDto>> GetByCanvasIdAsync(Guid canvasId)
@@ -65,16 +67,36 @@ public class PixelRepository : IPixelRepository
             _logger.LogWarning($"Pixel coordinates ({pixel.X}, {pixel.Y}) are out of bounds for canvas {canvas.Name} (Width: {canvas.Width}, Height: {canvas.Height}).");
             return null;
         }
+
+        PixelDto? result = null;
+
         switch (canvas.CanvasMode)
         {
             case CanvasMode.Sandbox:
-                return await TryChangePixelSandbox(pixel, ownerId);
+                result = await TryChangePixelSandbox(pixel, ownerId);
+                break;
             case CanvasMode.Economy:
-                return await TryChangePixelEconomy(pixel, ownerId);
+                result = await TryChangePixelEconomy(pixel, ownerId);
+                break;
             default:
                 _logger.LogWarning($"Unknown canvas mode: {canvas.CanvasMode}");
                 return null;
         }
+
+        if (result != null)
+        {
+            try
+            {
+                _logger.LogInformation("Signaling pixel change to clients. Canvas: {CanvasName}, Pixel: ({X}, {Y}), ColorId: {ColorId}", canvas.Name, result.X, result.Y, result.ColorId);
+                await _notifier.NotifyPixelChanged(canvas.Name, result);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to broadcast pixel update");
+            }
+        }
+
+        return result;
     }
 
     private async Task<PixelDto?> TryChangePixelSandbox(PixelDto pixel, Guid ownerId)

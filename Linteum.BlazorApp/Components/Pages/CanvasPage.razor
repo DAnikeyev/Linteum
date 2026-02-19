@@ -3,15 +3,20 @@
 @using Linteum.BlazorApp.Components.Notification
 @using Linteum.Shared.DTO
 @using NLog
+@inject IConfiguration Configuration
 @using Linteum.BlazorApp.Components.Layout
 @using Microsoft.AspNetCore.Components.Web
 @using Linteum.Shared
 @using Linteum.BlazorApp.Services
+@using Microsoft.AspNetCore.SignalR.Client
 @implements IAsyncDisposable
 @inject MyApiClient ApiClient
 @inject NotificationService NotificationService
 @inject IJSRuntime JSRuntime
 @inject LocalStorageService LocalStorageService
+@inject NavigationManager NavigationManager
+@using Microsoft.Extensions.Hosting
+@inject IHostEnvironment Environment
 
 @if (_canvas == null)
 {
@@ -25,12 +30,19 @@ else
 
             <div class="canvas-renderer"
                  style=@RendererStyle>
-                 
+
                 <!-- REPLACED IMG WITH CANVAS -->
-                <canvas @ref="_canvasRef" 
-                        width="@_canvas.Width" 
+                <canvas @ref="_canvasRef"
+                        width="@_canvas.Width"
                         height="@_canvas.Height"
                         style="width:100%; height:100%; display: block; pointer-events: none;">
+                </canvas>
+                
+                <!-- OVERLAY CANVAS -->
+                <canvas @ref="_overlayRef"
+                        width="@_canvas.Width"
+                        height="@_canvas.Height"
+                        style="width:100%; height:100%; display: block; pointer-events: none; position: absolute; top: 0; left: 0;">
                 </canvas>
 
             </div>
@@ -112,8 +124,13 @@ else
     private PixelDto _clickedPixelData;
     private (int X, int Y)? _hoveredPixel;
 
+    // SignalR
+    private HubConnection? _hubConnection;
+    private string? _connectedGroup;
+
     // Renderer
     private ElementReference _canvasRef;
+    private ElementReference _overlayRef;
     private CanvasRenderer? _renderer;
 
     // Viewport dimensions
@@ -141,6 +158,71 @@ else
         _canvas == null
             ? "display:inline-block;"
             : $"position: absolute; left: {_offsetX}px; top: {_offsetY}px; width:{_canvas.Width}px; height:{_canvas.Height}px; background:#ffffff; transform: scale({_scale}); transform-origin: 0 0;";
+            
+    // LIFECYCLE: SETUP SIGNALR
+    protected override async Task OnInitializedAsync()
+    {
+        try 
+        {
+            var apiBase = Configuration["ApiBaseUrl"]; 
+            
+            if (string.IsNullOrEmpty(apiBase)) 
+            {
+                _nlog.Warn("ApiBaseUrl missing from config, defaulting to /canvashub relative to page.");
+                apiBase = NavigationManager.BaseUri;
+            }
+
+            var hubUrl = $"{apiBase.TrimEnd('/')}/canvashub";
+
+            _hubConnection = new HubConnectionBuilder()
+                .WithUrl(hubUrl, options =>
+                {
+                    if (Environment.IsDevelopment())
+                    {
+                        options.HttpMessageHandlerFactory = (handler) =>
+                        {
+                            if (handler is HttpClientHandler clientHandler)
+                            {
+                                clientHandler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
+                            }
+                            return handler;
+                        };
+                        options.WebSocketConfiguration = socketOptions =>
+                        {
+                            socketOptions.RemoteCertificateValidationCallback = (_, _, _, _) => true;
+                        };
+                    }
+                })
+                .WithAutomaticReconnect()
+                .Build();
+
+            _hubConnection.On<int, int, int>("ReceivePixelUpdate", (x, y, colorId) =>
+            {
+                if (_renderer == null || _colors == null) return;
+                
+                // Try to find the color hex from the ID sent
+                var c = _colors.FirstOrDefault(cDto => cDto.Id == colorId);
+                if (c != null)
+                {
+                    _renderer.EnqueuePixel(x, y, c.HexValue);
+                }
+            });
+            
+            _hubConnection.Reconnected += async (_) =>
+            {
+                if (!string.IsNullOrEmpty(_connectedGroup))
+                {
+                    await _hubConnection.InvokeAsync("JoinCanvasGroup", _connectedGroup);
+                }
+            };
+
+            await _hubConnection.StartAsync();
+        }
+        catch(Exception ex)
+        {
+            _nlog.Error(ex, "Failed to start SignalR connection");
+        }
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -151,13 +233,10 @@ else
             await CalculateViewportDimensions();
         }
 
-        // MOVED INITIALIZATION HERE
-        // Only initialize if we have the canvas data AND we haven't initialized the renderer yet.
-        // This ensures the <canvas> element actually exists in the DOM.
         if (_canvas != null && _renderer == null)
         {
             _renderer = new CanvasRenderer(JSRuntime);
-            await _renderer.InitializeAsync(_canvasRef);
+            await _renderer.InitializeAsync(_canvasRef, _overlayRef);
             await LoadCanvasImage();
 
             FitCanvas();
@@ -201,25 +280,42 @@ else
             await CalculateViewportDimensions();
             ClampOffsets();
         }
+        
+        if (_hubConnection?.State == HubConnectionState.Connected && _connectedGroup != canvasName)
+        {
+            if (!string.IsNullOrEmpty(_connectedGroup))
+            {
+                await _hubConnection.InvokeAsync("LeaveCanvasGroup", _connectedGroup);
+            }
+            await _hubConnection.InvokeAsync("JoinCanvasGroup", canvasName);
+            _connectedGroup = canvasName;
+        }
 
         if (_loadedCanvasName == canvasName && _canvas != null)
             return;
 
         _canvas = null;
         _loadedCanvasName = canvasName;
-        
+
         if (_renderer != null)
         {
             await _renderer.DisposeAsync();
-            _renderer = null; 
+            _renderer = null;
         }
-        
+
         try
         {
             _colors = await ApiClient.GetColorsAsync();
             _canvas = await ApiClient.GetCanvas(canvasName);
 
             await LoadCanvasImage();
+
+             if (_hubConnection?.State == HubConnectionState.Connected && _connectedGroup != canvasName)
+            {
+                if (!string.IsNullOrEmpty(_connectedGroup)) await _hubConnection.InvokeAsync("LeaveCanvasGroup", _connectedGroup);
+                await _hubConnection.InvokeAsync("JoinCanvasGroup", canvasName);
+                _connectedGroup = canvasName;
+            }
 
             _clickedPixel = null;
             _hoveredPixel = null;
@@ -248,7 +344,7 @@ else
 
     private void FitCanvas()
     {
-        const double margin = 1; 
+        const double margin = 1;
 
         if (_canvas != null && _canvas.Width > 0 && _canvas.Height > 0)
         {
@@ -279,12 +375,13 @@ else
         {
             _clickedPixel = pixel;
             _clickedPixelData = await ApiClient.GetPixelData(_canvas.Name, pixel.Value.X, pixel.Value.Y);
+            
             var colorId = _clickedPixelData.ColorId;
             var color = _colors.Where(x => x.Id == colorId).FirstOrDefault();
 
             if (color != null && _renderer != null)
             {
-                _renderer.EnqueuePixel(pixel.Value.X, pixel.Value.Y, color.HexValue); 
+                _renderer.EnqueuePixel(pixel.Value.X, pixel.Value.Y, color.HexValue);
             }
         }
     }
@@ -398,6 +495,11 @@ else
         if (_renderer != null)
         {
             await _renderer.DisposeAsync();
+        }
+        
+        if (_hubConnection != null)
+        {
+            await _hubConnection.DisposeAsync();
         }
     }
 }

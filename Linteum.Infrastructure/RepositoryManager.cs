@@ -17,7 +17,7 @@ public class RepositoryManager
     public IPixelRepository PixelRepository { get; }
     
     
-    public RepositoryManager(AppDbContext context, IMapper mapper, Config config, ILoggerFactory loggerFactory)
+    public RepositoryManager(AppDbContext context, IMapper mapper, Config config, ILoggerFactory loggerFactory, IPixelNotifier pixelNotifier)
     {
         LoginEventRepository = new LoginEventRepository(context, mapper, loggerFactory.CreateLogger<LoginEventRepository>());
         BalanceChangedEventRepository = new BalanceChangedEventRepository(context, mapper, loggerFactory.CreateLogger<BalanceChangedEventRepository>());
@@ -26,6 +26,6 @@ public class RepositoryManager
         SubscriptionRepository = new SubscriptionRepository(context, mapper, BalanceChangedEventRepository, loggerFactory.CreateLogger<SubscriptionRepository>());
         UserRepository = new UserRepository(context, mapper, BalanceChangedEventRepository, SubscriptionRepository, config, loggerFactory.CreateLogger<UserRepository>());
         PixelChangedEventRepository = new PixelChangedEventRepository(context, mapper, loggerFactory.CreateLogger<PixelChangedEventRepository>());
-        PixelRepository = new PixelRepository(context, mapper, loggerFactory.CreateLogger<PixelRepository>());
+        PixelRepository = new PixelRepository(context, mapper, loggerFactory.CreateLogger<PixelRepository>(), pixelNotifier);
     }
 }

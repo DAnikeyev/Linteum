@@ -8,6 +8,7 @@ public class CanvasRenderer : IAsyncDisposable
 {
     private readonly IJSRuntime _js;
     private ElementReference _canvasElement;
+    private ElementReference _overlayElement;
     private readonly ConcurrentQueue<PixelUpdate> _queue = new();
     private readonly CancellationTokenSource _cts = new();
     private Task? _renderLoopTask;
@@ -18,10 +19,11 @@ public class CanvasRenderer : IAsyncDisposable
         _js = js;
     }
 
-    public async Task InitializeAsync(ElementReference canvasElement)
+    public async Task InitializeAsync(ElementReference canvasElement, ElementReference overlayElement)
     {
         _canvasElement = canvasElement;
-        await _js.InvokeVoidAsync("canvasRenderer.init", _canvasElement);
+        _overlayElement = overlayElement;
+        await _js.InvokeVoidAsync("canvasRenderer.init", _canvasElement, _overlayElement);
         _initialized = true;
         
         _renderLoopTask = RenderLoop();
