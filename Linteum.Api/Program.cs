@@ -47,7 +47,10 @@ try
         var dbMigrator = new DbMigrator(app.Services, loggerFactory);
         await dbMigrator.InitializeAsync();
     }
-    app.UseHttpsRedirection();
+    if (app.Environment.IsDevelopment())
+    {
+        app.UseHttpsRedirection();
+    }
     app.UseCors("AllowBlazorApp");
     app.MapControllers();
     app.MapHub<CanvasHub>("/canvashub");

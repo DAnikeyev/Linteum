@@ -65,12 +65,12 @@ public class MunchBot : BotBase
         Console.WriteLine("Starting painting loop (1ms delay, 80% accuracy)...");
         while (true)
         {
-            int x = random.Next(canvas.Width);
-            int y = random.Next(canvas.Height);
+            var x = random.Next(canvas.Width);
+            var y = random.Next(canvas.Height);
 
             ColorDto? targetColor;
             
-            if (random.NextDouble() < 0.9)
+            if (random.NextDouble() < 0.8)
             {
                 targetColor = grid[x, y];
             }

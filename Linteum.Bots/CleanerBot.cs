@@ -47,7 +47,7 @@ public class CleanerBot : BotBase
                 for (int x = 0; x < canvas.Width; x++)
                 {
                     await PaintPixelAsync(canvas, x, y, whiteColor.Id);
-                    await Task.Delay(10); 
+                    await Task.Delay(1); 
                 }
             }
             Console.WriteLine("Canvas cleared. Restarting cleaning process in 5 seconds...");

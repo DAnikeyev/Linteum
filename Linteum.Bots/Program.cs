@@ -1,13 +1,26 @@
-﻿using System.Net.Http.Json;
-using Linteum.Shared.DTO;
+﻿// ...existing code...
 
 namespace Linteum.Bots;
+// ...existing code...
 
 public class Program
 {
     static async Task Main(string[] args)
     {
-        var bot = new VanGoghBot();
+        if (args.Length == 0)
+        {
+            Console.WriteLine("Please specify a bot to run: Cleaner, Munch, or VanGogh");
+            return;
+        }
+
+        BotBase bot = args[0].ToLower() switch
+        {
+            "cleaner" => new CleanerBot(),
+            "munch" => new MunchBot(),
+            "vangogh" => new VanGoghBot(),
+            _ => throw new ArgumentException($"Unknown bot: {args[0]}")
+        };
+
         await bot.RunAsync();
     }
 }

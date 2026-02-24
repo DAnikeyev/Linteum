@@ -70,4 +70,28 @@ public class PixelChangedEventRepository : IPixelChangedEventRepository
         }
 
     }
+
+    public async Task<bool> CleanPixelHistory(PixelDto pixelChangedEventDto, int maxHistoryEntries)
+    {
+        try
+        {
+            var eventsToDelete = await _context.PixelChangedEvents
+                .Where(e => e.PixelId == pixelChangedEventDto.Id)
+                .OrderByDescending(e => e.ChangedAt)
+                .Skip(maxHistoryEntries)
+                .ToListAsync();
+
+            if (eventsToDelete.Any())
+            {
+                _context.PixelChangedEvents.RemoveRange(eventsToDelete);
+                await _context.SaveChangesAsync();
+            }
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"Error cleaning pixel history: {ex.Message}");
+            return false;
+        }
+    }
 }

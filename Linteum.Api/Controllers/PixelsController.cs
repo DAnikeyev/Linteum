@@ -1,3 +1,4 @@
+using System.Threading.Channels;
 using Linteum.Api.Services;
 using Linteum.Infrastructure;
 using Linteum.Shared;
@@ -12,13 +13,15 @@ public class PixelsController : ControllerBase
 {
     private readonly RepositoryManager _repoManager;
     private readonly ILogger<PixelsController> _logger;
+    private readonly Channel<PixelDto> _changedPixelsChannel;
     private readonly SessionService _sessionService;
 
-    public PixelsController(RepositoryManager repoManager, SessionService sessionService, ILogger<PixelsController> logger)
+    public PixelsController(RepositoryManager repoManager, SessionService sessionService, ILogger<PixelsController> logger, Channel<PixelDto> changedPixelsChannel)
     {
         _sessionService = sessionService;
         _repoManager = repoManager;
         _logger = logger;
+        _changedPixelsChannel = changedPixelsChannel;
     }
 
     [HttpGet("canvases/{canvasId}")]
@@ -97,6 +100,7 @@ public class PixelsController : ControllerBase
         var result = await _repoManager.PixelRepository.TryChangePixelAsync(userId.Value, pixel);
         if (result == null)
             return BadRequest("Could not change pixel.");
+        _changedPixelsChannel.Writer.TryWrite(result);
         return Ok(result);
     }
 }

@@ -1,11 +1,11 @@
 
 # Performance optimisations:
  - Background services in API for:
-   - Signaling (use channels)
-   - Db clean up schedule
- - Control scoped dependencies (maybe PooledDbContext)
+   - Signaling (use channels). **Resolution**: Not required, performance is fine for awaiting
+   - Db clean up schedule. **Resolution**: Replaced with Channel based background service that clean history after changePixel calls.
+ - Control scoped dependencies (maybe PooledDbContext). **Resolution**: Not needed now.
  - Redundant SignalR subscribing on canvasPage
- - Profile to narrow down bottlenecks
+ - Profile performance to narrow down bottlenecks. **Resolution**: Performance is good for now.
 # 1.0 Required Features
 ### Business Features:
 - FAQ
@@ -14,7 +14,7 @@
 - List of pixel changes
 - Updating session Timeout on user activity
 ### Infrastructure:
-- Db Cleanup
+- Db Cleanup: done.
 - Ensure Docker signaling
 - Disposing/closing of signalR connections
 # 1.0 Wished Features
@@ -35,5 +35,6 @@
 # Bugs:
  - Edges of canvas can't reach edges of canvas component on some resolutions
  - Notification manager sometimes doesn't show notifications
+ - docker/windows password hashes doesn't match, probably due to /r/n or trimming or smth.
 # 1.1 Features
  - Canvas modes

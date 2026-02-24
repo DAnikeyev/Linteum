@@ -14,13 +14,10 @@ public interface IConnectionTracker
 
 public class ConnectionTracker : IConnectionTracker
 {
-    // Map connectionId -> Set of groups
     private readonly ConcurrentDictionary<string, HashSet<string>> _connectionGroups = new();
     
-    // Map group -> Set of connectionIds
     private readonly ConcurrentDictionary<string, HashSet<string>> _groupConnections = new();
     
-    // Lock object for thread safety when modifying the HashSets inside the dictionaries
     private readonly object _lock = new();
 
     public void AddConnection(string connectionId)
@@ -59,7 +56,6 @@ public class ConnectionTracker : IConnectionTracker
             }
             else
             {
-                // Should have been added via AddConnection, but handle gracefully
                  _connectionGroups.TryAdd(connectionId, new HashSet<string> { groupName });
             }
 
