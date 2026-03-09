@@ -34,6 +34,7 @@ public class PixelChangedEventRepository : IPixelChangedEventRepository
         return await _context.PixelChangedEvents
             .AsNoTracking()
             .Where(e => e.PixelId == pixelId)
+            .OrderByDescending(x => x.ChangedAt)
             .ProjectTo<PixelChangedEventDto>(_mapper.ConfigurationProvider).ToListAsync();
     }
 

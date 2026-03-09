@@ -195,6 +195,8 @@ else
                 })
                 .WithAutomaticReconnect()
                 .Build();
+            
+            _nlog.Info($"SignalR HubConnection built for {hubUrl}, starting connection...");
 
             _hubConnection.On<int, int, int>("ReceivePixelUpdate", (x, y, colorId) =>
             {

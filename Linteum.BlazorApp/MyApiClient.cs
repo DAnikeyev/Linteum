@@ -2,12 +2,13 @@ using System.Net;
 using System.Security.Cryptography;
 using System.Text;
 using Linteum.BlazorApp.ExtensionMethods;
+using Linteum.BlazorApp.LocalDTO;
 using Linteum.Shared;
 using Linteum.Shared.DTO;
 
 namespace Linteum.BlazorApp;
 
-public class MyApiClient
+internal class MyApiClient
 {
     private readonly HttpClient _httpClient;
     private readonly LocalStorageService _localStorage;
@@ -59,6 +60,16 @@ public class MyApiClient
         return await response.Content.ReadFromJsonAsync<CanvasDto>();
     }
 
+    public async Task<List<HistoryResponseItem>> GetHistoryAsync(Guid pixelId)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, $"/pixelchangedevents/pixel/{pixelId}");
+        await request.AddSessionId(_localStorage);
+        var response = await _httpClient.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        var history = await response.Content.ReadFromJsonAsync<List<HistoryResponseItem>>();
+        return history ?? new List<HistoryResponseItem>();
+    }
+    
     public async Task<(UserDto? User, Guid? SessionId)> LoginAsync(string email, string password)
     {
         var passwordHash = SecurityHelper.HashPassword(password);

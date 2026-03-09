@@ -55,8 +55,7 @@ services:
     ports:
       - "${BLAZOR_HOST_PORT}:${BLAZOR_CONTAINER_PORT}"
     depends_on:
-      api:
-        condition: service_healthy
+      - api
     networks:
       - linteum_dev
     pull_policy: build

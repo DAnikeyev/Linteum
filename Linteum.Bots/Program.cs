@@ -1,7 +1,4 @@
-﻿// ...existing code...
-
-namespace Linteum.Bots;
-// ...existing code...
+﻿namespace Linteum.Bots;
 
 public class Program
 {

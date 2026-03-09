@@ -185,6 +185,78 @@
     cursor: not-allowed;
 }
 
+.pm-history {
+    margin: 0 1rem 1rem 1rem;
+    padding: 0.75rem;
+    background: var(--accent-2);
+    border: 1px solid var(--accent-3);
+    border-radius: 6px;
+}
+
+.pm-history h6 {
+    text-align: center;
+    margin: 0 0 0.5rem 0;
+}
+
+.history-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    max-height: 300px;
+    overflow-y: auto;
+}
+
+.history-item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.5rem;
+    background: var(--accent-1);
+    border-radius: 4px;
+    border: 1px solid var(--accent-2);
+}
+
+.history-colors {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+}
+
+.color-swatch-sm {
+    width: 14px;
+    height: 14px;
+    border: 1px solid rgba(0,0,0,0.1);
+    border-radius: 2px;
+}
+
+.arrow {
+    font-size: 0.8rem;
+    color: var(--accent-3);
+    opacity: 0.7;
+}
+
+.history-details {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.2;
+    overflow: hidden;
+}
+
+.username {
+    font-weight: 700;
+    font-size: 0.9rem;
+    color: var(--accent-3);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.timestamp {
+    font-size: 0.75rem;
+    color: var(--accent-3);
+    opacity: 0.8;
+}
+
 @media (max-width: 900px) {
     .pixelmanager {
         width: 260px;

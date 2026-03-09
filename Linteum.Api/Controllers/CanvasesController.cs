@@ -237,7 +237,7 @@ namespace Linteum.Api.Controllers
             if (!Request.Headers.TryGetValue(CustomHeaders.SessionId, out var sessionIdStr) || !Guid.TryParse(sessionIdStr, out var sessionId))
                 return Unauthorized("Session-Id header missing or invalid.");
 
-            var userId = _sessionService.GetUserId(sessionId);
+            var userId = _sessionService.GetUserIdAndUpdateTimeLimit(sessionId);
             if (userId == null)
                 return Unauthorized("Invalid session.");
 
@@ -275,7 +275,7 @@ namespace Linteum.Api.Controllers
             if (!Request.Headers.TryGetValue(CustomHeaders.SessionId, out var sessionIdStr) || !Guid.TryParse(sessionIdStr, out var sessionId))
                 return Unauthorized("Session-Id header missing or invalid.");
 
-            var userId = _sessionService.GetUserId(sessionId);
+            var userId = _sessionService.GetUserIdAndUpdateTimeLimit(sessionId);
             if (userId == null)
                 return Unauthorized("Invalid session.");
 

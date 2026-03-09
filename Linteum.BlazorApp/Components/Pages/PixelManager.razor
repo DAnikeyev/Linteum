@@ -65,7 +65,32 @@
                 </div>
             </div>
         </div>
-        
+
+        @if (_pixelChangeHistory != null && _pixelChangeHistory.Any())
+        {
+            <div class="pm-history">
+                <h6>Pixel History</h6>
+                <div class="history-list">
+                    @foreach (var item in _pixelChangeHistory)
+                    {
+                        var oldColor = _colors?.FirstOrDefault(c => c.Id == item.OldColorId);
+                        var newColor = _colors?.FirstOrDefault(c => c.Id == item.NewColorId);
+
+                        <div class="history-item">
+                            <div class="history-colors">
+                                <div class="color-swatch-sm" style="background:@(oldColor?.HexValue ?? "transparent");" title="Old: @(oldColor?.Name ?? "?")"></div>
+                                <span class="arrow">→</span>
+                                <div class="color-swatch-sm" style="background:@(newColor?.HexValue ?? "transparent");" title="New: @(newColor?.Name ?? "?")"></div>
+                            </div>
+                            <div class="history-details">
+                                <span class="username">@item.UserName</span>
+                                <span class="timestamp">@item.Timestamp.ToLocalTime().ToString("g")</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
     </div>
 </div>
 
@@ -86,6 +111,7 @@
 
     private static readonly NLog.Logger _nlog = NLog.LogManager.GetCurrentClassLogger();
     private List<ColorDto>? _colors;
+    private List<HistoryResponseItem>? _pixelChangeHistory;
 
     private int? _selectedColorId;
     private ColorDto? SelectedColor => _colors?.FirstOrDefault(c => c.Id == _selectedColorId);
@@ -97,10 +123,17 @@
         _colors = await ApiClient.GetColorsAsync();
         _colors.Sort((c1, c2) => string.Compare(c1.Name ?? string.Empty, c2.Name ?? string.Empty, StringComparison.OrdinalIgnoreCase));
     }
-    
-    protected override void OnParametersSet()
+
+    protected override async Task OnParametersSetAsync()
     {
         _colorDropdownOpen = false;
+        if (ClickedPixelData.Id == null)
+        {
+            return;
+        }
+
+        _pixelChangeHistory = await ApiClient.GetHistoryAsync(ClickedPixelData.Id.Value);
+        
     }
 
     private void ToggleColorDropdown()

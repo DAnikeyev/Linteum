@@ -21,7 +21,7 @@ public class SessionService
     {
         if (_sessionToUser.TryGetValue(sessionId, out var session))
         {
-            if (session.CreatedAt + _expiredSessionTimeout > DateTime.UtcNow)
+            if (session.CreatedOrUpdatedAt + _expiredSessionTimeout > DateTime.UtcNow)
             {
                 _logger.LogInformation($"Session {sessionId} is valid for user {session.UserId}");
                 return true;
@@ -50,21 +50,22 @@ public class SessionService
         {
             SessionId = sessionId,
             UserId = userId,
-            CreatedAt = DateTime.UtcNow,
+            CreatedOrUpdatedAt = DateTime.UtcNow,
         };
 
         _sessionToUser[sessionId] = session;
         _userToSession[userId] = sessionId;
-        _logger.LogInformation($"Created new session for user {userId} with session ID {sessionId} at {session.CreatedAt}");
+        _logger.LogInformation($"Created new session for user {userId} with session ID {sessionId} at {session.CreatedOrUpdatedAt}");
         return sessionId;
     }
 
-    public Guid? GetUserId(Guid sessionId)
+    public Guid? GetUserIdAndUpdateTimeLimit(Guid sessionId)
     {
         if (_sessionToUser.TryGetValue(sessionId, out var session))
         {
-            if (session.CreatedAt + _expiredSessionTimeout > DateTime.UtcNow)
+            if (session.CreatedOrUpdatedAt + _expiredSessionTimeout > DateTime.UtcNow)
             {
+                session.CreatedOrUpdatedAt = DateTime.UtcNow;
                 _logger.LogInformation($"Session {sessionId} is valid for user {session.UserId}");
                 return session.UserId;
             }
@@ -87,7 +88,7 @@ public class SessionService
             _logger.LogWarning("Session-Id header missing or invalid.");
             return null;
         }
-        return GetUserId(sessionId);
+        return GetUserIdAndUpdateTimeLimit(sessionId);
     }
 
     public void RemoveSession(Guid sessionId)
@@ -100,7 +101,7 @@ public class SessionService
 
     public void CleanupExpiredSessions()
     {
-        var expired = _sessionToUser.Where(s => s.Value.CreatedAt + _expiredSessionTimeout <= DateTime.UtcNow).ToList();
+        var expired = _sessionToUser.Where(s => s.Value.CreatedOrUpdatedAt + _expiredSessionTimeout <= DateTime.UtcNow).ToList();
         foreach (var session in expired)
         {
             _sessionToUser.TryRemove(session.Key, out _);

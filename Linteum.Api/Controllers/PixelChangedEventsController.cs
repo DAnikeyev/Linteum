@@ -28,7 +28,7 @@ public class PixelChangedEventsController : ControllerBase
     public async Task<IActionResult> GetByPixelId(Guid pixelId)
     {
         var events = await _repoManager.PixelChangedEventRepository.GetByPixelIdAsync(pixelId);
-        return Ok(events);
+        return Ok(events.ToList());
     }
 
     [HttpGet("canvas/{canvasId}")]

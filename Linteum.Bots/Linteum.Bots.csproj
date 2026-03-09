@@ -18,12 +18,6 @@
     </ItemGroup>
 
     <ItemGroup>
-      <None Update="Config.yaml">
-        <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-      </None>
-    </ItemGroup>
-
-    <ItemGroup>
       <None Remove="StarryNight.jpg" />
       <Content Include="StarryNight.jpg">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>

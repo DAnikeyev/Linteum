@@ -32,6 +32,7 @@ namespace Linteum.Api.Services
             }
             services.AddScoped<RepositoryManager>();
             services.AddHostedService<DbCleanupService>();
+            services.AddHostedService<PeriodicCleanupService>();
             return services;
         }
     }

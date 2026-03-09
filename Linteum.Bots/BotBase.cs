@@ -7,7 +7,7 @@ namespace Linteum.Bots;
 public abstract class BotBase
 {
     protected readonly HttpClient HttpClient;
-    protected readonly string ApiUrl = "https://localhost:7297"; 
+    protected readonly string ApiUrl = "http://localhost:5182"; 
     protected string BotEmail { get; }
     protected string BotPassword { get; }
     protected string BotUserName { get; }
