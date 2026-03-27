@@ -27,8 +27,15 @@ public class PixelChangedEventsController : ControllerBase
     [HttpGet("pixel/{pixelId}")]
     public async Task<IActionResult> GetByPixelId(Guid pixelId)
     {
-        var events = await _repoManager.PixelChangedEventRepository.GetByPixelIdAsync(pixelId);
-        return Ok(events.ToList());
+        // Currently stores only 10 last entries, so no big data transfers here.
+        var events = (await _repoManager.PixelChangedEventRepository.GetByPixelIdAsync(pixelId)).ToList();
+        var userNames = await _repoManager.UserRepository.GetByIdAsync(events.Select(x => x.OwnerUserId).ToList());
+
+        var response = events.Zip(userNames, (evt, user) => new HistoryResponseItem()
+        {
+            UserName = user, NewColorId = evt.NewColorId, OldColorId = evt.OldColorId, Timestamp = evt.ChangedAt,
+        }).ToList();
+        return Ok(response);
     }
 
     [HttpGet("canvas/{canvasId}")]

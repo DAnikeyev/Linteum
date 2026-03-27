@@ -5,6 +5,7 @@ using Linteum.BlazorApp.ExtensionMethods;
 using Linteum.BlazorApp.LocalDTO;
 using Linteum.Shared;
 using Linteum.Shared.DTO;
+using Microsoft.Extensions.Logging;
 
 namespace Linteum.BlazorApp;
 
@@ -12,11 +13,13 @@ internal class MyApiClient
 {
     private readonly HttpClient _httpClient;
     private readonly LocalStorageService _localStorage;
+    private readonly ILogger<MyApiClient> _logger;
 
-    public MyApiClient(HttpClient httpClient, LocalStorageService localStorage)
+    public MyApiClient(HttpClient httpClient, LocalStorageService localStorage, ILogger<MyApiClient> logger)
     {
         _httpClient = httpClient;
         _localStorage = localStorage;
+        _logger = logger;
     }
 
     public async Task SetSessionAsync(Guid? sessionId)
@@ -39,11 +42,13 @@ internal class MyApiClient
     
     public async Task<List<ColorDto>?> GetColorsAsync()
     {
+        _logger.LogInformation("GetColorsAsync called");
         return await _httpClient.GetFromJsonAsync<List<ColorDto>>("/colors");
     }    
     
     public async Task<CanvasDto?> AddCanvasAsync(CanvasDto canvasDto, string? password)
     {
+        _logger.LogInformation("AddCanvasAsync called with canvas name: {CanvasName}", canvasDto.Name);
         var passwordHash = string.IsNullOrEmpty(password) ? null : SecurityHelper.HashPassword(password);
         var request = new HttpRequestMessage(HttpMethod.Post, $"/canvases/Add?passwordHash={Uri.EscapeDataString(passwordHash ?? string.Empty)}");
     
@@ -62,6 +67,7 @@ internal class MyApiClient
 
     public async Task<List<HistoryResponseItem>> GetHistoryAsync(Guid pixelId)
     {
+        _logger.LogInformation("GetHistoryAsync called with pixelId: {PixelId}", pixelId);
         var request = new HttpRequestMessage(HttpMethod.Get, $"/pixelchangedevents/pixel/{pixelId}");
         await request.AddSessionId(_localStorage);
         var response = await _httpClient.SendAsync(request);
@@ -72,6 +78,7 @@ internal class MyApiClient
     
     public async Task<(UserDto? User, Guid? SessionId)> LoginAsync(string email, string password)
     {
+        _logger.LogInformation("LoginAsync called with email: {Email}", email);
         var passwordHash = SecurityHelper.HashPassword(password);
         var userDto = new UserDto { Email = email, LoginMethod = LoginMethod.Password };
         var response = await _httpClient.PostAsJsonAsync($"/users/login?passwordHashOrKey={Uri.EscapeDataString(passwordHash)}", userDto);
@@ -92,6 +99,7 @@ internal class MyApiClient
 
     public async Task<(UserDto? User, Guid? SessionId)> SignupAsync(string email, string password, string userName)
     {
+        _logger.LogInformation("SignupAsync called with email: {Email}, userName: {UserName}", email, userName);
         var passwordHash = SecurityHelper.HashPassword(password);
         var userDto = new UserDto { Email = email, UserName = userName, LoginMethod = LoginMethod.Password };
         var response = await _httpClient.PostAsJsonAsync($"/users/add?passwordHashOrKey={Uri.EscapeDataString(passwordHash)}&loginMethod={(int)LoginMethod.Password}", userDto);
@@ -112,6 +120,7 @@ internal class MyApiClient
 
     public async Task<bool> SubscribeAsync(string canvasName, string? password)
     {
+        _logger.LogInformation("SubscribeAsync called with canvasName: {CanvasName}", canvasName);
         var passwordHash = string.IsNullOrEmpty(password) ? null : SecurityHelper.HashPassword(password);
         var canvasDto = new CanvasDto { Name = canvasName };
         var passwordDto = new CanvasPasswordDto { PasswordHash = passwordHash };
@@ -144,6 +153,7 @@ internal class MyApiClient
     
     public async Task<CanvasDto> GetCanvas(string canvasName)
     {
+        _logger.LogInformation("GetCanvas called with canvasName: {CanvasName}", canvasName);
         // TODO: Add check if user is already subscribed to canvas
 
         var request = new HttpRequestMessage(HttpMethod.Get, $"/canvases/name/{canvasName}");
@@ -167,6 +177,7 @@ internal class MyApiClient
 
     public async Task<bool> UnsubscribeAsync(string canvasName)
     {
+        _logger.LogInformation("UnsubscribeAsync called with canvasName: {CanvasName}", canvasName);
         var canvasDto = new CanvasDto { Name = canvasName };
         var request = new HttpRequestMessage(HttpMethod.Post, "/canvases/unsubscribe");
         await request.AddSessionId(_localStorage);
@@ -191,6 +202,7 @@ internal class MyApiClient
     
     public async Task<List<CanvasDto>> GetSubscribedCanvasesAsync()
     {
+        _logger.LogInformation("GetSubscribedCanvasesAsync called");
         var request = new HttpRequestMessage(HttpMethod.Get, "canvases/subscribed");
         await request.AddSessionId(_localStorage);
         var response = await _httpClient.SendAsync(request);
@@ -201,6 +213,7 @@ internal class MyApiClient
 
     public async Task ChangeUsernameAsync(string userName)
     {
+        _logger.LogInformation("ChangeUsernameAsync called with userName: {UserName}", userName);
         if (string.IsNullOrEmpty(userName))
             throw new ArgumentException("Username cannot be empty", nameof(userName));
         var existingEmail = await _localStorage.GetItemAsync<string>(LocalStorageKey.Email);
@@ -230,6 +243,7 @@ internal class MyApiClient
 
     public async Task ChangePasswordAsync(string password)
     {
+        _logger.LogInformation("ChangePasswordAsync called");
         if (string.IsNullOrEmpty(password))
             throw new ArgumentException("Password cannot be empty", nameof(password));
 
@@ -253,6 +267,7 @@ internal class MyApiClient
 
     public async Task<byte[]> GetCanvasImage(CanvasDto canvasDto)
     {
+        _logger.LogInformation("GetCanvasImage called with canvasName: {CanvasName}", canvasDto.Name);
         var request = new HttpRequestMessage(HttpMethod.Get, $"/canvases/image/{canvasDto.Name}");
         await request.AddSessionId(_localStorage);
         var response = await _httpClient.SendAsync(request);
@@ -271,6 +286,7 @@ internal class MyApiClient
     
     public async Task<PixelDto> GetPixelData(string canvasName, int x, int y)
     {
+        _logger.LogInformation("GetPixelData called with canvasName: {CanvasName}, x: {X}, y: {Y}", canvasName, x, y);
         var pixelDto = new PixelDto
         {
             X = x,
@@ -287,7 +303,8 @@ internal class MyApiClient
     
     public async Task<PixelDto> Paint((int X, int Y) clickedPixel, CanvasDto canvasDto, int colorId)
     {
-        
+        _logger.LogInformation("Paint called with canvasName: {CanvasName}, x: {X}, y: {Y}, colorId: {ColorId}", canvasDto.Name, clickedPixel.X, clickedPixel.Y, colorId);
+
         //ToDo: Add price calculation logic here.
         var pixelDto = new PixelDto
         {

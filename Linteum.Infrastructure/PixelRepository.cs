@@ -12,17 +12,23 @@ namespace Linteum.Infrastructure;
 
 public class PixelRepository : IPixelRepository
 {
+    private static int? DefaultColorId = null;
     private readonly AppDbContext _context;
     private readonly IMapper _mapper;
     private readonly ILogger<PixelRepository> _logger;
     private readonly IPixelNotifier _notifier;
 
-    public PixelRepository(AppDbContext context, IMapper mapper, ILogger<PixelRepository> logger, IPixelNotifier notifier)
+    public PixelRepository(AppDbContext context, IMapper mapper, ILogger<PixelRepository> logger, IPixelNotifier notifier, IColorRepository colorRepository)
     {
         _context = context;
         _mapper = mapper;
         _logger = logger;
         _notifier = notifier;
+        if (DefaultColorId == null)
+        {
+            var defaultColor = colorRepository.GetDefautColor().GetAwaiter().GetResult();
+            DefaultColorId = defaultColor.Id;
+        }
     }
 
     public async Task<IEnumerable<PixelDto>> GetByCanvasIdAsync(Guid canvasId)

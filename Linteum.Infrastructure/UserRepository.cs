@@ -58,6 +58,20 @@ public class UserRepository : IUserRepository
             .FirstOrDefaultAsync();
     }
 
+    //Is not suitable for large data, but used for ~10 users batches now.
+    public async Task<string[]> GetByIdAsync(IList<Guid> id)
+    {
+        var users = await _context.Users
+            .AsNoTracking()
+            .Where(u => id.Contains(u.Id))
+            .Select(u => new { u.Id, u.UserName })
+            .ToArrayAsync();
+
+        return id
+            .Select(requestedId => users.FirstOrDefault(u => u.Id == requestedId)?.UserName ?? string.Empty)
+            .ToArray();
+    }
+
     public async Task<UserDto?> AddOrUpdateUserAsync(UserDto userDto, UserPaswordDto? passwordDto = null)
     {
         await using var transaction = await _context.Database.BeginTransactionAsync();

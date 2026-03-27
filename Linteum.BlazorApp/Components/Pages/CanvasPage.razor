@@ -29,7 +29,7 @@ else
              style="width:@(ViewportWidth)px; height:@(ViewportHeight)px; overflow:hidden; position:relative;">
 
             <div class="canvas-renderer"
-                 style=@RendererStyle>
+                 style="position: absolute; left: @(_offsetX)px; top: @(_offsetY)px; width:@(_canvas.Width)px; height:@(_canvas.Height)px; background:#ffffff; transform: scale(@(_scale)); transform-origin: 0 0;">
 
                 <!-- REPLACED IMG WITH CANVAS -->
                 <canvas @ref="_canvasRef"
@@ -105,7 +105,7 @@ else
             </div>
         </div>
 
-        <PixelManager Canvas="@_canvas" ClickedPixel="@_clickedPixel" ClickedPixelData="@_clickedPixelData" CanvasRenderer="@_renderer" />
+        <PixelManager Canvas="@_canvas" ClickedPixel="@_clickedPixel" ClickedPixelData="@_clickedPixelData" CanvasRenderer="@_renderer" OnlineUsers="@_onlineUsers" />
     </div>
 }
 
@@ -121,12 +121,13 @@ else
     private CanvasDto? _canvas;
     private string? _loadedCanvasName;
     private (int X, int Y)? _clickedPixel;
-    private PixelDto _clickedPixelData;
+    private PixelDto? _clickedPixelData;
     private (int X, int Y)? _hoveredPixel;
 
     // SignalR
     private HubConnection? _hubConnection;
     private string? _connectedGroup;
+    private List<string> _onlineUsers = new();
 
     // Renderer
     private ElementReference _canvasRef;
@@ -154,10 +155,6 @@ else
     private string _lastSidebarMargin = "300px";
     private List<ColorDto>? _colors;
 
-    private string RendererStyle =>
-        _canvas == null
-            ? "display:inline-block;"
-            : $"position: absolute; left: {_offsetX}px; top: {_offsetY}px; width:{_canvas.Width}px; height:{_canvas.Height}px; background:#ffffff; transform: scale({_scale}); transform-origin: 0 0;";
             
     // LIFECYCLE: SETUP SIGNALR
     protected override async Task OnInitializedAsync()
@@ -208,6 +205,12 @@ else
                 {
                     _renderer.EnqueuePixel(x, y, c.HexValue);
                 }
+            });
+
+            _hubConnection.On<List<string>>("UpdateOnlineUsers", (users) =>
+            {
+                _onlineUsers = users;
+                InvokeAsync(StateHasChanged);
             });
             
             _hubConnection.Reconnected += async (_) =>

@@ -66,6 +66,23 @@
             </div>
         </div>
 
+        <div class="pm-online-users" style="margin-top: 1rem; padding: 0.5rem; background: rgba(0,0,0,0.05); border-radius: 6px;">
+            <h6 style="margin-bottom: 0.5rem; font-size: 0.85rem; text-transform: uppercase; color: #666;">Online Users (@OnlineUsers.Count)</h6>
+            <div style="display: flex; flex-wrap: wrap; gap: 0.4rem; max-height: 100px; overflow-y: auto;">
+                @if (OnlineUsers.Any())
+                {
+                    @foreach (var user in OnlineUsers)
+                    {
+                        <span style="background: #e9ecef; padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.75rem; border: 1px solid #dee2e6;">@user</span>
+                    }
+                }
+                else
+                {
+                    <span style="font-size: 0.75rem; color: #999;">Only you are here</span>
+                }
+            </div>
+        </div>
+
         @if (_pixelChangeHistory != null && _pixelChangeHistory.Any())
         {
             <div class="pm-history">
@@ -105,14 +122,17 @@
     public CanvasRenderer? CanvasRenderer { get; set; }
 
     [Parameter]
-    public PixelDto ClickedPixelData { get; set; }
+    public PixelDto? ClickedPixelData { get; set; }
 
     public long Gold { get; set; }
+
+    [Parameter]
+    public List<string> OnlineUsers { get; set; } = new();
 
     private static readonly NLog.Logger _nlog = NLog.LogManager.GetCurrentClassLogger();
     private List<ColorDto>? _colors;
     private List<HistoryResponseItem>? _pixelChangeHistory;
-
+    private Guid? PrevPixelId;
     private int? _selectedColorId;
     private ColorDto? SelectedColor => _colors?.FirstOrDefault(c => c.Id == _selectedColorId);
 
@@ -126,14 +146,19 @@
 
     protected override async Task OnParametersSetAsync()
     {
+        if (ClickedPixelData == null || (PrevPixelId.HasValue && PrevPixelId.Value == ClickedPixelData.Id))
+        {
+            return;
+        }
+
         _colorDropdownOpen = false;
-        if (ClickedPixelData.Id == null)
+        if (ClickedPixelData?.Id == null)
         {
             return;
         }
 
         _pixelChangeHistory = await ApiClient.GetHistoryAsync(ClickedPixelData.Id.Value);
-        
+        PrevPixelId = ClickedPixelData.Id;
     }
 
     private void ToggleColorDropdown()
@@ -182,6 +207,8 @@
                 Message = $"Painted pixel at ({newPixel.X}, {newPixel.Y}) with color {SelectedColor.Name ?? SelectedColor.HexValue}.",
                 Type = NotificationType.Success,
             });
+            if(ClickedPixelData != null && ClickedPixelData.Id!= null)
+                _pixelChangeHistory = await ApiClient.GetHistoryAsync(ClickedPixelData.Id.Value);
         }
         catch (Exception ex)
         {

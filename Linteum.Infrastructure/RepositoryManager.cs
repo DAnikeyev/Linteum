@@ -26,6 +26,6 @@ public class RepositoryManager
         SubscriptionRepository = new SubscriptionRepository(context, mapper, BalanceChangedEventRepository, loggerFactory.CreateLogger<SubscriptionRepository>());
         UserRepository = new UserRepository(context, mapper, BalanceChangedEventRepository, SubscriptionRepository, config, loggerFactory.CreateLogger<UserRepository>());
         PixelChangedEventRepository = new PixelChangedEventRepository(context, mapper, loggerFactory.CreateLogger<PixelChangedEventRepository>());
-        PixelRepository = new PixelRepository(context, mapper, loggerFactory.CreateLogger<PixelRepository>(), pixelNotifier);
+        PixelRepository = new PixelRepository(context, mapper, loggerFactory.CreateLogger<PixelRepository>(), pixelNotifier, ColorRepository);
     }
 }

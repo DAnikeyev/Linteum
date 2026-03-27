@@ -37,5 +37,6 @@
  - Notification manager sometimes doesn't show notifications
  - docker/windows password hashes doesn't match, probably due to /r/n or trimming or smth.
  - unsubscribe button misplaced for long canvas names
+ - Parameters Set is called more frequiently than expected for CanvasManager
 # 1.1 Features
  - Canvas modes
