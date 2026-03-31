@@ -23,5 +23,17 @@ window.canvasHelpers = {
         x = Math.max(0, Math.min(canvas.width - 1, x));
         y = Math.max(0, Math.min(canvas.height - 1, y));
         return [x, y];
+    },
+
+    registerResizeListener: function (dotNetHelper) {
+        var listener = function () {
+            dotNetHelper.invokeMethodAsync('OnWindowResize');
+        };
+        window.addEventListener('resize', listener);
+        return listener;
+    },
+
+    unregisterResizeListener: function (listener) {
+        window.removeEventListener('resize', listener);
     }
 };

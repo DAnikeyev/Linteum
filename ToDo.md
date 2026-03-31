@@ -20,7 +20,7 @@
 # 1.0 Wished Features
  - UI improvements
  - Google Auth
- - Canvas auto zoom on loading
+ - ~~Canvas auto zoom on loading~~: Done
  - Conway's Game of Life bot
  - ~~Better home screen~~ **Resolution**: Kinda Done
  - ~~Auto navigation improvements~~ **Resolution**: Done

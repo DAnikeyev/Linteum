@@ -61,9 +61,11 @@ internal class MyApiClient
         if (!response.IsSuccessStatusCode)
         {
             var errorContent = await response.Content.ReadAsStringAsync() ?? "No additional error information.";
+            _logger.LogError("Failed to add canvas {CanvasName}. Status: {StatusCode}, Error: {Error}", canvasDto.Name, response.StatusCode, errorContent);
             throw new Exception($"Failed to add canvas. {errorContent}");
         }
 
+        _logger.LogInformation("Canvas {CanvasName} added successfully", canvasDto.Name);
         return await response.Content.ReadFromJsonAsync<CanvasDto>();
     }
 
@@ -92,7 +94,10 @@ internal class MyApiClient
         var userDto = new UserDto { Email = email, LoginMethod = LoginMethod.Password };
         var response = await _httpClient.PostAsJsonAsync($"/users/login?passwordHashOrKey={Uri.EscapeDataString(passwordHash)}", userDto);
         if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogWarning("Login failed for email: {Email}, status: {StatusCode}", email, response.StatusCode);
             return (null, null);
+        }
 
         var loginResponse = await response.Content.ReadFromJsonAsync<LoginResponse>();
         if (loginResponse?.SessionId != null && loginResponse?.User != null && loginResponse?.User?.UserName != null && loginResponse?.User?.Email != null)
@@ -101,6 +106,11 @@ internal class MyApiClient
             await _localStorage.SetItemAsync(LocalStorageKey.Email, loginResponse.User?.Email);
             await _localStorage.SetItemAsync(LocalStorageKey.LoginMethod, LoginMethod.Password);
             await SetSessionAsync(loginResponse.SessionId);
+            _logger.LogInformation("Login successful for email: {Email}", email);
+        }
+        else
+        {
+            _logger.LogWarning("Login response data missing for email: {Email}", email);
         }
         
         return (loginResponse?.User, loginResponse?.SessionId);
@@ -109,11 +119,14 @@ internal class MyApiClient
         
     public async Task<(UserDto? User, Guid? SessionId)> LoginAsync(Guid sessionId)
     {
-        _logger.LogInformation($"LoginAsync called with sessionId: {sessionId}");
+        _logger.LogInformation("LoginAsync called with sessionId: {SessionId}", sessionId);
 
         var response = await _httpClient.PostAsJsonAsync("/users/validate", sessionId);
         if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogWarning("Session validation failed for sessionId: {SessionId}, status: {StatusCode}", sessionId, response.StatusCode);
             return (null, null);
+        }
 
         var loginResponse = await response.Content.ReadFromJsonAsync<LoginResponse>();
         if (loginResponse?.SessionId != null && loginResponse?.User != null && loginResponse?.User?.UserName != null && loginResponse?.User?.Email != null)
@@ -122,6 +135,11 @@ internal class MyApiClient
             await _localStorage.SetItemAsync(LocalStorageKey.Email, loginResponse.User?.Email);
             await _localStorage.SetItemAsync(LocalStorageKey.LoginMethod, LoginMethod.Password);
             await SetSessionAsync(loginResponse.SessionId);
+            _logger.LogInformation("Session validation successful for sessionId: {SessionId}", sessionId);
+        }
+        else
+        {
+            _logger.LogWarning("Session validation response data missing for sessionId: {SessionId}", sessionId);
         }
 
         return (loginResponse?.User, loginResponse?.SessionId);
@@ -134,7 +152,10 @@ internal class MyApiClient
         var userDto = new UserDto { Email = email, UserName = userName, LoginMethod = LoginMethod.Password };
         var response = await _httpClient.PostAsJsonAsync($"/users/add?passwordHashOrKey={Uri.EscapeDataString(passwordHash)}&loginMethod={(int)LoginMethod.Password}", userDto);
         if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogWarning("Signup failed for email: {Email}, status: {StatusCode}", email, response.StatusCode);
             return (null, null);
+        }
 
         var loginResponse = await response.Content.ReadFromJsonAsync<LoginResponse>();
         if (loginResponse?.SessionId != null && loginResponse?.User != null && loginResponse?.User?.UserName != null && loginResponse?.User?.Email != null)
@@ -143,6 +164,11 @@ internal class MyApiClient
             await _localStorage.SetItemAsync(LocalStorageKey.Email, loginResponse.User?.Email);
             await _localStorage.SetItemAsync(LocalStorageKey.LoginMethod, LoginMethod.Password);
             await SetSessionAsync(loginResponse.SessionId);
+            _logger.LogInformation("Signup successful for email: {Email}", email);
+        }
+        else
+        {
+            _logger.LogWarning("Signup response data missing for email: {Email}", email);
         }
         
         return (loginResponse?.User, loginResponse?.SessionId);
@@ -167,9 +193,11 @@ internal class MyApiClient
     
         if (response.IsSuccessStatusCode)
         {
+            _logger.LogInformation("Successfully subscribed to canvas: {CanvasName}", canvasName);
             return true;
         }
 
+        _logger.LogWarning("Failed to subscribe to canvas: {CanvasName}, Status: {StatusCode}", canvasName, response.StatusCode);
         if(response.StatusCode == HttpStatusCode.ServiceUnavailable)
             throw new Exception("Service is currently unavailable. Please try again later.");
         if(response.StatusCode == HttpStatusCode.BadRequest)
@@ -184,7 +212,6 @@ internal class MyApiClient
     public async Task<CanvasDto> GetCanvas(string canvasName)
     {
         _logger.LogInformation("GetCanvas called with canvasName: {CanvasName}", canvasName);
-        // TODO: Add check if user is already subscribed to canvas
 
         var request = new HttpRequestMessage(HttpMethod.Get, $"/canvases/name/{canvasName}");
         await request.AddSessionId(_localStorage);
@@ -194,10 +221,14 @@ internal class MyApiClient
         {
             var canvas = await response.Content.ReadFromJsonAsync<CanvasDto>();
             if (canvas == null)
+            {
+                _logger.LogError("Canvas {CanvasName} data is null in successful response", canvasName);
                 throw new Exception($"Canvas {canvasName} data is null.");
+            }
             return canvas;
         }
 
+        _logger.LogWarning("Failed to get canvas {CanvasName}, Status: {StatusCode}", canvasName, response.StatusCode);
         if(response.StatusCode == HttpStatusCode.NotFound)
             throw new Exception($"Canvas {canvasName} is not found.");
         if(response.StatusCode == HttpStatusCode.Unauthorized)
@@ -216,9 +247,11 @@ internal class MyApiClient
     
         if (response.IsSuccessStatusCode)
         {
+            _logger.LogInformation("Successfully unsubscribed from canvas: {CanvasName}", canvasName);
             return true;
         }
 
+        _logger.LogWarning("Failed to unsubscribe from canvas {CanvasName}, Status: {StatusCode}", canvasName, response.StatusCode);
         if(response.StatusCode == HttpStatusCode.ServiceUnavailable)
             throw new Exception("Service is currently unavailable. Please try again later.");
         if(response.StatusCode == HttpStatusCode.BadRequest)
@@ -258,10 +291,12 @@ internal class MyApiClient
     
         if (response.IsSuccessStatusCode)
         {
+            _logger.LogInformation("Successfully changed username to {UserName}", userName);
             await _localStorage.SetItemAsync(LocalStorageKey.UserName, userName);
         }
         else
         {
+            _logger.LogWarning("Failed to change username to {UserName}, Status: {StatusCode}", userName, response.StatusCode);
             if(response.StatusCode == HttpStatusCode.ServiceUnavailable)
                 throw new Exception("Service is currently unavailable. Please try again later.");
             if(response.StatusCode == HttpStatusCode.Unauthorized)
@@ -289,8 +324,13 @@ internal class MyApiClient
         request.SetJsonContent(userDto);
         var response = await _httpClient.SendAsync(request);
 
-        if (!response.IsSuccessStatusCode)
+        if (response.IsSuccessStatusCode)
         {
+            _logger.LogInformation("Successfully changed password for email: {Email}", existingEmail);
+        }
+        else
+        {
+            _logger.LogWarning("Failed to change password for email: {Email}, Status: {StatusCode}", existingEmail, response.StatusCode);
             throw new Exception("Failed to change password.");
         }
     }
@@ -343,7 +383,6 @@ internal class MyApiClient
     {
         _logger.LogInformation("Paint called with canvasName: {CanvasName}, x: {X}, y: {Y}, colorId: {ColorId}", canvasDto.Name, clickedPixel.X, clickedPixel.Y, colorId);
 
-        //ToDo: Add price calculation logic here.
         var pixelDto = new PixelDto
         {
             X = clickedPixel.X,
@@ -361,10 +400,15 @@ internal class MyApiClient
         {
             var paintedPixel = await response.Content.ReadFromJsonAsync<PixelDto>();
             if (paintedPixel == null)
+            {
+                _logger.LogError("Painted pixel data is null for {CanvasName} at ({X}, {Y})", canvasDto.Name, clickedPixel.X, clickedPixel.Y);
                 throw new Exception("Painted pixel data is null.");
+            }
+            _logger.LogInformation("Successfully painted pixel at ({X}, {Y}) on {CanvasName}", clickedPixel.X, clickedPixel.Y, canvasDto.Name);
             return paintedPixel;
         }
 
+        _logger.LogWarning("Failed to paint pixel at ({X}, {Y}) on {CanvasName}, Status: {StatusCode}", clickedPixel.X, clickedPixel.Y, canvasDto.Name, response.StatusCode);
         if(response.StatusCode == HttpStatusCode.ServiceUnavailable)
             throw new Exception("Service is currently unavailable. Please try again later.");
         if(response.StatusCode == HttpStatusCode.BadRequest)

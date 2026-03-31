@@ -36,15 +36,24 @@ public class PixelsController : ControllerBase
     public async Task<IActionResult> GetByPixelDto(string canvasName, [FromBody]PixelDto pixelDto)
     {
         if (!Request.Headers.TryGetValue(CustomHeaders.SessionId, out var sessionIdStr) || !Guid.TryParse(sessionIdStr, out var sessionId))
+        {
+            _logger.LogWarning("GetByPixelDto failed: Session-Id header missing or invalid.");
             return Unauthorized("Session-Id header missing or invalid.");
+        }
 
         var userId = _sessionService.GetUserIdAndUpdateTimeLimit(sessionId);
         if (userId == null)
+        {
+            _logger.LogWarning("GetByPixelDto failed: Invalid session for sessionId: {SessionId}", sessionId);
             return Unauthorized("Invalid session.");
+        }
 
         var canvas = await _repoManager.CanvasRepository.GetByNameAsync(canvasName);
         if (canvas == null)
+        {
+            _logger.LogWarning("GetByPixelDto failed: Canvas {CanvasName} not found.", canvasName);
             return NotFound("Canvas not found.");
+        }
         var pixelDtoReq = new PixelDto
         {
             CanvasId = canvas.Id,
@@ -54,7 +63,7 @@ public class PixelsController : ControllerBase
         var pixelExtracted = await _repoManager.PixelRepository.GetByPixelDto(pixelDtoReq);
         if (pixelExtracted == null)
         {
-            _logger.LogInformation("Pixel not found, returning default pixel.");
+            _logger.LogInformation("Pixel not found at ({X}, {Y}) for canvas {CanvasName}, returning default pixel.", pixelDto.X, pixelDto.Y, canvasName);
             pixelExtracted = await GetDefaultPixel(pixelDtoReq);
         }
         return Ok(pixelExtracted);
@@ -63,7 +72,6 @@ public class PixelsController : ControllerBase
     private async Task<PixelDto> GetDefaultPixel(PixelDto pixelDtoReq)
     {
         var defaultColor = await _repoManager.ColorRepository.GetDefautColor();
-         // Should depend on canvas type.
         return new PixelDto
         {
             CanvasId = pixelDtoReq.CanvasId,
@@ -87,20 +95,33 @@ public class PixelsController : ControllerBase
     public async Task<IActionResult> TryChangePixel(string canvasName, [FromBody] PixelDto pixel)
     {
         if (!Request.Headers.TryGetValue(CustomHeaders.SessionId, out var sessionIdStr) || !Guid.TryParse(sessionIdStr, out var sessionId))
+        {
+            _logger.LogWarning("TryChangePixel failed: Session-Id header missing or invalid.");
             return Unauthorized("Session-Id header missing or invalid.");
+        }
 
         var userId = _sessionService.GetUserIdAndUpdateTimeLimit(sessionId);
         if (userId == null)
+        {
+            _logger.LogWarning("TryChangePixel failed: Invalid session for sessionId: {SessionId}", sessionId);
             return Unauthorized("Invalid session.");
+        }
         
         var canvas = await _repoManager.CanvasRepository.GetByNameAsync(canvasName);
         if (canvas == null)
+        {
+            _logger.LogWarning("TryChangePixel failed: Canvas {CanvasName} not found.", canvasName);
             return NotFound("Canvas not found.");
+        }
         pixel.CanvasId = canvas.Id;
         var result = await _repoManager.PixelRepository.TryChangePixelAsync(userId.Value, pixel);
         if (result == null)
+        {
+            _logger.LogWarning("TryChangePixel failed for user {UserId} at ({X}, {Y}) on {CanvasName}.", userId, pixel.X, pixel.Y, canvasName);
             return BadRequest("Could not change pixel.");
+        }
         _changedPixelsChannel.Writer.TryWrite(result);
+        _logger.LogInformation("Successfully changed pixel at ({X}, {Y}) on {CanvasName} by user {UserId}.", pixel.X, pixel.Y, canvasName, userId);
         return Ok(result);
     }
 }

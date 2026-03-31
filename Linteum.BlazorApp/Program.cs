@@ -24,14 +24,13 @@ try
 #if DEBUG
     var apiContainerName = "localhost"; 
     var apiContainerPort = "5182";
-   //For docker api var apiContainerPort = "8080";
 #else
     var apiContainerName = Environment.GetEnvironmentVariable("API_CONTAINER_NAME") ?? "api";
     var apiContainerPort = Environment.GetEnvironmentVariable("API_CONTAINER_PORT") ?? "8080";
 #endif
     var apiBaseAddress = $"http://{apiContainerName}:{apiContainerPort}";
 
-    logger.Info($"API Base Address: {apiBaseAddress}");
+    logger.Info("API Base Address configured: {ApiBaseAddress}", apiBaseAddress);
 
     builder.Services.AddHttpClient<MyApiClient>("ApiClient", client => {
         client.BaseAddress = new Uri(apiBaseAddress);
@@ -44,6 +43,7 @@ try
         }
         return handler;
     });
+    logger.Info("HttpClient 'ApiClient' configured");
     
     builder.Services.AddSingleton(new Config());
     builder.Services.AddScoped(sp => sp.GetRequiredService<IHttpClientFactory>().CreateClient("ApiClient"));
@@ -52,8 +52,14 @@ try
         .SetApplicationName("LinteumApp");
     builder.Services.AddScoped<LocalStorageService>();
     builder.Services.AddScoped<NotificationService>();
+    
+    logger.Info("Core services (DataProtection, LocalStorage, Notification) configured");
+
     builder.Services.AddRazorComponents()
         .AddInteractiveServerComponents();
+    
+    logger.Info("Razor Components and Interactive Server Components added");
+
     var app = builder.Build();
 
     if (!app.Environment.IsDevelopment())

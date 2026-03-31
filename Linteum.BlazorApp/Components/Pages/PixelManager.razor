@@ -1,6 +1,7 @@
 @using Linteum.Shared.DTO
 @using Linteum.BlazorApp.Components.Notification
 @using Linteum.BlazorApp.Services
+@using Linteum.Shared
 @inject MyApiClient ApiClient
 @inject NotificationService NotificationService
 
@@ -17,7 +18,10 @@
     </div>
 
     <div class="pm-content">
-        <span style="margin-left:20px;">Gold: @Gold 🪙</span>
+        @if (Canvas?.CanvasMode == CanvasMode.Economy)
+        {
+            <span style="margin-left:20px;">Gold: @Gold 🪙</span>
+        }
         <div class="pm-drawing" style="display:flex;flex-direction:column;align-items:center;">
             <h6 style="margin:0 0 0.5rem 0;text-align:center;">Pixel Drawing</h6>
 

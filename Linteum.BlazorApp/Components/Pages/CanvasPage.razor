@@ -154,6 +154,8 @@ else
     private bool _hasRendered = false;
     private string _lastSidebarMargin = "300px";
     private List<ColorDto>? _colors;
+    private DotNetObjectReference<CanvasPage>? _objRef;
+    private IJSObjectReference? _resizeListener;
 
     // PixelManager reference
     private PixelManager? _pixelManager;
@@ -247,6 +249,9 @@ else
             _hasRendered = true;
             _lastSidebarMargin = SidebarMargin;
             await CalculateViewportDimensions();
+
+            _objRef = DotNetObjectReference.Create(this);
+            _resizeListener = await JSRuntime.InvokeAsync<IJSObjectReference>("canvasHelpers.registerResizeListener", _objRef);
         }
 
         if (_canvas != null && _renderer == null)
@@ -258,6 +263,14 @@ else
             FitCanvas();
             StateHasChanged();
         }
+    }
+
+    [JSInvokable]
+    public async Task OnWindowResize()
+    {
+        await CalculateViewportDimensions();
+        FitCanvas();
+        StateHasChanged();
     }
 
     private async Task CalculateViewportDimensions()
@@ -368,7 +381,6 @@ else
             var availH = Math.Max(1.0, ViewportHeight - margin * 2);
 
             var targetScale = Math.Min(availW / _canvas.Width, availH / _canvas.Height);
-            targetScale = Math.Min(1.0, targetScale);
 
             _scale = Math.Clamp(targetScale, _minScale, _maxScale);
 
@@ -510,6 +522,18 @@ else
 
     public async ValueTask DisposeAsync()
     {
+        if (_resizeListener != null)
+        {
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("canvasHelpers.unregisterResizeListener", _resizeListener);
+                await _resizeListener.DisposeAsync();
+            }
+            catch { }
+        }
+
+        _objRef?.Dispose();
+
         if (_renderer != null)
         {
             await _renderer.DisposeAsync();
