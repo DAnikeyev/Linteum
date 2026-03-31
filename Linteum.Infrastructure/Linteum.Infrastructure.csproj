@@ -1,7 +1,7 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
     <PropertyGroup>
-        <TargetFramework>net9.0</TargetFramework>
+        <TargetFramework>net10.0</TargetFramework>
         <ImplicitUsings>enable</ImplicitUsings>
         <Nullable>enable</Nullable>
         <RootNamespace>Linteum.Infrastructure</RootNamespace>
@@ -9,14 +9,14 @@
 
     <ItemGroup>
       <PackageReference Include="AutoMapper" Version="14.0.0" />
-      <PackageReference Include="Microsoft.EntityFrameworkCore" Version="9.0.5" />
-      <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="9.0.1">
+      <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.5" />
+      <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.5">
         <PrivateAssets>all</PrivateAssets>
         <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
       </PackageReference>
-      <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="9.0.1" />
-      <PackageReference Include="NLog" Version="6.0.1" />
-      <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="9.0.4" />
+      <PackageReference Include="Microsoft.EntityFrameworkCore.Relational" Version="10.0.5" />
+      <PackageReference Include="NLog" Version="6.1.1" />
+      <PackageReference Include="Npgsql.EntityFrameworkCore.PostgreSQL" Version="10.0.1" />
     </ItemGroup>
 
     <ItemGroup>

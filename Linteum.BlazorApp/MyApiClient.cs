@@ -14,6 +14,8 @@ internal class MyApiClient
     private readonly HttpClient _httpClient;
     private readonly LocalStorageService _localStorage;
     private readonly ILogger<MyApiClient> _logger;
+    private readonly Dictionary<Guid, (List<HistoryResponseItem> Data, DateTime Expiry)> _historyCache = new();
+    private readonly Dictionary<(string CanvasName, int X, int Y), (PixelDto Data, DateTime Expiry)> _pixelCache = new();
 
     public MyApiClient(HttpClient httpClient, LocalStorageService localStorage, ILogger<MyApiClient> logger)
     {
@@ -65,15 +67,22 @@ internal class MyApiClient
         return await response.Content.ReadFromJsonAsync<CanvasDto>();
     }
 
-    public async Task<List<HistoryResponseItem>> GetHistoryAsync(Guid pixelId)
+    public async Task<List<HistoryResponseItem>> GetHistoryAsync(Guid pixelId, bool useCache = false)
     {
-        _logger.LogInformation("GetHistoryAsync called with pixelId: {PixelId}", pixelId);
+        _logger.LogInformation("GetHistoryAsync called with pixelId: {PixelId}, useCache: {UseCache}", pixelId, useCache);
+        if (useCache && _historyCache.TryGetValue(pixelId, out var cached) && cached.Expiry > DateTime.UtcNow)
+        {
+            return cached.Data;
+        }
+
         var request = new HttpRequestMessage(HttpMethod.Get, $"/pixelchangedevents/pixel/{pixelId}");
         await request.AddSessionId(_localStorage);
         var response = await _httpClient.SendAsync(request);
         response.EnsureSuccessStatusCode();
         var history = await response.Content.ReadFromJsonAsync<List<HistoryResponseItem>>();
-        return history ?? new List<HistoryResponseItem>();
+        var result = history ?? new List<HistoryResponseItem>();
+        _historyCache[pixelId] = (result, DateTime.UtcNow.AddMinutes(1));
+        return result;
     }
     
     public async Task<(UserDto? User, Guid? SessionId)> LoginAsync(string email, string password)
@@ -305,9 +314,15 @@ internal class MyApiClient
         throw new Exception($"Failed to get image of {canvasDto.Name}. This exception is unexpected.");
     }
     
-    public async Task<PixelDto> GetPixelData(string canvasName, int x, int y)
+    public async Task<PixelDto> GetPixelData(string canvasName, int x, int y, bool useCache = false)
     {
-        _logger.LogInformation("GetPixelData called with canvasName: {CanvasName}, x: {X}, y: {Y}", canvasName, x, y);
+        _logger.LogInformation("GetPixelData called with canvasName: {CanvasName}, x: {X}, y: {Y}, useCache: {UseCache}", canvasName, x, y, useCache);
+        var cacheKey = (canvasName, x, y);
+        if (useCache && _pixelCache.TryGetValue(cacheKey, out var cached) && cached.Expiry > DateTime.UtcNow)
+        {
+            return cached.Data;
+        }
+
         var pixelDto = new PixelDto
         {
             X = x,
@@ -319,7 +334,9 @@ internal class MyApiClient
         var response = await _httpClient.SendAsync(request);
         response.EnsureSuccessStatusCode();
         var pixel = await response.Content.ReadFromJsonAsync<PixelDto>();
-        return pixel ?? new PixelDto();
+        var result = pixel ?? new PixelDto();
+        _pixelCache[cacheKey] = (result, DateTime.UtcNow.AddMinutes(1));
+        return result;
     }
     
     public async Task<PixelDto> Paint((int X, int Y) clickedPixel, CanvasDto canvasDto, int colorId)

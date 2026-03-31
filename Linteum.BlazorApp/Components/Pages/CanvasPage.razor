@@ -390,7 +390,7 @@ else
         if (pixel.HasValue)
         {
             _clickedPixel = pixel;
-            _clickedPixelData = await ApiClient.GetPixelData(_canvas.Name, pixel.Value.X, pixel.Value.Y);
+            _clickedPixelData = await ApiClient.GetPixelData(_canvas.Name, pixel.Value.X, pixel.Value.Y, useCache: true);
 
             var colorId = _clickedPixelData.ColorId;
             var color = _colors.Where(x => x.Id == colorId).FirstOrDefault();

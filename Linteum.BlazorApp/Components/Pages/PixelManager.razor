@@ -157,7 +157,7 @@
             return;
         }
 
-        _pixelChangeHistory = await ApiClient.GetHistoryAsync(ClickedPixelData.Id.Value);
+        _pixelChangeHistory = await ApiClient.GetHistoryAsync(ClickedPixelData.Id.Value, useCache: true);
         PrevPixelId = ClickedPixelData.Id;
     }
 
@@ -165,7 +165,7 @@
     {
         if (ClickedPixelData?.Id != null)
         {
-            _pixelChangeHistory = await ApiClient.GetHistoryAsync(ClickedPixelData.Id.Value);
+            _pixelChangeHistory = await ApiClient.GetHistoryAsync(ClickedPixelData.Id.Value, useCache: false);
             StateHasChanged();
         }
     }
@@ -217,7 +217,7 @@
                 Type = NotificationType.Success,
             });
             if(ClickedPixelData != null && ClickedPixelData.Id!= null)
-                _pixelChangeHistory = await ApiClient.GetHistoryAsync(ClickedPixelData.Id.Value);
+                _pixelChangeHistory = await ApiClient.GetHistoryAsync(ClickedPixelData.Id.Value, useCache: false);
         }
         catch (Exception ex)
         {
