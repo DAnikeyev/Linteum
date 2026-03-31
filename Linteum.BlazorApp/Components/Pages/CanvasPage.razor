@@ -105,7 +105,7 @@ else
             </div>
         </div>
 
-        <PixelManager Canvas="@_canvas" ClickedPixel="@_clickedPixel" ClickedPixelData="@_clickedPixelData" CanvasRenderer="@_renderer" OnlineUsers="@_onlineUsers" />
+        <PixelManager @ref="_pixelManager" Canvas="@_canvas" ClickedPixel="@_clickedPixel" ClickedPixelData="@_clickedPixelData" CanvasRenderer="@_renderer" OnlineUsers="@_onlineUsers" />
     </div>
 }
 
@@ -155,6 +155,9 @@ else
     private string _lastSidebarMargin = "300px";
     private List<ColorDto>? _colors;
 
+    // PixelManager reference
+    private PixelManager? _pixelManager;
+
             
     // LIFECYCLE: SETUP SIGNALR
     protected override async Task OnInitializedAsync()
@@ -170,10 +173,12 @@ else
             }
 
             var hubUrl = $"{apiBase.TrimEnd('/')}/canvashub";
+            var sessionId = await LocalStorageService.GetItemAsync<string>(LocalStorageKey.SessionId);
 
             _hubConnection = new HubConnectionBuilder()
                 .WithUrl(hubUrl, options =>
                 {
+                    options.Headers[CustomHeaders.SessionId] = sessionId;
                     if (Environment.IsDevelopment())
                     {
                         options.HttpMessageHandlerFactory = (handler) =>
@@ -195,15 +200,21 @@ else
             
             _nlog.Info($"SignalR HubConnection built for {hubUrl}, starting connection...");
 
-            _hubConnection.On<int, int, int>("ReceivePixelUpdate", (x, y, colorId) =>
+            _hubConnection.On<int, int, int>("ReceivePixelUpdate", async (x, y, colorId) =>
             {
                 if (_renderer == null || _colors == null) return;
-                
+
                 // Try to find the color hex from the ID sent
                 var c = _colors.FirstOrDefault(cDto => cDto.Id == colorId);
                 if (c != null)
                 {
                     _renderer.EnqueuePixel(x, y, c.HexValue);
+                }
+
+                // Update pixel history if this pixel is currently selected
+                if (_clickedPixel.HasValue && _clickedPixel.Value.X == x && _clickedPixel.Value.Y == y && _pixelManager != null)
+                {
+                    await _pixelManager.UpdatePixelHistory();
                 }
             });
 
@@ -380,7 +391,7 @@ else
         {
             _clickedPixel = pixel;
             _clickedPixelData = await ApiClient.GetPixelData(_canvas.Name, pixel.Value.X, pixel.Value.Y);
-            
+
             var colorId = _clickedPixelData.ColorId;
             var color = _colors.Where(x => x.Id == colorId).FirstOrDefault();
 
@@ -388,6 +399,8 @@ else
             {
                 _renderer.EnqueuePixel(pixel.Value.X, pixel.Value.Y, color.HexValue);
             }
+
+            StateHasChanged();
         }
     }
 

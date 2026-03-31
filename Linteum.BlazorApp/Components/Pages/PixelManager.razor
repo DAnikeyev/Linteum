@@ -161,6 +161,15 @@
         PrevPixelId = ClickedPixelData.Id;
     }
 
+    public async Task UpdatePixelHistory()
+    {
+        if (ClickedPixelData?.Id != null)
+        {
+            _pixelChangeHistory = await ApiClient.GetHistoryAsync(ClickedPixelData.Id.Value);
+            StateHasChanged();
+        }
+    }
+
     private void ToggleColorDropdown()
     {
         _colorDropdownOpen = !_colorDropdownOpen;

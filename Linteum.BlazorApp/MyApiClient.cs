@@ -96,6 +96,27 @@ internal class MyApiClient
         
         return (loginResponse?.User, loginResponse?.SessionId);
     }
+    
+        
+    public async Task<(UserDto? User, Guid? SessionId)> LoginAsync(Guid sessionId)
+    {
+        _logger.LogInformation($"LoginAsync called with sessionId: {sessionId}");
+
+        var response = await _httpClient.PostAsJsonAsync("/users/validate", sessionId);
+        if (!response.IsSuccessStatusCode)
+            return (null, null);
+
+        var loginResponse = await response.Content.ReadFromJsonAsync<LoginResponse>();
+        if (loginResponse?.SessionId != null && loginResponse?.User != null && loginResponse?.User?.UserName != null && loginResponse?.User?.Email != null)
+        {
+            await _localStorage.SetItemAsync(LocalStorageKey.UserName, loginResponse.User?.UserName);
+            await _localStorage.SetItemAsync(LocalStorageKey.Email, loginResponse.User?.Email);
+            await _localStorage.SetItemAsync(LocalStorageKey.LoginMethod, LoginMethod.Password);
+            await SetSessionAsync(loginResponse.SessionId);
+        }
+
+        return (loginResponse?.User, loginResponse?.SessionId);
+    }
 
     public async Task<(UserDto? User, Guid? SessionId)> SignupAsync(string email, string password, string userName)
     {

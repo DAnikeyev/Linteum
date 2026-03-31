@@ -93,6 +93,36 @@ public class UsersController : ControllerBase
         return Ok(new LoginResponse { User = result, SessionId = sessionId });
     }
     
+    [HttpPost("validate")]
+    public async Task<IActionResult> Validate([FromBody] Guid sessionId)
+    {
+        _logger.LogInformation("Login attempt for user by sessionId: {sessionId}", sessionId);
+        var isValid = _sessionService.ValidateSession(sessionId);
+
+        if (!isValid)
+        {
+            _logger.LogWarning("Invalid or expired session: {SessionId}", sessionId);
+            return Unauthorized();
+        }
+
+        var userId = _sessionService.GetUserIdAndUpdateTimeLimit(sessionId);
+        if (!userId.HasValue)
+        {
+            _logger.LogWarning("Could not retrieve user ID for session: {SessionId}", sessionId);
+            return Unauthorized();
+        }
+
+        var user = await _repoManager.UserRepository.GetByIdAsync(userId.Value);
+        if (user == null)
+        {
+            _logger.LogError("User not found for ID: {UserId}", userId.Value);
+            return NotFound("User not found.");
+        }
+
+        _logger.LogInformation("Session validated successfully for user: {Email} with ID: {UserId}", user.Email, userId.Value);
+        return Ok(new LoginResponse { User = user, SessionId = sessionId });
+    }
+    
     [HttpPost("add")]
     public async Task<IActionResult> Add([FromBody] UserDto userDto, [FromQuery] string? passwordHashOrKey)
     {

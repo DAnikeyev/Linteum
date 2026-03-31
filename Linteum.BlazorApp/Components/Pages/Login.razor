@@ -88,7 +88,7 @@
         if (user != null)
         {
             Logger.LogInformation("Login successful for {Email}", _email);
-            Navigation.NavigateTo("/colors");
+            Navigation.NavigateTo(Config.DefaultPage);
         }
         else
         {
@@ -106,31 +106,37 @@
     {
         if (firstRender)
         {
+            Logger.LogInformation("Hello, login page!");
             try
             {
-                var sessionId = await LocalStorageService.GetItemAsync<string>(LocalStorageKey.SessionId);
-                var createdAt = await LocalStorageService.GetItemAsync<DateTime?>(LocalStorageKey.SessionCreatedAt);
-                var expiresAt = createdAt + TimeSpan.FromMinutes(Config.ExpiredSessionTimeoutMinutes);
-                if (createdAt == null || DateTime.UtcNow > expiresAt)
+                var sessionIdString = await LocalStorageService.GetItemAsync<string>(LocalStorageKey.SessionId);
+                if (sessionIdString != null && Guid.TryParse(sessionIdString, out var sessionId))
                 {
-                    Logger.LogInformation("Session expired, clearing local storage.");
-                    await LocalStorageService.ClearAsync();
-                }
+                    Logger.LogInformation("Session ID found, validating with server.");
+                    var (user, validatedSessionId) = await ApiClient.LoginAsync(sessionId);
 
-                if (sessionId != null)
-                {
-                    Logger.LogInformation("Session ID found, redirecting to home page.");
-                    Navigation.NavigateTo(Config.DefaultPage);
+                    if (user != null && validatedSessionId != null)
+                    {
+                        Logger.LogInformation("Session validated successfully, redirecting to home page.");
+                        Navigation.NavigateTo(Config.DefaultPage);
+                    }
+                    else
+                    {
+                        Logger.LogInformation("Session validation failed, clearing local storage.");
+                        await LocalStorageService.ClearAsync();
+                        ApiClient.ClearSession();
+                    }
                 }
                 else
                 {
-                    Logger.LogInformation("No session ID found, staying on login page.");
+                    Logger.LogInformation("No valid session ID found, staying on login page.");
                 }
             }
             catch (Exception ex)
             {
                 Logger.LogError(ex, "Error checking session validity on login page.");
                 await LocalStorageService.ClearAsync();
+                ApiClient.ClearSession();
             }
         }
     }
