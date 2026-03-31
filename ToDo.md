@@ -5,13 +5,13 @@
    - ~~Db clean up schedule.~~ **Resolution**: Replaced with Channel based background service that clean history after changePixel calls.
  - ~~Control scoped dependencies (maybe PooledDbContext).~~ **Resolution**: Not needed now.
  - ~~Redundant SignalR subscribing on canvasPage~~ **Resolution**: Done
- - ~~Profile performance to narrow down bottlenecks. **Resolution**: Performance is good for now.~~
+ - ~~Profile performance to narrow down bottlenecks.~~ **Resolution**: Performance is good for now.
 # 1.0 Required Features
 ### Business Features:
 - FAQ
 - Versioning including logging
 - ~~Online users list~~ **Resolution**: Done
-- List of pixel changes
+- ~~List of pixel changes~~  **Resolution**: Done
 - ~~Updating session Timeout on user activity **Resolution**: Done~~
 ### Infrastructure:
 - ~~Db Cleanup.~~ **Resolution**: Done

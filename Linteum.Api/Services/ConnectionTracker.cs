@@ -11,6 +11,7 @@ public interface IConnectionTracker
     int GetGroupCount(string groupName);
     IEnumerable<string> GetGroupUsers(string groupName);
     IEnumerable<string> GetConnectionGroups(string connectionId);
+    IEnumerable<string> GetUserConnections(string userName);
     int GetTotalConnectionCount();
 }
 
@@ -126,6 +127,14 @@ public class ConnectionTracker : IConnectionTracker
 
             return groups.ToList();
         }
+    }
+
+    public IEnumerable<string> GetUserConnections(string userName)
+    {
+        return _connectionUsers
+            .Where(x => x.Value == userName)
+            .Select(x => x.Key)
+            .ToList();
     }
 
     public int GetTotalConnectionCount()
