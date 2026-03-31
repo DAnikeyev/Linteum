@@ -35,6 +35,14 @@ try
 
     builder.Services.AddHttpClient<MyApiClient>("ApiClient", client => {
         client.BaseAddress = new Uri(apiBaseAddress);
+    }).ConfigurePrimaryHttpMessageHandler(() =>
+    {
+        var handler = new HttpClientHandler();
+        if (builder.Environment.IsDevelopment())
+        {
+            handler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
+        }
+        return handler;
     });
     
     builder.Services.AddSingleton(new Config());

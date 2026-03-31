@@ -12,6 +12,8 @@ public class CanvasDto
     
     public int Height { get; set; }
     
+    public CanvasMode CanvasMode { get; set; }
+    
     public DateTime CreatedAt { get; set; }
     
     public DateTime? UpdatedAt { get; set; }

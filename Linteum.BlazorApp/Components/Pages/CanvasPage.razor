@@ -3,13 +3,20 @@
 @using Linteum.BlazorApp.Components.Notification
 @using Linteum.Shared.DTO
 @using NLog
+@inject IConfiguration Configuration
 @using Linteum.BlazorApp.Components.Layout
 @using Microsoft.AspNetCore.Components.Web
 @using Linteum.Shared
+@using Linteum.BlazorApp.Services
+@using Microsoft.AspNetCore.SignalR.Client
+@implements IAsyncDisposable
 @inject MyApiClient ApiClient
 @inject NotificationService NotificationService
 @inject IJSRuntime JSRuntime
 @inject LocalStorageService LocalStorageService
+@inject NavigationManager NavigationManager
+@using Microsoft.Extensions.Hosting
+@inject IHostEnvironment Environment
 
 @if (_canvas == null)
 {
@@ -22,8 +29,22 @@ else
              style="width:@(ViewportWidth)px; height:@(ViewportHeight)px; overflow:hidden; position:relative;">
 
             <div class="canvas-renderer"
-                 style=@RendererStyle>
-                <!-- optional overlay or content -->
+                 style="position: absolute; left: @(_offsetX)px; top: @(_offsetY)px; width:@(_canvas.Width)px; height:@(_canvas.Height)px; background:#ffffff; transform: scale(@(_scale)); transform-origin: 0 0;">
+
+                <!-- REPLACED IMG WITH CANVAS -->
+                <canvas @ref="_canvasRef"
+                        width="@_canvas.Width"
+                        height="@_canvas.Height"
+                        style="width:100%; height:100%; display: block; pointer-events: none;">
+                </canvas>
+                
+                <!-- OVERLAY CANVAS -->
+                <canvas @ref="_overlayRef"
+                        width="@_canvas.Width"
+                        height="@_canvas.Height"
+                        style="width:100%; height:100%; display: block; pointer-events: none; position: absolute; top: 0; left: 0;">
+                </canvas>
+
             </div>
 
             <!-- Canvas Boundary (Unscaled) -->
@@ -84,7 +105,7 @@ else
             </div>
         </div>
 
-        <PixelManager Canvas="@_canvas" ClickedPixel="@_clickedPixel" />
+        <PixelManager @ref="_pixelManager" Canvas="@_canvas" ClickedPixel="@_clickedPixel" ClickedPixelData="@_clickedPixelData" CanvasRenderer="@_renderer" OnlineUsers="@_onlineUsers" />
     </div>
 }
 
@@ -100,7 +121,18 @@ else
     private CanvasDto? _canvas;
     private string? _loadedCanvasName;
     private (int X, int Y)? _clickedPixel;
+    private PixelDto? _clickedPixelData;
     private (int X, int Y)? _hoveredPixel;
+
+    // SignalR
+    private HubConnection? _hubConnection;
+    private string? _connectedGroup;
+    private List<string> _onlineUsers = new();
+
+    // Renderer
+    private ElementReference _canvasRef;
+    private ElementReference _overlayRef;
+    private CanvasRenderer? _renderer;
 
     // Viewport dimensions
     private double ViewportWidth { get; set; } = 900;
@@ -121,11 +153,92 @@ else
     // State tracking
     private bool _hasRendered = false;
     private string _lastSidebarMargin = "300px";
+    private List<ColorDto>? _colors;
 
-    private string RendererStyle =>
-        _canvas == null
-            ? "display:inline-block;"
-            : $"width:{_canvas.Width}px; height:{_canvas.Height}px; background:#ffffff; display:inline-block; transform: translate({_offsetX}px, {_offsetY}px) scale({_scale}); transform-origin: 0 0;";
+    // PixelManager reference
+    private PixelManager? _pixelManager;
+
+            
+    // LIFECYCLE: SETUP SIGNALR
+    protected override async Task OnInitializedAsync()
+    {
+        try 
+        {
+            var apiBase = Configuration["ApiBaseUrl"]; 
+            
+            if (string.IsNullOrEmpty(apiBase)) 
+            {
+                _nlog.Warn("ApiBaseUrl missing from config, defaulting to /canvashub relative to page.");
+                apiBase = NavigationManager.BaseUri;
+            }
+
+            var hubUrl = $"{apiBase.TrimEnd('/')}/canvashub";
+            var sessionId = await LocalStorageService.GetItemAsync<string>(LocalStorageKey.SessionId);
+
+            _hubConnection = new HubConnectionBuilder()
+                .WithUrl(hubUrl, options =>
+                {
+                    options.Headers[CustomHeaders.SessionId] = sessionId;
+                    if (Environment.IsDevelopment())
+                    {
+                        options.HttpMessageHandlerFactory = (handler) =>
+                        {
+                            if (handler is HttpClientHandler clientHandler)
+                            {
+                                clientHandler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
+                            }
+                            return handler;
+                        };
+                        options.WebSocketConfiguration = socketOptions =>
+                        {
+                            socketOptions.RemoteCertificateValidationCallback = (_, _, _, _) => true;
+                        };
+                    }
+                })
+                .WithAutomaticReconnect()
+                .Build();
+            
+            _nlog.Info($"SignalR HubConnection built for {hubUrl}, starting connection...");
+
+            _hubConnection.On<int, int, int>("ReceivePixelUpdate", async (x, y, colorId) =>
+            {
+                if (_renderer == null || _colors == null) return;
+
+                // Try to find the color hex from the ID sent
+                var c = _colors.FirstOrDefault(cDto => cDto.Id == colorId);
+                if (c != null)
+                {
+                    _renderer.EnqueuePixel(x, y, c.HexValue);
+                }
+
+                // Update pixel history if this pixel is currently selected
+                if (_clickedPixel.HasValue && _clickedPixel.Value.X == x && _clickedPixel.Value.Y == y && _pixelManager != null)
+                {
+                    await _pixelManager.UpdatePixelHistory();
+                }
+            });
+
+            _hubConnection.On<List<string>>("UpdateOnlineUsers", (users) =>
+            {
+                _onlineUsers = users;
+                InvokeAsync(StateHasChanged);
+            });
+            
+            _hubConnection.Reconnected += async (_) =>
+            {
+                if (!string.IsNullOrEmpty(_connectedGroup))
+                {
+                    await _hubConnection.InvokeAsync("JoinCanvasGroup", _connectedGroup);
+                }
+            };
+
+            await _hubConnection.StartAsync();
+        }
+        catch(Exception ex)
+        {
+            _nlog.Error(ex, "Failed to start SignalR connection");
+        }
+    }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -134,6 +247,14 @@ else
             _hasRendered = true;
             _lastSidebarMargin = SidebarMargin;
             await CalculateViewportDimensions();
+        }
+
+        if (_canvas != null && _renderer == null)
+        {
+            _renderer = new CanvasRenderer(JSRuntime);
+            await _renderer.InitializeAsync(_canvasRef, _overlayRef);
+            await LoadCanvasImage();
+
             FitCanvas();
             StateHasChanged();
         }
@@ -143,23 +264,18 @@ else
     {
         try
         {
-            // Get window dimensions
             var windowWidth = await JSRuntime.InvokeAsync<double>("eval", "window.innerWidth");
             var windowHeight = await JSRuntime.InvokeAsync<double>("eval", "window.innerHeight");
 
-            // Determine sidebar width from cascading parameter string (e.g. "300px")
             double sidebarWidth = 300;
             if (!string.IsNullOrEmpty(SidebarMargin) && double.TryParse(SidebarMargin.Replace("px", ""), out var marginVal))
             {
                 sidebarWidth = marginVal;
             }
 
-            // Estimate PixelManager width (or measure if possible)
             var pixelManagerWidth = await JSRuntime.InvokeAsync<double>("eval", "document.querySelector('.pixelmanager') ? document.querySelector('.pixelmanager').offsetWidth : 300");
 
-            // Padding from BaseLayout (1rem = approx 16px, on both sides = 32px) + extra buffer for scrollbar (~18px)
             const double paddingX = 50;
-            // Padding from BaseLayout (1rem = approx 16px, on both sides = 32px)
             const double paddingY = 32;
 
             ViewportWidth = Math.Max(100, windowWidth - sidebarWidth - pixelManagerWidth - paddingX);
@@ -174,12 +290,21 @@ else
 
     protected override async Task OnParametersSetAsync()
     {
-        // Recalculate if sidebar margin changed and we have rendered (JS is available)
         if (_hasRendered && _lastSidebarMargin != SidebarMargin)
         {
             _lastSidebarMargin = SidebarMargin;
             await CalculateViewportDimensions();
             ClampOffsets();
+        }
+        
+        if (_hubConnection?.State == HubConnectionState.Connected && _connectedGroup != canvasName)
+        {
+            if (!string.IsNullOrEmpty(_connectedGroup))
+            {
+                await _hubConnection.InvokeAsync("LeaveCanvasGroup", _connectedGroup);
+            }
+            await _hubConnection.InvokeAsync("JoinCanvasGroup", canvasName);
+            _connectedGroup = canvasName;
         }
 
         if (_loadedCanvasName == canvasName && _canvas != null)
@@ -188,9 +313,26 @@ else
         _canvas = null;
         _loadedCanvasName = canvasName;
 
+        if (_renderer != null)
+        {
+            await _renderer.DisposeAsync();
+            _renderer = null;
+        }
+
         try
         {
+            _colors = await ApiClient.GetColorsAsync();
             _canvas = await ApiClient.GetCanvas(canvasName);
+
+            await LoadCanvasImage();
+
+             if (_hubConnection?.State == HubConnectionState.Connected && _connectedGroup != canvasName)
+            {
+                if (!string.IsNullOrEmpty(_connectedGroup)) await _hubConnection.InvokeAsync("LeaveCanvasGroup", _connectedGroup);
+                await _hubConnection.InvokeAsync("JoinCanvasGroup", canvasName);
+                _connectedGroup = canvasName;
+            }
+
             _clickedPixel = null;
             _hoveredPixel = null;
 
@@ -202,9 +344,23 @@ else
         }
     }
 
+    private async Task LoadCanvasImage()
+    {
+        if (_canvas == null || _renderer == null) return;
+        try
+        {
+            var imageBytes = await ApiClient.GetCanvasImage(_canvas);
+            await _renderer.LoadImageAsync(imageBytes);
+        }
+        catch (Exception ex)
+        {
+            _nlog.Warn(ex, "Failed to load image for canvas {0}", canvasName);
+        }
+    }
+
     private void FitCanvas()
     {
-        const double margin = 1; // keep some space from edges
+        const double margin = 1;
 
         if (_canvas != null && _canvas.Width > 0 && _canvas.Height > 0)
         {
@@ -221,7 +377,7 @@ else
         }
     }
 
-    private void OnCanvasMouseDown(MouseEventArgs e)
+    private async Task OnCanvasMouseDown(MouseEventArgs e)
     {
         if (e.Button == 0)
         {
@@ -234,6 +390,17 @@ else
         if (pixel.HasValue)
         {
             _clickedPixel = pixel;
+            _clickedPixelData = await ApiClient.GetPixelData(_canvas.Name, pixel.Value.X, pixel.Value.Y);
+
+            var colorId = _clickedPixelData.ColorId;
+            var color = _colors.Where(x => x.Id == colorId).FirstOrDefault();
+
+            if (color != null && _renderer != null)
+            {
+                _renderer.EnqueuePixel(pixel.Value.X, pixel.Value.Y, color.HexValue);
+            }
+
+            StateHasChanged();
         }
     }
 
@@ -275,7 +442,6 @@ else
     {
         if (_canvas == null) return null;
 
-        // Convert the mouse position from display coords into canvas pixel coords accounting for pan/zoom
         var logicalX = (e.OffsetX - _offsetX) / _scale;
         var logicalY = (e.OffsetY - _offsetY) / _scale;
 
@@ -316,18 +482,15 @@ else
     {
         if (_canvas == null) return;
 
-        // Ensure at least this many pixels of the canvas remain visible inside the viewport
         const double visibilityMargin = 50;
 
         var renderedWidth = _canvas.Width * _scale;
         var renderedHeight = _canvas.Height * _scale;
 
-        // X Constraints
         var minX = visibilityMargin - renderedWidth;
         var maxX = ViewportWidth - visibilityMargin;
         _offsetX = Math.Clamp(_offsetX, minX, maxX);
 
-        // Y Constraints
         var minY = visibilityMargin - renderedHeight;
         var maxY = ViewportHeight - visibilityMargin;
         _offsetY = Math.Clamp(_offsetY, minY, maxY);
@@ -342,6 +505,19 @@ else
         catch (Exception ex)
         {
             _nlog.Warn(ex, "NotificationService.Writer.WriteAsync failed");
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_renderer != null)
+        {
+            await _renderer.DisposeAsync();
+        }
+        
+        if (_hubConnection != null)
+        {
+            await _hubConnection.DisposeAsync();
         }
     }
 }

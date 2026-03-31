@@ -7,6 +7,7 @@ public interface IUserRepository
     public Task<UserDto?> GetByEmailAsync(string email);
     public Task<UserDto?> GetByUserNameAsync(string userName);
     public Task<UserDto?> GetByIdAsync(Guid id);
+    public Task<string[]> GetByIdAsync(IList<Guid> id);
     public Task<UserDto?> AddOrUpdateUserAsync(UserDto userDto, UserPaswordDto? passwordDto = null);
     
     public Task<UserDto?> DeleteUserAsync(UserDto userDto);

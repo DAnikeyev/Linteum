@@ -1,4 +1,5 @@
 ﻿using Linteum.Domain;
+using Linteum.Shared;
 using Microsoft.EntityFrameworkCore;
 
 namespace Linteum.Infrastructure;
@@ -101,6 +102,9 @@ public class AppDbContext : DbContext
             entity.Property(c => c.PasswordHash);
             entity.HasMany(c => c.Pixels).WithOne(p => p.Canvas).HasForeignKey(p => p.CanvasId);
             entity.Property(c => c.CreatorId);
+            entity.Property(c => c.CanvasMode)
+                .HasConversion<int>()
+                .HasDefaultValue(CanvasMode.Sandbox);
             entity.HasOne(c => c.Creator)
                 .WithMany()
                 .HasForeignKey(c => c.CreatorId)

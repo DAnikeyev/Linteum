@@ -285,11 +285,11 @@
                 {
                     var isHome = IsHome(canvas.Name);
                     <li class="list-group-item sidebar-canvas-item d-flex justify-content-between align-items-center">
-                        <div class="d-flex align-items-center" @onclick="@(() => NavigateToCanvas(canvas.Name))" style="cursor: pointer; flex:1;">
+                        <div class="d-flex align-items-center canvas-name-container" @onclick="@(() => NavigateToCanvas(canvas.Name))" style="cursor: pointer;">
                             <span class="me-2 fs-5">@(isHome ? "🏠" : "🎨") </span>
-                            <span class="text-truncate">@canvas.Name</span>
+                            <span class="canvas-name-text">@canvas.Name</span>
                         </div>
-                        <div class="d-flex align-items-center">
+                        <div class="d-flex align-items-center unsubscribe-container">
                             @if (!isHome)
                             {
                                 <button class="btn btn-danger btn-unsubscribe" title="Unsubscribe"

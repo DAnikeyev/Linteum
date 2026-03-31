@@ -114,7 +114,7 @@ public class DbSeeder
         logger.LogInformation("Database seeding completed successfully");
     }
 
-    private static async Task DeleteCanvasesWithoutSubscriptions(RepositoryManager repositoryManager, ILogger<DbSeeder> logger, Config config)
+    public static async Task DeleteCanvasesWithoutSubscriptions<T>(RepositoryManager repositoryManager, ILogger<T> logger, Config config)
     {
         foreach (var canvas in await repositoryManager.CanvasRepository.GetAllAsync())
         {

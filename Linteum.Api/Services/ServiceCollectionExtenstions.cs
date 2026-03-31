@@ -1,7 +1,8 @@
+using System.Threading.Channels;
 using Linteum.Infrastructure;
 using Linteum.Shared;
+using Linteum.Shared.DTO;
 using Microsoft.EntityFrameworkCore;
-using NLog.Extensions.Logging;
 
 namespace Linteum.Api.Services
 {
@@ -18,10 +19,10 @@ namespace Linteum.Api.Services
             var connectionString = isWindows
                 ? Environment.GetEnvironmentVariable("DEFAULT_DB_HOST_CONNECTION")
                 : configuration.GetConnectionString("DefaultConnection");
-
+            services.AddSingleton(Channel.CreateUnbounded<PixelDto>());
             services.AddDbContext<AppDbContext>(options =>
                 options.UseNpgsql(connectionString,
-                    b => b.MigrationsAssembly("Linteum.Api")));
+                    b => b.MigrationsAssembly(typeof(AppDbContext).Assembly.GetName().Name)));
             services.AddSingleton(new Config());
             services.AddSingleton<SessionService>();
             var masterPass = Environment.GetEnvironmentVariable("MASTER_PASSWORD");
@@ -30,6 +31,8 @@ namespace Linteum.Api.Services
                 throw new InvalidOperationException("MASTER_PASSWORD environment variable is not set.");
             }
             services.AddScoped<RepositoryManager>();
+            services.AddHostedService<DbCleanupService>();
+            services.AddHostedService<PeriodicCleanupService>();
             return services;
         }
     }

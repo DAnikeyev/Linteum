@@ -1,4 +1,7 @@
+using System.Threading.Channels;
+using Linteum.Api.Services;
 using Linteum.Infrastructure;
+using Linteum.Shared;
 using Linteum.Shared.DTO;
 using Microsoft.AspNetCore.Mvc;
 
@@ -10,18 +13,67 @@ public class PixelsController : ControllerBase
 {
     private readonly RepositoryManager _repoManager;
     private readonly ILogger<PixelsController> _logger;
+    private readonly Channel<PixelDto> _changedPixelsChannel;
+    private readonly SessionService _sessionService;
 
-    public PixelsController(RepositoryManager repoManager, ILogger<PixelsController> logger)
+    public PixelsController(RepositoryManager repoManager, SessionService sessionService, ILogger<PixelsController> logger, Channel<PixelDto> changedPixelsChannel)
     {
+        _sessionService = sessionService;
         _repoManager = repoManager;
         _logger = logger;
+        _changedPixelsChannel = changedPixelsChannel;
     }
 
-    [HttpGet("canvas/{canvasId}")]
+    [HttpGet("canvases/{canvasId}")]
     public async Task<IActionResult> GetByCanvasId(Guid canvasId)
     {
         var pixels = await _repoManager.PixelRepository.GetByCanvasIdAsync(canvasId);
         return Ok(pixels);
+    }
+    
+    
+    [HttpGet("getpixel/{canvasName}")]
+    public async Task<IActionResult> GetByPixelDto(string canvasName, [FromBody]PixelDto pixelDto)
+    {
+        if (!Request.Headers.TryGetValue(CustomHeaders.SessionId, out var sessionIdStr) || !Guid.TryParse(sessionIdStr, out var sessionId))
+            return Unauthorized("Session-Id header missing or invalid.");
+
+        var userId = _sessionService.GetUserIdAndUpdateTimeLimit(sessionId);
+        if (userId == null)
+            return Unauthorized("Invalid session.");
+
+        var canvas = await _repoManager.CanvasRepository.GetByNameAsync(canvasName);
+        if (canvas == null)
+            return NotFound("Canvas not found.");
+        var pixelDtoReq = new PixelDto
+        {
+            CanvasId = canvas.Id,
+            X = pixelDto.X,
+            Y = pixelDto.Y,
+        };
+        var pixelExtracted = await _repoManager.PixelRepository.GetByPixelDto(pixelDtoReq);
+        if (pixelExtracted == null)
+        {
+            _logger.LogInformation("Pixel not found, returning default pixel.");
+            pixelExtracted = await GetDefaultPixel(pixelDtoReq);
+        }
+        return Ok(pixelExtracted);
+    }
+
+    private async Task<PixelDto> GetDefaultPixel(PixelDto pixelDtoReq)
+    {
+        var defaultColor = await _repoManager.ColorRepository.GetDefautColor();
+         // Should depend on canvas type.
+        return new PixelDto
+        {
+            CanvasId = pixelDtoReq.CanvasId,
+            X = pixelDtoReq.X,
+            Y = pixelDtoReq.Y,
+            OwnerId = null,
+            Id = null,
+            Price = 0,
+            ColorId = defaultColor.Id,
+        };
     }
 
     [HttpGet("owner/{ownerId}")]
@@ -31,12 +83,24 @@ public class PixelsController : ControllerBase
         return Ok(pixels);
     }
 
-    [HttpPost("change")]
-    public async Task<IActionResult> TryChangePixel(Guid ownerId, [FromBody] PixelDto pixel)
+    [HttpPost("change/{canvasName}")]
+    public async Task<IActionResult> TryChangePixel(string canvasName, [FromBody] PixelDto pixel)
     {
-        var result = await _repoManager.PixelRepository.TryChangePixelAsync(ownerId, pixel);
+        if (!Request.Headers.TryGetValue(CustomHeaders.SessionId, out var sessionIdStr) || !Guid.TryParse(sessionIdStr, out var sessionId))
+            return Unauthorized("Session-Id header missing or invalid.");
+
+        var userId = _sessionService.GetUserIdAndUpdateTimeLimit(sessionId);
+        if (userId == null)
+            return Unauthorized("Invalid session.");
+        
+        var canvas = await _repoManager.CanvasRepository.GetByNameAsync(canvasName);
+        if (canvas == null)
+            return NotFound("Canvas not found.");
+        pixel.CanvasId = canvas.Id;
+        var result = await _repoManager.PixelRepository.TryChangePixelAsync(userId.Value, pixel);
         if (result == null)
             return BadRequest("Could not change pixel.");
+        _changedPixelsChannel.Writer.TryWrite(result);
         return Ok(result);
     }
 }

@@ -1,30 +1,8 @@
 @using Linteum.Shared.DTO
 @using Linteum.BlazorApp.Components.Notification
+@using Linteum.BlazorApp.Services
+@inject MyApiClient ApiClient
 @inject NotificationService NotificationService
-
-@code {
-    [Parameter]
-    public CanvasDto? Canvas { get; set; }
-
-    [Parameter]
-    public (int X, int Y)? ClickedPixel { get; set; }
-
-    public long Gold { get; set; }
-
-    private static readonly NLog.Logger _nlog = NLog.LogManager.GetCurrentClassLogger();
-
-    private async Task NotifyAsync(CustomNotification note)
-    {
-        try
-        {
-            await NotificationService.Writer.WriteAsync(note);
-        }
-        catch (Exception ex)
-        {
-            _nlog.Warn(ex, "NotificationService.Writer.WriteAsync failed in PixelManager");
-        }
-    }
-}
 
 <div class="pixelmanager">
     <div class="pm-header">
@@ -39,16 +17,228 @@
     </div>
 
     <div class="pm-content">
-        <h6>Gold: @Gold 🪙</h6>
+        <span style="margin-left:20px;">Gold: @Gold 🪙</span>
+        <div class="pm-drawing" style="display:flex;flex-direction:column;align-items:center;">
+            <h6 style="margin:0 0 0.5rem 0;text-align:center;">Pixel Drawing</h6>
 
-        <h6>Clicked Pixel</h6>
-        @if (ClickedPixel.HasValue)
+            <div style="display:flex;flex-direction:column;gap:0.75rem;width:100%;">
+                <div>
+                    <label class="form-label" style="display:block;margin-bottom:0.25rem;">Selected Pixel</label>
+                    @if (ClickedPixel.HasValue)
+                    {
+                        <div>X: @ClickedPixel.Value.X, Y: @ClickedPixel.Value.Y</div>
+                    }
+                    else
+                    {
+                        <div class="text-muted">No pixel selected</div>
+                    }
+                </div>
+
+                <div>
+                    <div class="color-dropdown">
+                        <button type="button" class="color-dropdown-toggle" @onclick="ToggleColorDropdown" aria-expanded="@_colorDropdownOpen">
+                            <div style="display:flex;align-items:center;gap:0.5rem;width:100%;">
+                                <div class="color-swatch" style="background:@(SelectedColor?.HexValue ?? "#ffffff");"></div>
+                                <span class="color-label">@(SelectedColor == null ? "-- Select color --" : (string.IsNullOrEmpty(SelectedColor.Name) ? SelectedColor.HexValue : SelectedColor.Name))</span>
+                                <span style="margin-left:auto;opacity:0.7;">▾</span>
+                            </div>
+                        </button>
+
+
+                        @if (_colorDropdownOpen && _colors != null)
+                        {
+                            <ul class="color-dropdown-menu" role="listbox">
+                                @foreach (var c in _colors)
+                                {
+                                    <li class="color-option" role="option" @onclick="() => SelectColor(c)">
+                                        <div class="color-swatch" style="background:@c.HexValue;"></div>
+                                        <span>@(string.IsNullOrEmpty(c.Name) ? c.HexValue : c.Name)</span>
+                                    </li>
+                                }
+                            </ul>
+                        }
+                    </div>
+                </div>
+
+                <div style="padding:0.25rem 0;">
+                    <button class="btn" style="display:block;width:100%;padding:0.75rem 0;font-weight:600;border-radius:6px;" @onclick="PaintClick" disabled="@(SelectedColor == null || !ClickedPixel.HasValue)">PAINT</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="pm-online-users" style="margin-top: 1rem; padding: 0.5rem; background: rgba(0,0,0,0.05); border-radius: 6px;">
+            <h6 style="margin-bottom: 0.5rem; font-size: 0.85rem; text-transform: uppercase; color: #666;">Online Users (@OnlineUsers.Count)</h6>
+            <div style="display: flex; flex-wrap: wrap; gap: 0.4rem; max-height: 100px; overflow-y: auto;">
+                @if (OnlineUsers.Any())
+                {
+                    @foreach (var user in OnlineUsers)
+                    {
+                        <span style="background: #e9ecef; padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.75rem; border: 1px solid #dee2e6;">@user</span>
+                    }
+                }
+                else
+                {
+                    <span style="font-size: 0.75rem; color: #999;">Only you are here</span>
+                }
+            </div>
+        </div>
+
+        @if (_pixelChangeHistory != null && _pixelChangeHistory.Any())
         {
-            <p>X: @ClickedPixel.Value.X, Y: @ClickedPixel.Value.Y</p>
-        }
-        else
-        {
-            <p class="text-muted">No pixel selected</p>
+            <div class="pm-history">
+                <h6>Pixel History</h6>
+                <div class="history-list">
+                    @foreach (var item in _pixelChangeHistory)
+                    {
+                        var oldColor = _colors?.FirstOrDefault(c => c.Id == item.OldColorId);
+                        var newColor = _colors?.FirstOrDefault(c => c.Id == item.NewColorId);
+
+                        <div class="history-item">
+                            <div class="history-colors">
+                                <div class="color-swatch-sm" style="background:@(oldColor?.HexValue ?? "transparent");" title="Old: @(oldColor?.Name ?? "?")"></div>
+                                <span class="arrow">→</span>
+                                <div class="color-swatch-sm" style="background:@(newColor?.HexValue ?? "transparent");" title="New: @(newColor?.Name ?? "?")"></div>
+                            </div>
+                            <div class="history-details">
+                                <span class="username">@item.UserName</span>
+                                <span class="timestamp">@item.Timestamp.ToLocalTime().ToString("g")</span>
+                            </div>
+                        </div>
+                    }
+                </div>
+            </div>
         }
     </div>
 </div>
+
+@code {
+    [Parameter]
+    public CanvasDto? Canvas { get; set; }
+
+    [Parameter]
+    public (int X, int Y)? ClickedPixel { get; set; }
+
+    [Parameter]
+    public CanvasRenderer? CanvasRenderer { get; set; }
+
+    [Parameter]
+    public PixelDto? ClickedPixelData { get; set; }
+
+    public long Gold { get; set; }
+
+    [Parameter]
+    public List<string> OnlineUsers { get; set; } = new();
+
+    private static readonly NLog.Logger _nlog = NLog.LogManager.GetCurrentClassLogger();
+    private List<ColorDto>? _colors;
+    private List<HistoryResponseItem>? _pixelChangeHistory;
+    private Guid? PrevPixelId;
+    private int? _selectedColorId;
+    private ColorDto? SelectedColor => _colors?.FirstOrDefault(c => c.Id == _selectedColorId);
+
+    private bool _colorDropdownOpen = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _colors = await ApiClient.GetColorsAsync();
+        _colors.Sort((c1, c2) => string.Compare(c1.Name ?? string.Empty, c2.Name ?? string.Empty, StringComparison.OrdinalIgnoreCase));
+    }
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (ClickedPixelData == null || (PrevPixelId.HasValue && PrevPixelId.Value == ClickedPixelData.Id))
+        {
+            return;
+        }
+
+        _colorDropdownOpen = false;
+        if (ClickedPixelData?.Id == null)
+        {
+            return;
+        }
+
+        _pixelChangeHistory = await ApiClient.GetHistoryAsync(ClickedPixelData.Id.Value);
+        PrevPixelId = ClickedPixelData.Id;
+    }
+
+    public async Task UpdatePixelHistory()
+    {
+        if (ClickedPixelData?.Id != null)
+        {
+            _pixelChangeHistory = await ApiClient.GetHistoryAsync(ClickedPixelData.Id.Value);
+            StateHasChanged();
+        }
+    }
+
+    private void ToggleColorDropdown()
+    {
+        _colorDropdownOpen = !_colorDropdownOpen;
+    }
+
+    private void SelectColor(ColorDto c)
+    {
+        _selectedColorId = c.Id;
+        _colorDropdownOpen = false;
+    }
+
+    private async Task PaintClick()
+    {
+        if (Canvas == null)
+        {
+            await NotifyAsync( new CustomNotification
+            {
+                Message = "No canvas loaded.",
+                Type = NotificationType.Info,
+            });
+            return;
+        }
+        
+        if(SelectedColor == null || !ClickedPixel.HasValue)
+        {
+            await NotifyAsync( new CustomNotification
+            {
+                Message = "No color selected or pixel clicked.",
+                Type = NotificationType.Info,
+            });
+            return;
+        }
+
+        try
+        {
+            var newPixel = await ApiClient.Paint(ClickedPixel.Value, Canvas, SelectedColor.Id);
+            if (CanvasRenderer != null)
+            {
+                CanvasRenderer.EnqueuePixel(newPixel.X, newPixel.Y, SelectedColor.HexValue);
+            }
+
+            await NotifyAsync(new CustomNotification
+            {
+                Message = $"Painted pixel at ({newPixel.X}, {newPixel.Y}) with color {SelectedColor.Name ?? SelectedColor.HexValue}.",
+                Type = NotificationType.Success,
+            });
+            if(ClickedPixelData != null && ClickedPixelData.Id!= null)
+                _pixelChangeHistory = await ApiClient.GetHistoryAsync(ClickedPixelData.Id.Value);
+        }
+        catch (Exception ex)
+        {
+            _nlog.Error(ex, "Error painting pixel");
+            await NotifyAsync( new CustomNotification
+            {
+                Message = $"Error painting pixel: {ex.Message}",
+                Type = NotificationType.Error,
+            });
+        }
+    }
+
+    private async Task NotifyAsync(CustomNotification note)
+    {
+        try
+        {
+            await NotificationService.Writer.WriteAsync(note);
+        }
+        catch (Exception ex)
+        {
+            _nlog.Warn(ex, "NotificationService.Writer.WriteAsync failed in PixelManager");
+        }
+    }
+}

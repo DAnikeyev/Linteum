@@ -1,4 +1,5 @@
 ﻿using System.ComponentModel.DataAnnotations;
+using Linteum.Shared;
 
 namespace Linteum.Domain;
 
@@ -16,6 +17,8 @@ public class Canvas
     
     [Range(1, 1080)]
     public int Height { get; set; }
+
+    public CanvasMode CanvasMode { get; set; } = CanvasMode.Sandbox;
     
     public DateTime CreatedAt { get; set; }
     

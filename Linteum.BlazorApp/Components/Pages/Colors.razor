@@ -39,7 +39,6 @@ else
 
     protected override async Task OnInitializedAsync()
     {
-        
         _colors = await ApiClient.GetColorsAsync();
         _colors.Sort((c1, c2) => string.Compare(c1.Name, c2.Name, StringComparison.OrdinalIgnoreCase));
     }

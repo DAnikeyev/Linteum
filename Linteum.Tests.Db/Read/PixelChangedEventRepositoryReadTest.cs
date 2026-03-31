@@ -42,7 +42,7 @@ internal class PixelChangedRepositoryReadTest : SyntheticDataTest
         var pixel1 = await RepoManager.PixelRepository.TryChangePixelAsync(user!.Id!.Value, pixelDto1);
         var pixel2 = await RepoManager.PixelRepository.TryChangePixelAsync(user2!.Id!.Value, pixelDto2);
         var pixel3 = await RepoManager.PixelRepository.TryChangePixelAsync(user!.Id!.Value, pixelDto3);
-        var pixelChangedEvents = (await pixelChangedRepo.GetByPixelIdAsync(pixel1.Id)).ToList();
+        var pixelChangedEvents = (await pixelChangedRepo.GetByPixelIdAsync(pixel1.Id!.Value)).ToList();
         var canvaslChangedEvent = (await pixelChangedRepo.GetByCanvasIdAsync(pixel1.CanvasId, null)).ToList();
         var userChangedEvent = (await pixelChangedRepo.GetByUserIdAsync(user.Id.Value)).ToList();
         var userChangedEvent2 = (await pixelChangedRepo.GetByUserIdAsync(user2.Id.Value)).ToList();

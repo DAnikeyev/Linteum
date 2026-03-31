@@ -21,7 +21,7 @@ namespace Linteum.Tests
                 builder.AddNLog("nlog.config");
             });
 
-            RepositoryManager = new RepositoryManager(dbContext, Mapper, new Config(), LoggerFactoryInterface);
+            RepositoryManager = new RepositoryManager(dbContext, Mapper, new Config(), LoggerFactoryInterface, new SimplePixelNotifier());
         }
 
         public static IMapper Mapper => TestMapper.Instance;

@@ -1,6 +1,7 @@
 @inject LocalStorageService LocalStorageService
 @inject NavigationManager Navigation
 @inject ILogger<BaseLayout> Logger
+@inject MyApiClient ApiClient
 @using Linteum.BlazorApp.Components.Notification
 @inherits LayoutComponentBase
 
@@ -41,18 +42,36 @@
     {
         try
         {
-            var sessionId = await LocalStorageService.GetItemAsync<string>(LocalStorageKey.SessionId);
-            if (sessionId is null)
+            var sessionIdString = await LocalStorageService.GetItemAsync<string>(LocalStorageKey.SessionId);
+            if (sessionIdString == null || !Guid.TryParse(sessionIdString, out var sessionId))
             {
-                Logger.LogInformation("No session ID found, redirecting to login.");
+                Logger.LogInformation("No valid session ID found, redirecting to login.");
                 await LocalStorageService.ClearAsync();
+                ApiClient.ClearSession();
                 Navigation.NavigateTo("/login");
+                return;
+            }
+
+            Logger.LogInformation("Validating session with server.");
+            var (user, validatedSessionId) = await ApiClient.LoginAsync(sessionId);
+
+            if (user == null || validatedSessionId == null)
+            {
+                Logger.LogInformation("Session validation failed, redirecting to login.");
+                await LocalStorageService.ClearAsync();
+                ApiClient.ClearSession();
+                Navigation.NavigateTo("/login");
+            }
+            else
+            {
+                Logger.LogInformation("Session validated successfully.");
             }
         }
         catch(Exception ex)
         {
-            Logger.LogError($"Error {ex} validating local session, redirecting to login.");
+            Logger.LogError($"Error {ex} validating session, redirecting to login.");
             await LocalStorageService.ClearAsync();
+            ApiClient.ClearSession();
             Navigation.NavigateTo("/login");
         }
     }

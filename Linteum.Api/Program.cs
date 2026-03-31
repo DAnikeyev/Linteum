@@ -1,8 +1,9 @@
 using Linteum.Api.Configuration;
+using Linteum.Api.Hubs;
+using Linteum.Api.Services;
 using Linteum.Infrastructure;
 using NLog;
 using NLog.Web;
-using Linteum.Api.Services;
 
 var logger = LogManager.Setup().LoadConfigurationFromAppSettings().GetCurrentClassLogger();
 
@@ -12,6 +13,23 @@ try
 
     builder.Logging.ClearProviders();
     builder.Host.UseNLog();
+    var allowedOrigins = builder.Configuration.GetSection("CorsOrigins").Get<string[]>() 
+                         ?? Array.Empty<string>();
+    
+    builder.Services.AddCors(options =>
+    {
+        options.AddPolicy("AllowBlazorApp", policy =>
+        {
+            policy.WithOrigins(allowedOrigins)
+                .AllowAnyHeader()
+                .AllowAnyMethod()
+                .AllowCredentials();
+        });
+    });
+    builder.Services.AddSignalR();
+    
+    builder.Services.AddSingleton<IConnectionTracker, ConnectionTracker>();
+    builder.Services.AddScoped<IPixelNotifier, SignalRPixelNotifier>();
     builder.Services.Configure<CanvasSizeOptions>(builder.Configuration.GetSection("CanvasSize"));
     builder.Services.AddApplicationServices(builder.Configuration);
     builder.Services.AddControllers();
@@ -29,8 +47,14 @@ try
         var dbMigrator = new DbMigrator(app.Services, loggerFactory);
         await dbMigrator.InitializeAsync();
     }
-    app.UseHttpsRedirection();
+    if (app.Environment.IsDevelopment())
+    {
+        app.UseHttpsRedirection();
+    }
+    app.UseCors("AllowBlazorApp");
     app.MapControllers();
+    app.MapHub<CanvasHub>("/canvashub");
+    
     logger.Info("Application started successfully");
     app.Run();
 }
@@ -43,4 +67,3 @@ finally
 {
     NLog.LogManager.Shutdown();
 }
-

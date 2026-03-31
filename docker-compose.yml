@@ -32,6 +32,8 @@ services:
       - MASTER_EMAIL=${MASTER_EMAIL}
       - PASSWORD_SALT=${PASSWORD_SALT}
       - ASPNETCORE_URLS=http://*:${API_CONTAINER_PORT}
+      - CorsOrigins__0=http://localhost:${BLAZOR_HOST_PORT}
+      - CorsOrigins__1=http://${BLAZOR_CONTAINER_NAME}:${BLAZOR_CONTAINER_PORT}
     depends_on:
       db:
         condition: service_healthy
@@ -46,9 +48,10 @@ services:
     container_name: ${BLAZOR_CONTAINER_NAME}
     environment:
       - PASSWORD_SALT=${PASSWORD_SALT}
-      - API_CONTAINER_NAME=${API_CONTAINER_NAME}
+      - API_CONTAINER_NAME=api
       - API_CONTAINER_PORT=${API_CONTAINER_PORT}
       - ASPNETCORE_URLS=http://*:${BLAZOR_CONTAINER_PORT}
+      - ApiBaseUrl=http://${API_CONTAINER_NAME}:${API_CONTAINER_PORT}
     ports:
       - "${BLAZOR_HOST_PORT}:${BLAZOR_CONTAINER_PORT}"
     depends_on:
