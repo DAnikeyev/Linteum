@@ -29,25 +29,25 @@ else
              style="width:@(ViewportWidth)px; height:@(ViewportHeight)px; overflow:hidden; position:relative;">
 
             <div class="canvas-renderer"
-                 style="position: absolute; left: @(_offsetX)px; top: @(_offsetY)px; width:@(_canvas.Width)px; height:@(_canvas.Height)px; background:#ffffff; transform: scale(@(_scale)); transform-origin: 0 0;">
+                 style="position: absolute; left: @(_offsetX)px; top: @(_offsetY)px; width:@(_canvas.Width * _scale)px; height:@(_canvas.Height * _scale)px; background:#ffffff;">
 
                 <!-- REPLACED IMG WITH CANVAS -->
                 <canvas @ref="_canvasRef"
                         width="@_canvas.Width"
                         height="@_canvas.Height"
-                        style="width:100%; height:100%; display: block; pointer-events: none;">
+                        style="width:100%; height:100%; display:block; pointer-events:none; image-rendering:pixelated;">
                 </canvas>
                 
                 <!-- OVERLAY CANVAS -->
                 <canvas @ref="_overlayRef"
                         width="@_canvas.Width"
                         height="@_canvas.Height"
-                        style="width:100%; height:100%; display: block; pointer-events: none; position: absolute; top: 0; left: 0;">
+                        style="width:100%; height:100%; display:block; pointer-events:none; image-rendering:pixelated; position:absolute; top:0; left:0;">
                 </canvas>
 
             </div>
 
-            <!-- Canvas Boundary (Unscaled) -->
+            <!-- Canvas Boundary -->
             <div style="position:absolute;
             left:@(_offsetX)px;
             top:@(_offsetY)px;
@@ -66,7 +66,7 @@ else
                         top:@(_offsetY + _hoveredPixel.Value.Y * _scale)px;
                         width:@(_scale)px;
                         height:@(_scale)px;
-                        border: 1px solid grey;
+                        box-shadow: inset 0 0 0 1px grey;
                         pointer-events: none;
                         z-index: 5;">
                 </div>
@@ -80,7 +80,7 @@ else
                         top:@(_offsetY + _clickedPixel.Value.Y * _scale)px;
                         width:@(_scale)px;
                         height:@(_scale)px;
-                        border: 2px solid var(--accent-3);
+                        box-shadow: inset 0 0 0 2px var(--accent-3);
                         pointer-events: none;
                         z-index: 6;">
                 </div>
@@ -206,6 +206,12 @@ else
             {
                 if (_renderer == null || _colors == null) return;
 
+                var currentCanvasName = _canvas?.Name ?? canvasName;
+                var selectedPixelId = _clickedPixel.HasValue && _clickedPixel.Value.X == x && _clickedPixel.Value.Y == y
+                    ? _clickedPixelData?.Id
+                    : null;
+                ApiClient.HandlePixelColorChanged(currentCanvasName, x, y, colorId, selectedPixelId);
+
                 // Try to find the color hex from the ID sent
                 var c = _colors.FirstOrDefault(cDto => cDto.Id == colorId);
                 if (c != null)
@@ -216,7 +222,17 @@ else
                 // Update pixel history if this pixel is currently selected
                 if (_clickedPixel.HasValue && _clickedPixel.Value.X == x && _clickedPixel.Value.Y == y && _pixelManager != null)
                 {
+                    if (_clickedPixelData != null)
+                    {
+                        _clickedPixelData.ColorId = colorId;
+                        if (_clickedPixelData.Id.HasValue)
+                        {
+                            ApiClient.InvalidateHistoryCache(_clickedPixelData.Id.Value);
+                        }
+                    }
+
                     await _pixelManager.UpdatePixelHistory();
+                    await InvokeAsync(StateHasChanged);
                 }
             });
 
@@ -347,6 +363,7 @@ else
             }
 
             _clickedPixel = null;
+            _clickedPixelData = null;
             _hoveredPixel = null;
 
             FitCanvas();

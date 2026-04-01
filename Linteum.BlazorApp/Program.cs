@@ -32,7 +32,7 @@ try
 
     logger.Info("API Base Address configured: {ApiBaseAddress}", apiBaseAddress);
 
-    builder.Services.AddHttpClient<MyApiClient>("ApiClient", client => {
+    builder.Services.AddHttpClient("ApiClient", client => {
         client.BaseAddress = new Uri(apiBaseAddress);
     }).ConfigurePrimaryHttpMessageHandler(() =>
     {
@@ -47,6 +47,7 @@ try
     
     builder.Services.AddSingleton(new Config());
     builder.Services.AddScoped(sp => sp.GetRequiredService<IHttpClientFactory>().CreateClient("ApiClient"));
+    builder.Services.AddScoped<MyApiClient>();
     builder.Services.AddDataProtection()
         .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(Directory.GetCurrentDirectory(), "keys")))
         .SetApplicationName("LinteumApp");

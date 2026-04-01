@@ -3,13 +3,39 @@ html, body {
 }
 
 a, .btn-link {
-    color: #006bb7;
+    color: var(--accent2);
+    text-decoration: none;
+    transition: color 0.2s;
+}
+
+a:hover, .btn-link:hover {
+    color: var(--accent3);
+    text-decoration: underline;
 }
 
 .btn-primary {
-    color: #fff;
-    background-color: #1b6ec2;
-    border-color: #1861ac;
+    color: var(--accent3);
+    background: var(--nm-bg);
+    border: none;
+    box-shadow: 4px 4px 8px var(--nm-dark),
+                -4px -4px 8px var(--nm-light);
+    border-radius: 12px;
+    padding: 0.6rem 1.2rem;
+    font-weight: 700;
+    transition: all 0.2s;
+}
+
+.btn-primary:hover {
+    box-shadow: 2px 2px 4px var(--nm-dark),
+                -2px -2px 4px var(--nm-light);
+    transform: translateY(1px);
+    color: var(--accent2);
+    background: var(--nm-light);
+}
+
+.btn-primary:active {
+    box-shadow: inset 3px 3px 6px var(--nm-dark),
+                inset -3px -3px 6px var(--nm-light);
 }
 
 .btn:focus, .btn:active:focus, .btn-link.nav-link:focus, .form-control:focus, .form-check-input:focus {
@@ -60,83 +86,169 @@ h1:focus {
 }
 
 :root {
-    --black: #000;
-    /*Main text on left*/
-    --accent3: #1F2070;
+    /* --- Neumorphic Base Palette --- */
+    --nm-bg: #f0f3f9;
+    --nm-light: #ffffff;
+    --nm-dark: #d1d9e6;
+    --nm-darker: #b8c6db;
     
-    /*Intermediate accent and important blocks*/
-    --accent2p5: #4D4FB7;
+    /* Main Accent (Blue/Purple) */
+    --accent3: #2d3269;      /* Deep Navy */
+    --accent2p5: #4a51a3;
+    --accent2: #6c72e0;      /* Primary Accent */
+    --accent1p5: #8e94e8;
+    --accent1: #c8cdeb;      /* Soft Accent */
+    --accent0p5: #dee2f2;
+    --accent0: #eef1f7;      /* Main Background (NM Base) */
+    
+    /* Secondary Accent (Orange/Warm) */
+    --accent-0p5: #fdf5e6;
+    --accent-1: #f8e5d0;
+    --accent-1p5: #f4d0a8;
+    --accent-2: #edb47f;
+    --accent-2p5: #e69a5a;
+    --accent-3: #c26b2e;
 
-    /*Main items of type 1 including most of left sidebar*/
-    --accent2: #7678ED;
+    /* --- Sidebar Specific Themes --- */
+    
+    /* Sidebar (Left) - Orange Theme */
+    --sb-bg: #fff5e6;
+    --sb-nm-light: #ffffff;
+    --sb-nm-dark: #fdd9b5;
+    --sb-accent: #ff8c00;
+    --sb-accent-dark: #e67e22;
+    --sb-accent-soft: #ffe5cc;
+    
+    /* PixelManager (Right) - Blue Theme */
+    --pm-bg-color: #ebf5ff;
+    --pm-nm-light: #ffffff;
+    --pm-nm-dark: #c2dfff;
+    --pm-accent: #1e88e5;
+    --pm-accent-dark: #1565c0;
+    --pm-accent-soft: #d1e9ff;
+    
+    /* Utility */
+    --accept: #28a745;
+    --reject: #dc3545;
+    --black: #1a1a1a;
 
-    /*Main items of type 1 on hover*/
-    --accent1p5: #969AEA;
-    
-    /*Background og left sidebar*/
-    --accent1: #B6BCE6;
-    
-    --accent0p5: #DDE1F5;
-    
-    /*Background of middle components and light-theme containers*/
-    --accent0: #F6FFDE;
-    
-    --accent-0p5: #FFF7D1;
-    /*Background of right sidebar and yellow-ish input boxes*/
-    --accent-1: #F7CEA2;
-    
-    /*Main items of type 2 on hover*/
-    --accent-1p5: #F7B684;
-    /*Main items of type 2 including most of right sidebar*/
-    --accent-2: #F79D65;
+    /* Gradients */
+    --grad-orange: linear-gradient(135deg, #ff6600 0%, #ffcc00 100%);
+    --grad-blue: linear-gradient(135deg, #0056b3 0%, #00aaff 100%);
+    --grad-warm: linear-gradient(135deg, #fffaf0 0%, #ffe4b5 100%);
+    --grad-auth: linear-gradient(-45deg, #ffccbc, #bbdefb, #c8e6c9, #b2ebf2);
+}
 
-    /*Intermediate accent and important blocks*/
-    --accent-2p5: #F7B684;
-    
-    /*Main text of type 2 including most of right sidebar*/
-    --accent-3: #C2510A;
-    
-    /*Accept and reject colors*/
-    --accept: #05CA3D;
-    --reject: #DE3000;
+@keyframes gradientAnimation {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+}
+
+/* Neumorphic Utilities */
+.nm-flat {
+    background: var(--nm-bg);
+    box-shadow: 6px 6px 12px var(--nm-dark),
+                -6px -6px 12px var(--nm-light);
+}
+
+.nm-inset {
+    background: var(--nm-bg);
+    box-shadow: inset 6px 6px 12px var(--nm-dark),
+                inset -6px -6px 12px var(--nm-light);
+}
+
+.nm-concave {
+    background: linear-gradient(145deg, var(--nm-dark), var(--nm-light));
+    box-shadow: 6px 6px 12px var(--nm-dark),
+                -6px -6px 12px var(--nm-light);
+}
+
+.nm-convex {
+    background: linear-gradient(145deg, var(--nm-light), var(--nm-dark));
+    box-shadow: 6px 6px 12px var(--nm-dark),
+                -6px -6px 12px var(--nm-light);
+}
+
+.nm-btn {
+    background: var(--nm-bg);
+    border: none;
+    border-radius: 12px;
+    padding: 0.8rem 1.5rem;
+    transition: all 0.2s ease;
+    box-shadow: 4px 4px 8px var(--nm-dark),
+                -4px -4px 8px var(--nm-light);
+    color: var(--accent3);
+    font-weight: 600;
+}
+
+.nm-btn:hover {
+    box-shadow: 2px 2px 4px var(--nm-dark),
+                -2px -2px 4px var(--nm-light);
+    transform: translateY(1px);
+}
+
+.nm-btn:active {
+    box-shadow: inset 3px 3px 6px var(--nm-dark),
+                inset -3px -3px 6px var(--nm-light);
+    transform: translateY(2px);
+}
+
+.nm-card {
+    background: var(--nm-bg);
+    border-radius: 20px;
+    padding: 1.5rem;
+    box-shadow: 8px 8px 16px var(--nm-dark),
+                -8px -8px 16px var(--nm-light);
 }
 
 .notification-container {
     position: fixed;
     left: 0;
     right: 0;
-    bottom: 32px;
+    bottom: 40px;
     z-index: 9999;
     display: flex;
-    justify-content: center;
+    flex-direction: column;
     align-items: center;
+    gap: 1rem;
     pointer-events: none;
 }
 
 .notification-box {
-    min-width: 120px;
-    max-width: 500px;
-    background: rgba(34, 34, 34, 0.82);
-    color: #fff;
-    padding: 0.32rem 0.8rem;
-    border-radius: 4px;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.13);
+    min-width: 250px;
+    max-width: 600px;
+    background: var(--nm-bg);
+    color: var(--accent3);
+    padding: 1rem 1.5rem;
+    border-radius: 15px;
+    box-shadow: 8px 8px 16px var(--nm-dark),
+                -8px -8px 16px var(--nm-light);
     opacity: 1;
-    transition: opacity 0.5s;
+    transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
     pointer-events: auto;
-    font-size: 0.88rem;
+    font-size: 0.95rem;
+    font-weight: 700;
     text-align: center;
-    margin:auto;
+    border: 1px solid var(--nm-light);
 }
 
-.notification-box { 
-    transition: opacity 1s ease-in-out;
+.notification-box.success { 
+    color: var(--accept);
+    border-bottom: 3px solid var(--accept);
+}
+
+.notification-box.error { 
+    color: var(--reject);
+    border-bottom: 3px solid var(--reject);
+}
+
+.notification-box.info { 
+    color: var(--accent2);
+    border-bottom: 3px solid var(--accent2);
 }
 
 .notification-box.fade-out {
     opacity: 0;
+    transform: translateY(20px) scale(0.95);
 }
-
-.notification-box.success { background: var(--accept); }
-.notification-box.error { background: var(--reject); }
-.notification-box.info { background: var(--accent-2); }

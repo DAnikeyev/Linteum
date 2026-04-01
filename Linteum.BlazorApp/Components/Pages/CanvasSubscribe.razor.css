@@ -1,97 +1,93 @@
 /* CanvasSubscribe.razor.css */
 .settings-container {
-    background-color: transparent;
-    padding: 0;
-    border-radius: 0;
-    box-shadow: none;
-    width: 100%;
-    margin-left: 3rem;
-    border: none;
+    background-color: var(--nm-bg);
+    padding: 3rem;
+    border-radius: 30px;
+    box-shadow: 15px 15px 30px var(--nm-dark),
+                -15px -15px 30px var(--nm-light);
+    width: auto;
+    max-width: 800px;
+    margin: 2rem auto;
     display: flex;
     flex-direction: column;
-    gap: 0.35rem;
-    position: relative;
+    gap: 1.5rem;
 }
 
 .settings-container h2 {
     color: var(--accent3);
-    font-weight: 700;
-    text-align: left;
-    margin-bottom: 0.5rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    margin-bottom: 1.5rem;
 }
 
 .settings-container label {
-    color: var(--accent3);
-    font-weight: 600;
-    margin-bottom: 0.08rem;
-    font-size: 0.98rem;
+    color: var(--accent2p5);
+    font-weight: 700;
+    margin-bottom: 0.4rem;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
 }
 
 .settings-container .form-control {
-    background: var(--accent-1);
-    border: 1.5px solid var(--accent2);
+    background: var(--nm-bg);
+    border: none;
     color: var(--accent3);
-    border-radius: 6px;
-    padding: 0.32rem 0.55rem;
-    font-size: 0.98rem;
-    transition: border 0.2s;
+    border-radius: 12px;
+    padding: 0.8rem 1.2rem;
+    font-size: 1rem;
+    box-shadow: inset 4px 4px 8px var(--nm-dark),
+                inset -4px -4px 8px var(--nm-light);
+    transition: all 0.2s ease;
 }
 
 .settings-container .form-control:focus {
-    border-color: var(--accent2);
+    box-shadow: inset 2px 2px 4px var(--nm-dark),
+                inset -2px -2px 4px var(--nm-light);
     outline: none;
-    background: var(--accent0);
-}
-
-.settings-container .form-control:disabled {
-    background-color: #e0e0e0 !important;
-    color: #888 !important;
-    border-color: #cccccc !important;
-    opacity: 1;
-}
-
-.settings-container .input-group-text {
-    background: var(--accent1);
-    color: var(--accent3);
-    border: 1.5px solid var(--accent2);
-    border-radius: 0 6px 6px 0;
-}
-
-.settings-container .input-group-text.email-lock-bg {
-    background-color: #e0e0e0 !important;
-    color: #888 !important;
-    border-color: #cccccc !important;
 }
 
 .settings-container .btn-primary {
     background: var(--accent2);
-    border: 2px solid var(--accent-2);
-    color: #fff;
-    font-weight: 600;
-    border-radius: 6px;
-    transition: background 0.2s, border 0.2s;
-    font-size: 0.98rem;
-    padding: 0.32rem 0.5rem;
+    border: none;
+    color: white !important;
+    font-weight: 800;
+    border-radius: 15px;
+    padding: 0.8rem 1.5rem;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    box-shadow: 0 4px 10px rgba(108, 114, 224, 0.3);
+    transition: all 0.2s ease;
 }
 
 .settings-container .btn-primary:hover {
     background: var(--accent2p5);
-    border-color: var(--accent-2p5);
+    box-shadow: 0 6px 15px rgba(108, 114, 224, 0.4);
+    transform: translateY(-1px);
+    color: white !important;
 }
 
 .settings-container .btn-danger {
-    background: var(--reject);
+    background: var(--nm-bg);
     border: none;
-    color: #fff;
-    font-weight: 600;
-    border-radius: 6px;
-    transition: background 0.2s;
-    font-size: 0.98rem;
-    padding: 0.32rem 0.5rem;
+    color: var(--reject);
+    font-weight: 800;
+    border-radius: 15px;
+    padding: 0.8rem 1.5rem;
+    font-size: 0.9rem;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    box-shadow: 6px 6px 12px var(--nm-dark),
+                -6px -6px 12px var(--nm-light);
+    transition: all 0.2s ease;
 }
 
 .settings-container .btn-danger:hover {
-    background: #b22200;
+    box-shadow: 3px 3px 6px var(--nm-dark),
+                -3px -3px 6px var(--nm-light);
+    color: #ff4444;
 }
 
 .settings-container .alert-success {

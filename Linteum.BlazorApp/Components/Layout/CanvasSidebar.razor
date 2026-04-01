@@ -205,6 +205,8 @@
             var success = await ApiClient.UnsubscribeAsync(canvasName);
             if (success)
             {
+                ApiClient.ClearCanvasCache(canvasName);
+
                 var item = _canvases?.FirstOrDefault(c => c.Name == canvasName);
                 if (item != null)
                     _canvases?.Remove(item);

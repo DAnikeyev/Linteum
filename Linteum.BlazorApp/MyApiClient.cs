@@ -14,6 +14,8 @@ internal class MyApiClient
     private readonly HttpClient _httpClient;
     private readonly LocalStorageService _localStorage;
     private readonly ILogger<MyApiClient> _logger;
+    private readonly object _cacheLock = new();
+    private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(1);
     private readonly Dictionary<Guid, (List<HistoryResponseItem> Data, DateTime Expiry)> _historyCache = new();
     private readonly Dictionary<(string CanvasName, int X, int Y), (PixelDto Data, DateTime Expiry)> _pixelCache = new();
 
@@ -26,6 +28,7 @@ internal class MyApiClient
 
     public async Task SetSessionAsync(Guid? sessionId)
     {
+        ClearAllCaches();
         if (sessionId.HasValue)
         {
             await _localStorage.SetItemAsync(LocalStorageKey.SessionId, sessionId.Value.ToString());
@@ -39,7 +42,70 @@ internal class MyApiClient
 
     public void ClearSession()
     {
+        ClearAllCaches();
         _httpClient.DefaultRequestHeaders.Remove(CustomHeaders.SessionId);
+    }
+
+    public void InvalidateHistoryCache(Guid pixelId)
+    {
+        lock (_cacheLock)
+        {
+            _historyCache.Remove(pixelId);
+        }
+    }
+
+    public void InvalidatePixelCache(string canvasName, int x, int y)
+    {
+        var cacheKey = BuildPixelCacheKey(canvasName, x, y);
+        lock (_cacheLock)
+        {
+            if (_pixelCache.TryGetValue(cacheKey, out var cached) && cached.Data.Id.HasValue)
+            {
+                _historyCache.Remove(cached.Data.Id.Value);
+            }
+            _pixelCache.Remove(cacheKey);
+        }
+    }
+
+    public void ClearCanvasCache(string canvasName)
+    {
+        var normalizedCanvasName = NormalizeCanvasName(canvasName);
+        lock (_cacheLock)
+        {
+            var keysToRemove = _pixelCache.Keys
+                .Where(key => string.Equals(key.CanvasName, normalizedCanvasName, StringComparison.Ordinal))
+                .ToList();
+
+            foreach (var key in keysToRemove)
+            {
+                if (_pixelCache.TryGetValue(key, out var cached) && cached.Data.Id.HasValue)
+                {
+                    _historyCache.Remove(cached.Data.Id.Value);
+                }
+                _pixelCache.Remove(key);
+            }
+        }
+    }
+
+    public void HandlePixelColorChanged(string canvasName, int x, int y, int colorId, Guid? pixelId = null)
+    {
+        var cacheKey = BuildPixelCacheKey(canvasName, x, y);
+        lock (_cacheLock)
+        {
+            Guid? historyPixelId = pixelId;
+            if (_pixelCache.TryGetValue(cacheKey, out var cached))
+            {
+                var updatedPixel = ClonePixel(cached.Data);
+                updatedPixel.ColorId = colorId;
+                _pixelCache[cacheKey] = (updatedPixel, DateTime.UtcNow.Add(CacheDuration));
+                historyPixelId ??= updatedPixel.Id;
+            }
+
+            if (historyPixelId.HasValue)
+            {
+                _historyCache.Remove(historyPixelId.Value);
+            }
+        }
     }
     
     public async Task<List<ColorDto>?> GetColorsAsync()
@@ -72,9 +138,15 @@ internal class MyApiClient
     public async Task<List<HistoryResponseItem>> GetHistoryAsync(Guid pixelId, bool useCache = false)
     {
         _logger.LogInformation("GetHistoryAsync called with pixelId: {PixelId}, useCache: {UseCache}", pixelId, useCache);
-        if (useCache && _historyCache.TryGetValue(pixelId, out var cached) && cached.Expiry > DateTime.UtcNow)
+        if (useCache)
         {
-            return cached.Data;
+            lock (_cacheLock)
+            {
+                if (_historyCache.TryGetValue(pixelId, out var cached) && cached.Expiry > DateTime.UtcNow)
+                {
+                    return CloneHistory(cached.Data);
+                }
+            }
         }
 
         var request = new HttpRequestMessage(HttpMethod.Get, $"/pixelchangedevents/pixel/{pixelId}");
@@ -83,7 +155,10 @@ internal class MyApiClient
         response.EnsureSuccessStatusCode();
         var history = await response.Content.ReadFromJsonAsync<List<HistoryResponseItem>>();
         var result = history ?? new List<HistoryResponseItem>();
-        _historyCache[pixelId] = (result, DateTime.UtcNow.AddMinutes(1));
+        lock (_cacheLock)
+        {
+            _historyCache[pixelId] = (CloneHistory(result), DateTime.UtcNow.Add(CacheDuration));
+        }
         return result;
     }
     
@@ -357,10 +432,16 @@ internal class MyApiClient
     public async Task<PixelDto> GetPixelData(string canvasName, int x, int y, bool useCache = false)
     {
         _logger.LogInformation("GetPixelData called with canvasName: {CanvasName}, x: {X}, y: {Y}, useCache: {UseCache}", canvasName, x, y, useCache);
-        var cacheKey = (canvasName, x, y);
-        if (useCache && _pixelCache.TryGetValue(cacheKey, out var cached) && cached.Expiry > DateTime.UtcNow)
+        var cacheKey = BuildPixelCacheKey(canvasName, x, y);
+        if (useCache)
         {
-            return cached.Data;
+            lock (_cacheLock)
+            {
+                if (_pixelCache.TryGetValue(cacheKey, out var cached) && cached.Expiry > DateTime.UtcNow)
+                {
+                    return ClonePixel(cached.Data);
+                }
+            }
         }
 
         var pixelDto = new PixelDto
@@ -375,7 +456,10 @@ internal class MyApiClient
         response.EnsureSuccessStatusCode();
         var pixel = await response.Content.ReadFromJsonAsync<PixelDto>();
         var result = pixel ?? new PixelDto();
-        _pixelCache[cacheKey] = (result, DateTime.UtcNow.AddMinutes(1));
+        lock (_cacheLock)
+        {
+            _pixelCache[cacheKey] = (ClonePixel(result), DateTime.UtcNow.Add(CacheDuration));
+        }
         return result;
     }
     
@@ -404,6 +488,23 @@ internal class MyApiClient
                 _logger.LogError("Painted pixel data is null for {CanvasName} at ({X}, {Y})", canvasDto.Name, clickedPixel.X, clickedPixel.Y);
                 throw new Exception("Painted pixel data is null.");
             }
+
+            var cacheKey = BuildPixelCacheKey(canvasDto.Name, paintedPixel.X, paintedPixel.Y);
+            lock (_cacheLock)
+            {
+                Guid? historyPixelId = paintedPixel.Id;
+                if (_pixelCache.TryGetValue(cacheKey, out var cached) && cached.Data.Id.HasValue)
+                {
+                    historyPixelId ??= cached.Data.Id.Value;
+                }
+
+                _pixelCache[cacheKey] = (ClonePixel(paintedPixel), DateTime.UtcNow.Add(CacheDuration));
+                if (historyPixelId.HasValue)
+                {
+                    _historyCache.Remove(historyPixelId.Value);
+                }
+            }
+
             _logger.LogInformation("Successfully painted pixel at ({X}, {Y}) on {CanvasName}", clickedPixel.X, clickedPixel.Y, canvasDto.Name);
             return paintedPixel;
         }
@@ -418,6 +519,42 @@ internal class MyApiClient
         if(response.StatusCode == HttpStatusCode.Unauthorized)
             throw new Exception("You are not authorized to paint on this canvas.");
         throw new Exception($"Failed to paint pixel at ({pixelDto.X}, {pixelDto.Y}). This exception is unexpected.");
+    }
+
+    private static string NormalizeCanvasName(string? canvasName) =>
+        (canvasName ?? string.Empty).Trim().ToUpperInvariant();
+
+    private static (string CanvasName, int X, int Y) BuildPixelCacheKey(string canvasName, int x, int y) =>
+        (NormalizeCanvasName(canvasName), x, y);
+
+    private static PixelDto ClonePixel(PixelDto pixel) =>
+        new()
+        {
+            Id = pixel.Id,
+            X = pixel.X,
+            Y = pixel.Y,
+            ColorId = pixel.ColorId,
+            OwnerId = pixel.OwnerId,
+            Price = pixel.Price,
+            CanvasId = pixel.CanvasId,
+        };
+
+    private static List<HistoryResponseItem> CloneHistory(List<HistoryResponseItem> history) =>
+        history.Select(item => new HistoryResponseItem
+        {
+            UserName = item.UserName,
+            OldColorId = item.OldColorId,
+            NewColorId = item.NewColorId,
+            Timestamp = item.Timestamp,
+        }).ToList();
+
+    private void ClearAllCaches()
+    {
+        lock (_cacheLock)
+        {
+            _historyCache.Clear();
+            _pixelCache.Clear();
+        }
     }
 }
 
