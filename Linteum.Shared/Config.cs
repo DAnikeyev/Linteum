@@ -6,6 +6,7 @@ public class Config
 {
     public string DefaultCanvasName { get; set; } = "home";
     public string MasterPasswordHash { get; set; } = "MasterPasswordHash";
+    public string GoogleClientId { get; set; } = string.Empty;
     
     public string DefaultPage { get; set; } = "/canvas/home";
     public int DefaultCanvasWidth { get; set; } = 512;

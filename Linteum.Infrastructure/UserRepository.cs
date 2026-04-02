@@ -77,7 +77,7 @@ public class UserRepository : IUserRepository
         await using var transaction = await _context.Database.BeginTransactionAsync();
         try
         {
-            var existingUser = (userDto.Id != Guid.Empty) ?
+            var existingUser = (userDto.Id.HasValue && userDto.Id.Value != Guid.Empty) ?
                 await _context.Users.FirstOrDefaultAsync(u => u.Id == userDto.Id) : 
                 await _context.Users
                 .FirstOrDefaultAsync(u => u.Email == userDto.Email);
@@ -98,7 +98,7 @@ public class UserRepository : IUserRepository
             }
             else
             {
-                if(passwordDto.PasswordHashOrKey == null)
+                if (passwordDto?.PasswordHashOrKey == null)
                 {
                     throw new InvalidDataException($"Password hash or key is required for new user: {userDto.Email}");
                 }

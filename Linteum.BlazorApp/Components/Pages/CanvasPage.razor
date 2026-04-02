@@ -295,7 +295,7 @@ else
         try
         {
             var windowWidth = await JSRuntime.InvokeAsync<double>("eval", "window.innerWidth");
-            var windowHeight = await JSRuntime.InvokeAsync<double>("eval", "window.innerHeight");
+            var windowHeight = await JSRuntime.InvokeAsync<double>("eval", "window.visualViewport ? window.visualViewport.height : window.innerHeight");
 
             double sidebarWidth = 300;
             if (!string.IsNullOrEmpty(SidebarMargin) && double.TryParse(SidebarMargin.Replace("px", ""), out var marginVal))
@@ -304,12 +304,23 @@ else
             }
 
             var pixelManagerWidth = await JSRuntime.InvokeAsync<double>("eval", "document.querySelector('.pixelmanager') ? document.querySelector('.pixelmanager').offsetWidth : 300");
+            var mainHorizontalPadding = await JSRuntime.InvokeAsync<double>("eval", @"(() => {
+                const main = document.querySelector('main');
+                if (!main) return 0;
+                const styles = getComputedStyle(main);
+                return (parseFloat(styles.paddingLeft) || 0) + (parseFloat(styles.paddingRight) || 0);
+            })()");
+            var mainVerticalPadding = await JSRuntime.InvokeAsync<double>("eval", @"(() => {
+                const main = document.querySelector('main');
+                if (!main) return 0;
+                const styles = getComputedStyle(main);
+                return (parseFloat(styles.paddingTop) || 0) + (parseFloat(styles.paddingBottom) || 0);
+            })()");
 
-            const double paddingX = 0;
-            const double paddingY = 0;
+            const double safetyPadding = 2;
 
-            ViewportWidth = Math.Max(100, windowWidth - sidebarWidth - pixelManagerWidth - paddingX);
-            ViewportHeight = Math.Max(100, windowHeight - paddingY);
+            ViewportWidth = Math.Max(100, windowWidth - sidebarWidth - pixelManagerWidth - mainHorizontalPadding - safetyPadding);
+            ViewportHeight = Math.Max(100, windowHeight - mainVerticalPadding - safetyPadding);
         }
         catch (Exception ex)
         {

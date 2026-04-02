@@ -47,7 +47,10 @@ try
     });
     logger.Info("HttpClient 'ApiClient' configured");
     
-    builder.Services.AddSingleton(new Config());
+    builder.Services.AddSingleton(new Config
+    {
+        GoogleClientId = Environment.GetEnvironmentVariable("GOOGLE_CLIENT_ID") ?? string.Empty,
+    });
     builder.Services.AddScoped(sp => sp.GetRequiredService<IHttpClientFactory>().CreateClient("ApiClient"));
     builder.Services.AddScoped<MyApiClient>();
     builder.Services.AddDataProtection()

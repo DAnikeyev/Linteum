@@ -26,6 +26,15 @@ public class DailyCleanupService : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            try
+            {
+                _logger.LogInformation($"Next daily cleanup task will run at: {DateTime.UtcNow.Add(Interval)}.");
+                await Task.Delay(Interval, stoppingToken);
+            }
+            catch (TaskCanceledException)
+            {
+            }
+
             _logger.LogInformation("Starting daily cleanup task.");
 
             try
@@ -44,13 +53,6 @@ public class DailyCleanupService : BackgroundService
                 _logger.LogError(ex, "An error occurred during the daily cleanup task.");
             }
 
-            try
-            {
-                await Task.Delay(Interval, stoppingToken);
-            }
-            catch (TaskCanceledException)
-            {
-            }
         }
 
         _logger.LogInformation("Periodic Cleanup Service is stopping.");

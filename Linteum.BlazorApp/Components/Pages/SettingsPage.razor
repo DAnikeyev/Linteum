@@ -1,6 +1,7 @@
 @page "/settings"
 @using Linteum.BlazorApp.Components.Layout
 @using Linteum.BlazorApp.Components.Notification
+@using Linteum.Shared
 @layout Layout.BaseLayout
 @inject LocalStorageService LocalStorageService
 @inject NavigationManager Navigation
@@ -31,19 +32,28 @@
     </div>
 
     <!-- New Password -->
-    <div class="mb-3">
-        <label for="passwordInput" class="form-label">New Password (4-32 characters)</label>
-        <input type="password" id="passwordInput" class="form-control fixed-width" @bind="_password" autocomplete="new-password" />
-    </div>
-
-    <!-- Confirm New Password and Update Button -->
-    <div class="mb-4">
-        <label for="confirmPasswordInput" class="form-label">Confirm New Password</label>
-        <div class="d-flex align-items-center gap-2">
-            <input type="password" id="confirmPasswordInput" class="form-control fixed-width me-2" @bind="_confirmPassword" autocomplete="new-password" />
-            <button class="btn btn-primary" @onclick="SavePassword" disabled="@(!CanSavePassword())">Update Password</button>
+    @if (_loginMethod == LoginMethod.Password)
+    {
+        <div class="mb-3">
+            <label for="passwordInput" class="form-label">New Password (4-32 characters)</label>
+            <input type="password" id="passwordInput" class="form-control fixed-width" @bind="_password" autocomplete="new-password" />
         </div>
-    </div>
+
+        <!-- Confirm New Password and Update Button -->
+        <div class="mb-4">
+            <label for="confirmPasswordInput" class="form-label">Confirm New Password</label>
+            <div class="d-flex align-items-center gap-2">
+                <input type="password" id="confirmPasswordInput" class="form-control fixed-width me-2" @bind="_confirmPassword" autocomplete="new-password" />
+                <button class="btn btn-primary" @onclick="SavePassword" disabled="@(!CanSavePassword())">Update Password</button>
+            </div>
+        </div>
+    }
+    else
+    {
+        <div class="mb-4">
+            <small class="text-muted">Password is managed by your Google account and cannot be changed here.</small>
+        </div>
+    }
 
     <!-- Logout -->
     <div class="mt-4 d-flex align-items-center gap-2">
@@ -59,6 +69,7 @@
     private string? _originalUserName;
     private string? _password;
     private string? _confirmPassword;
+    private LoginMethod _loginMethod = LoginMethod.Password;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -67,6 +78,8 @@
             _userName = await LocalStorageService.GetItemAsync<string>(LocalStorageKey.UserName);
             _originalUserName = _userName;
             _email = await LocalStorageService.GetItemAsync<string>(LocalStorageKey.Email);
+            var storedLoginMethod = await LocalStorageService.GetItemAsync<LoginMethod>(LocalStorageKey.LoginMethod);
+            _loginMethod = storedLoginMethod == 0 ? LoginMethod.Password : storedLoginMethod;
             StateHasChanged();
         }
     }
@@ -105,6 +118,16 @@
 
     private async Task SavePassword()
     {
+        if (_loginMethod != LoginMethod.Password)
+        {
+            await NotificationService.NotifyAsync(new CustomNotification
+            {
+                Message = "Password is managed by your Google account.",
+                Type = NotificationType.Error
+            });
+            return;
+        }
+
         if (ValidatePassword())
         {
             try

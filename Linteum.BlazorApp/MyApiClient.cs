@@ -188,11 +188,12 @@ internal class MyApiClient
         }
 
         var loginResponse = await response.Content.ReadFromJsonAsync<LoginResponse>();
-        if (loginResponse?.SessionId != null && loginResponse?.User != null && loginResponse?.User?.UserName != null && loginResponse?.User?.Email != null)
+        if (loginResponse?.SessionId != null && loginResponse.User != null && loginResponse.User.UserName != null && loginResponse.User.Email != null)
         {
-            await _localStorage.SetItemAsync(LocalStorageKey.UserName, loginResponse.User?.UserName);
-            await _localStorage.SetItemAsync(LocalStorageKey.Email, loginResponse.User?.Email);
-            await _localStorage.SetItemAsync(LocalStorageKey.LoginMethod, LoginMethod.Password);
+            var loggedInUser = loginResponse.User;
+            await _localStorage.SetItemAsync(LocalStorageKey.UserName, loggedInUser.UserName);
+            await _localStorage.SetItemAsync(LocalStorageKey.Email, loggedInUser.Email);
+            await _localStorage.SetItemAsync(LocalStorageKey.LoginMethod, loggedInUser.LoginMethod);
             await SetSessionAsync(loginResponse.SessionId);
             _logger.LogInformation("Login successful for email: {Email}", email);
         }
@@ -203,8 +204,37 @@ internal class MyApiClient
         
         return (loginResponse?.User, loginResponse?.SessionId);
     }
-    
-        
+
+    public async Task<(UserDto? User, Guid? SessionId, string? Error)> LoginWithGoogleCodeAsync(string code)
+    {
+        _logger.LogInformation("LoginWithGoogleCodeAsync called.");
+        var response = await _httpClient.PostAsJsonAsync(
+            "/users/login-google-code",
+            new GoogleLoginCodeRequestDto { Code = code });
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var error = ParseErrorMessage(await response.Content.ReadAsStringAsync(), "Google login failed.");
+            _logger.LogWarning("Google login failed, status: {StatusCode}, error: {Error}", response.StatusCode, error);
+            return (null, null, error);
+        }
+
+        var loginResponse = await response.Content.ReadFromJsonAsync<LoginResponse>();
+        if (loginResponse?.SessionId != null && loginResponse.User != null && loginResponse.User.UserName != null && loginResponse.User.Email != null)
+        {
+            var googleUser = loginResponse.User;
+            await _localStorage.SetItemAsync(LocalStorageKey.UserName, googleUser.UserName);
+            await _localStorage.SetItemAsync(LocalStorageKey.Email, googleUser.Email);
+            await _localStorage.SetItemAsync(LocalStorageKey.LoginMethod, googleUser.LoginMethod);
+            await SetSessionAsync(loginResponse.SessionId);
+            _logger.LogInformation("Google login successful for email: {Email}", googleUser.Email);
+            return (googleUser, loginResponse.SessionId, null);
+        }
+
+        _logger.LogWarning("Google login response data missing.");
+        return (null, null, "Google login failed.");
+    }
+
     public async Task<(UserDto? User, Guid? SessionId)> LoginAsync(Guid sessionId)
     {
         _logger.LogInformation("LoginAsync called with sessionId: {SessionId}", sessionId);
@@ -217,11 +247,12 @@ internal class MyApiClient
         }
 
         var loginResponse = await response.Content.ReadFromJsonAsync<LoginResponse>();
-        if (loginResponse?.SessionId != null && loginResponse?.User != null && loginResponse?.User?.UserName != null && loginResponse?.User?.Email != null)
+        if (loginResponse?.SessionId != null && loginResponse.User != null && loginResponse.User.UserName != null && loginResponse.User.Email != null)
         {
-            await _localStorage.SetItemAsync(LocalStorageKey.UserName, loginResponse.User?.UserName);
-            await _localStorage.SetItemAsync(LocalStorageKey.Email, loginResponse.User?.Email);
-            await _localStorage.SetItemAsync(LocalStorageKey.LoginMethod, LoginMethod.Password);
+            var validatedUser = loginResponse.User;
+            await _localStorage.SetItemAsync(LocalStorageKey.UserName, validatedUser.UserName);
+            await _localStorage.SetItemAsync(LocalStorageKey.Email, validatedUser.Email);
+            await _localStorage.SetItemAsync(LocalStorageKey.LoginMethod, validatedUser.LoginMethod);
             await SetSessionAsync(loginResponse.SessionId);
             _logger.LogInformation("Session validation successful for sessionId: {SessionId}", sessionId);
         }
@@ -246,11 +277,12 @@ internal class MyApiClient
         }
 
         var loginResponse = await response.Content.ReadFromJsonAsync<LoginResponse>();
-        if (loginResponse?.SessionId != null && loginResponse?.User != null && loginResponse?.User?.UserName != null && loginResponse?.User?.Email != null)
+        if (loginResponse?.SessionId != null && loginResponse.User != null && loginResponse.User.UserName != null && loginResponse.User.Email != null)
         {
-            await _localStorage.SetItemAsync(LocalStorageKey.UserName, loginResponse.User?.UserName);
-            await _localStorage.SetItemAsync(LocalStorageKey.Email, loginResponse.User?.Email);
-            await _localStorage.SetItemAsync(LocalStorageKey.LoginMethod, LoginMethod.Password);
+            var signedUpUser = loginResponse.User;
+            await _localStorage.SetItemAsync(LocalStorageKey.UserName, signedUpUser.UserName);
+            await _localStorage.SetItemAsync(LocalStorageKey.Email, signedUpUser.Email);
+            await _localStorage.SetItemAsync(LocalStorageKey.LoginMethod, signedUpUser.LoginMethod);
             await SetSessionAsync(loginResponse.SessionId);
             _logger.LogInformation("Signup successful for email: {Email}", email);
         }
@@ -580,6 +612,14 @@ internal class MyApiClient
             NewColorId = item.NewColorId,
             Timestamp = item.Timestamp,
         }).ToList();
+
+    private static string ParseErrorMessage(string? raw, string fallback)
+    {
+        if (string.IsNullOrWhiteSpace(raw))
+            return fallback;
+
+        return raw.Trim().Trim('"');
+    }
 
     private void ClearAllCaches()
     {

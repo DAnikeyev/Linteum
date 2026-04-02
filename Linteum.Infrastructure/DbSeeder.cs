@@ -121,7 +121,14 @@ public class DbSeeder
         foreach (var canvas in await repositoryManager.CanvasRepository.GetAllAsync())
         {
             var subs = await repositoryManager.SubscriptionRepository.GetByCanvasIdAsync(canvas.Id);
-            if (!subs.Any() && canvas.Name != config.DefaultCanvasName)
+            var subscriptionCount = subs.Count();
+
+            logger.LogInformation(
+                "Checking canvas for deletion: {CanvasName}, subscriptions: {SubscriptionCount}",
+                canvas.Name,
+                subscriptionCount);
+
+            if (subscriptionCount == 0 && canvas.Name != config.DefaultCanvasName)
             {
                 logger.LogInformation("Deleting canvas without subscriptions: {CanvasName}", canvas.Name);
                 await repositoryManager.CanvasRepository.TryDeleteCanvasByName(canvas.Name);

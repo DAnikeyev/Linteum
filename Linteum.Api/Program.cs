@@ -30,6 +30,7 @@ try
     
     builder.Services.AddSignalR();
     logger.Info("SignalR service added");
+    builder.Services.AddHttpClient();
     
     builder.Services.AddSingleton<IConnectionTracker, ConnectionTracker>();
     builder.Services.AddScoped<IPixelNotifier, SignalRPixelNotifier>();
