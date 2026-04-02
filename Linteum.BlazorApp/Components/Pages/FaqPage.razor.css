@@ -1,0 +1,29 @@
+.faq-container {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 1.25rem 0.5rem 2rem;
+}
+
+.faq-container h2 {
+    margin-bottom: 1rem;
+}
+
+.faq-section {
+    margin-bottom: 1.15rem;
+    padding: 0.95rem 1rem;
+    border: 1px solid rgba(201, 95, 27, 0.2);
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.65);
+}
+
+.faq-section h4 {
+    margin-bottom: 0.5rem;
+}
+
+.faq-section p {
+    margin-bottom: 0.55rem;
+}
+
+.faq-section p:last-child {
+    margin-bottom: 0;
+}

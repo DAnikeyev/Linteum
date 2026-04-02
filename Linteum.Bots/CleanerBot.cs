@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using System.Threading.Channels;
 using Linteum.Shared;
 using Linteum.Shared.DTO;
 
@@ -6,16 +7,17 @@ namespace Linteum.Bots;
 
 public class CleanerBot : BotBase
 {
-    private string _targetCanvasName;
-    
-    public CleanerBot(string targetCanvasName = "Munch") : base("cleaner@linteum.com", "CleanCanvas123!", "CleanerBot")
+    private const int WorkerCount = 24;
+    private const int QueueCapacity = 2048;
+    private readonly string _targetCanvasName;
+
+    public CleanerBot(string targetCanvasName) : base("cleaner@linteum.com", "CleanCanvas123!", "CleanerBot")
     {
         _targetCanvasName = targetCanvasName;
     }
 
     protected override async Task<CanvasDto?> GetOrCreateCanvasAsync()
     {
-        // Cleaner just tries to get existing canvas, doesn't create one usually, but for robustness:
         try
         {
             return await HttpClient.GetFromJsonAsync<CanvasDto>($"Canvases/name/{_targetCanvasName}");
@@ -29,30 +31,47 @@ public class CleanerBot : BotBase
 
     protected override async Task RunBehaviorAsync(CanvasDto canvas, List<ColorDto> colors)
     {
-        var whiteColor = colors.FirstOrDefault(c => c.HexValue.Normalize().ToUpper() == "#FFFFFF" || c.Name?.ToLower() == "white") 
-                         ?? colors.FirstOrDefault(); 
-        
+        var whiteColor = colors.FirstOrDefault(c => c.HexValue.Normalize().ToUpper() == "#FFFFFF" || c.Name?.ToLower() == "white")
+                         ?? colors.FirstOrDefault();
+
         if (whiteColor == null)
         {
-             Console.WriteLine("No suitable default color found.");
-             return; 
+            Console.WriteLine("No suitable default color found.");
+            return;
         }
 
-        Console.WriteLine("Starting cleaning loop (Left->Right, Top->Bottom)...");
-        
-        while (true)
+        Console.WriteLine($"Clearing canvas '{canvas.Name}' with color '{whiteColor.Name ?? whiteColor.HexValue}'...");
+
+        var channel = Channel.CreateBounded<(int X, int Y)>(new BoundedChannelOptions(QueueCapacity)
         {
-            for (int y = 0; y < canvas.Height; y++)
+            FullMode = BoundedChannelFullMode.Wait,
+            SingleWriter = true,
+            SingleReader = false
+        });
+
+        var workers = new List<Task>(WorkerCount);
+        for (int i = 0; i < WorkerCount; i++)
+        {
+            workers.Add(Task.Run(async () =>
             {
-                for (int x = 0; x < canvas.Width; x++)
+                await foreach (var item in channel.Reader.ReadAllAsync())
                 {
-                    await PaintPixelAsync(canvas, x, y, whiteColor.Id);
-                    await Task.Delay(1); 
+                    await PaintPixelAsync(canvas, item.X, item.Y, whiteColor.Id);
                 }
-            }
-            Console.WriteLine("Canvas cleared. Restarting cleaning process in 5 seconds...");
-            await Task.Delay(5000);
+            }));
         }
+
+        for (int y = 0; y < canvas.Height; y++)
+        {
+            for (int x = 0; x < canvas.Width; x++)
+            {
+                await channel.Writer.WriteAsync((x, y));
+            }
+        }
+
+        channel.Writer.Complete();
+        await Task.WhenAll(workers);
+        Console.WriteLine($"Canvas '{canvas.Name}' cleared.");
     }
 }
 

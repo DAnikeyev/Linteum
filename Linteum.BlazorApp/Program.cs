@@ -11,13 +11,15 @@ var logger = LogManager.Setup().LoadConfigurationFromAppSettings().GetCurrentCla
 
 try
 {
+    DotNetEnv.Env.Load("../.env");
     var builder = WebApplication.CreateBuilder(args);
+
+    var version = builder.Configuration["VERSION"] ?? Environment.GetEnvironmentVariable("VERSION") ?? "dev";
+    logger.Info("Application version: {Version}", version);
 
     // Configure NLog
     builder.Logging.ClearProviders();
     builder.Host.UseNLog();
-
-    DotNetEnv.Env.Load("../.env");
 
     builder.Services.AddScoped<ProtectedLocalStorage>();
 

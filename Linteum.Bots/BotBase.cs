@@ -11,6 +11,7 @@ public abstract class BotBase
     protected string BotEmail { get; }
     protected string BotPassword { get; }
     protected string BotUserName { get; }
+    private long _requestCount;
 
     protected BotBase(string email, string password, string userName)
     {
@@ -54,6 +55,16 @@ public abstract class BotBase
         }
 
         Console.WriteLine($"Canvas '{canvas.Name}' ready. Id: {canvas.Id}");
+
+        _ = Task.Run(async () =>
+        {
+            while (true)
+            {
+                await Task.Delay(1000);
+                long currentCount = Interlocked.Exchange(ref _requestCount, 0);
+                Console.WriteLine($"[{BotUserName}] Requests per second: {currentCount}");
+            }
+        });
 
         await RunBehaviorAsync(canvas, colors);
     }
@@ -115,6 +126,7 @@ public abstract class BotBase
     
     protected async Task PaintPixelAsync(CanvasDto canvas, int x, int y, int colorId)
     {
+        Interlocked.Increment(ref _requestCount);
         var pixelDto = new PixelDto
         {
             X = x, 

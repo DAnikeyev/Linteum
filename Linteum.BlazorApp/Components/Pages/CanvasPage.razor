@@ -24,7 +24,7 @@
 }
 else
 {
-    <div class="d-flex align-items-start">
+    <div class="canvas-shell d-flex align-items-start">
         <div class="canvas-viewport"
              style="width:@(ViewportWidth)px; height:@(ViewportHeight)px; overflow:hidden; position:relative;">
 
@@ -48,12 +48,12 @@ else
             </div>
 
             <!-- Canvas Boundary -->
-            <div style="position:absolute;
+            <div class="canvas-boundary" style="position:absolute;
             left:@(_offsetX)px;
             top:@(_offsetY)px;
             width:@(_canvas.Width * _scale)px;
             height:@(_canvas.Height * _scale)px;
-            outline: 1px dashed #ccc;
+            outline: none;
             pointer-events: none;
             z-index: 4;">
             </div>
@@ -61,12 +61,12 @@ else
             <!-- Highlight Hovered Pixel -->
             @if (_hoveredPixel.HasValue)
             {
-                <div style="position:absolute;
+                <div class="canvas-hover-indicator" style="position:absolute;
                         left:@(_offsetX + _hoveredPixel.Value.X * _scale)px;
                         top:@(_offsetY + _hoveredPixel.Value.Y * _scale)px;
                         width:@(_scale)px;
                         height:@(_scale)px;
-                        box-shadow: inset 0 0 0 1px grey;
+                        box-shadow: inset 0 0 0 1px rgba(31, 76, 145, 0.6);
                         pointer-events: none;
                         z-index: 5;">
                 </div>
@@ -75,7 +75,7 @@ else
             <!-- Highlight Clicked Pixel -->
             @if (_clickedPixel.HasValue)
             {
-                <div style="position:absolute;
+                <div class="canvas-click-indicator" style="position:absolute;
                         left:@(_offsetX + _clickedPixel.Value.X * _scale)px;
                         top:@(_offsetY + _clickedPixel.Value.Y * _scale)px;
                         width:@(_scale)px;
@@ -89,7 +89,7 @@ else
             <!-- Coordinates Display -->
             @if (_hoveredPixel.HasValue)
             {
-                <div style="position:absolute; top:0; right:0px; background:var(--accent-1); color:var(--accent-3); padding:4px 8px; font-family:monospace; z-index:20; pointer-events:none;">
+                <div class="canvas-coordinates" style="position:absolute; top:0; right:0px; z-index:20; pointer-events:none;">
                     X: @_hoveredPixel.Value.X, Y: @_hoveredPixel.Value.Y
                 </div>
             }
@@ -156,6 +156,7 @@ else
     private List<ColorDto>? _colors;
     private DotNetObjectReference<CanvasPage>? _objRef;
     private IJSObjectReference? _resizeListener;
+    private int _canvasLoadVersion;
 
     // PixelManager reference
     private PixelManager? _pixelManager;
@@ -304,8 +305,8 @@ else
 
             var pixelManagerWidth = await JSRuntime.InvokeAsync<double>("eval", "document.querySelector('.pixelmanager') ? document.querySelector('.pixelmanager').offsetWidth : 300");
 
-            const double paddingX = 50;
-            const double paddingY = 32;
+            const double paddingX = 0;
+            const double paddingY = 0;
 
             ViewportWidth = Math.Max(100, windowWidth - sidebarWidth - pixelManagerWidth - paddingX);
             ViewportHeight = Math.Max(100, windowHeight - paddingY);
@@ -319,6 +320,9 @@ else
 
     protected override async Task OnParametersSetAsync()
     {
+        var requestedCanvasName = canvasName;
+        var loadVersion = System.Threading.Interlocked.Increment(ref _canvasLoadVersion);
+
         if (_hasRendered && _lastSidebarMargin != SidebarMargin)
         {
             _lastSidebarMargin = SidebarMargin;
@@ -326,21 +330,21 @@ else
             ClampOffsets();
         }
         
-        if (_hubConnection?.State == HubConnectionState.Connected && _connectedGroup != canvasName)
+        if (_hubConnection?.State == HubConnectionState.Connected && _connectedGroup != requestedCanvasName)
         {
             if (!string.IsNullOrEmpty(_connectedGroup))
             {
                 await _hubConnection.InvokeAsync("LeaveCanvasGroup", _connectedGroup);
             }
-            await _hubConnection.InvokeAsync("JoinCanvasGroup", canvasName);
-            _connectedGroup = canvasName;
+            await _hubConnection.InvokeAsync("JoinCanvasGroup", requestedCanvasName);
+            _connectedGroup = requestedCanvasName;
         }
 
-        if (_loadedCanvasName == canvasName && _canvas != null)
+        if (_loadedCanvasName == requestedCanvasName && _canvas != null)
             return;
 
         _canvas = null;
-        _loadedCanvasName = canvasName;
+        _loadedCanvasName = requestedCanvasName;
 
         if (_renderer != null)
         {
@@ -351,15 +355,20 @@ else
         try
         {
             _colors = await ApiClient.GetColorsAsync();
-            _canvas = await ApiClient.GetCanvas(canvasName);
+            if (loadVersion != _canvasLoadVersion || requestedCanvasName != canvasName) return;
 
-            await LoadCanvasImage();
+            var loadedCanvas = await ApiClient.GetCanvas(requestedCanvasName);
+            if (loadVersion != _canvasLoadVersion || requestedCanvasName != canvasName) return;
 
-             if (_hubConnection?.State == HubConnectionState.Connected && _connectedGroup != canvasName)
+            _canvas = loadedCanvas;
+
+            await LoadCanvasImage(loadVersion);
+
+             if (_hubConnection?.State == HubConnectionState.Connected && _connectedGroup != requestedCanvasName)
             {
                 if (!string.IsNullOrEmpty(_connectedGroup)) await _hubConnection.InvokeAsync("LeaveCanvasGroup", _connectedGroup);
-                await _hubConnection.InvokeAsync("JoinCanvasGroup", canvasName);
-                _connectedGroup = canvasName;
+                await _hubConnection.InvokeAsync("JoinCanvasGroup", requestedCanvasName);
+                _connectedGroup = requestedCanvasName;
             }
 
             _clickedPixel = null;
@@ -374,12 +383,17 @@ else
         }
     }
 
-    private async Task LoadCanvasImage()
+    private async Task LoadCanvasImage(int? loadVersion = null)
     {
         if (_canvas == null || _renderer == null) return;
         try
         {
-            var imageBytes = await ApiClient.GetCanvasImage(_canvas);
+            var canvasSnapshot = _canvas;
+            var versionSnapshot = loadVersion ?? _canvasLoadVersion;
+
+            var imageBytes = await ApiClient.GetCanvasImage(canvasSnapshot);
+            if (versionSnapshot != _canvasLoadVersion || !ReferenceEquals(canvasSnapshot, _canvas) || _renderer == null) return;
+
             await _renderer.LoadImageAsync(imageBytes);
         }
         catch (Exception ex)

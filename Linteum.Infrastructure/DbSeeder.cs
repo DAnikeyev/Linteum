@@ -14,6 +14,8 @@ public class DbSeeder
         logger.LogInformation("Starting synchronous database seeding...");
 
         var colorsAdded = 0;
+        
+        //No option for removing colors for now.
         foreach (var colorDto in config.Colors)
         {
             if (!context.Colors.Any(c => c.HexValue == colorDto.HexValue))

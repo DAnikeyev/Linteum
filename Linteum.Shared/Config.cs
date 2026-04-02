@@ -8,10 +8,10 @@ public class Config
     public string MasterPasswordHash { get; set; } = "MasterPasswordHash";
     
     public string DefaultPage { get; set; } = "/canvas/home";
-    public int DefaultCanvasWidth { get; set; } = 24;
+    public int DefaultCanvasWidth { get; set; } = 512;
 
     public int ExpiredSessionTimeoutMinutes { get; set; } = 60;
-    public int DefaultCanvasHeight { get; set; } = 24;
+    public int DefaultCanvasHeight { get; set; } = 512;
     
     public List<ColorDto> Colors { get; set; } = new List<ColorDto>()
     {
@@ -34,6 +34,16 @@ public class Config
         new ColorDto { HexValue = "#800000", Name = "Maroon" },
         new ColorDto { HexValue = "#FF00FF", Name = "Magenta" },
         new ColorDto { HexValue = "#008080", Name = "Teal" },
-        new ColorDto { HexValue = "#F5DEB3", Name = "Wheat" }
+        new ColorDto { HexValue = "#F5DEB3", Name = "Wheat" },
+        new ColorDto { HexValue = "#E6E6FA", Name = "Lavender" },
+        new ColorDto { HexValue = "#FF7F50", Name = "Coral" },
+        new ColorDto { HexValue = "#808000", Name = "Olive" },
+        new ColorDto { HexValue = "#000080", Name = "Navy" },
+        new ColorDto { HexValue = "#40E0D0", Name = "Turquoise" },
+        new ColorDto { HexValue = "#FFFDD0", Name = "Cream" },
+        new ColorDto { HexValue = "#B0E0E6", Name = "Powder Blue" },
+        new ColorDto { HexValue = "#E9967A", Name = "Dark Salmon" },
+        new ColorDto { HexValue = "#98FB98", Name = "Pale Green" },
+        new ColorDto { HexValue = "#BC8F8F", Name = "Rosy Brown" }
     };
 }

@@ -2,6 +2,7 @@
 @inject NavigationManager Navigation
 @inject ILogger<BaseLayout> Logger
 @inject MyApiClient ApiClient
+@inject IConfiguration Configuration
 @using Linteum.BlazorApp.Components.Notification
 @inherits LayoutComponentBase
 
@@ -11,10 +12,13 @@
         <CanvasSidebar @ref="Sidebar" CollapseToggled="OnSidebarCollapseChanged" />
     </CascadingValue>
 
-    <main style="margin-left:@_sidebarMargin; background: linear-gradient(135deg, var(--sb-bg) 0%, var(--pm-bg-color) 100%); min-height: 100vh; padding: 1rem; position: relative;">
+    <main style="margin-left:@_sidebarMargin; background: linear-gradient(110deg, rgba(247, 160, 84, 0.08) 0%, rgba(249, 241, 228, 0.5) 38%, rgba(228, 239, 255, 0.56) 72%, rgba(77, 142, 239, 0.08) 100%); min-height: 100vh; padding: 1.25rem 1.1rem 1.1rem; position: relative; transition: margin-left .24s ease;">
         <CascadingValue Value="_sidebarMargin" Name="SidebarMargin">
             @Body
         </CascadingValue>
+        <div style="position: fixed; right: 12px; bottom: 8px; z-index: 11000; font-size: 12px; color: rgba(0, 0, 0, 0.55); pointer-events: none; user-select: none;">
+            @($"v{Version}")
+        </div>
     </main>
 
     <NotificationManager @ref="_notificationManagerRef" />
@@ -23,6 +27,7 @@
     public CanvasSidebar? Sidebar { get; set; }
     private string _sidebarMargin = "300px";
     private NotificationManager? _notificationManagerRef;
+    private string Version => Configuration["VERSION"] ?? Environment.GetEnvironmentVariable("VERSION") ?? "dev";
 
     private void OnSidebarCollapseChanged(bool isCollapsed)
     {

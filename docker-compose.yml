@@ -50,6 +50,7 @@ services:
       - PASSWORD_SALT=${PASSWORD_SALT}
       - API_CONTAINER_NAME=api
       - API_CONTAINER_PORT=${API_CONTAINER_PORT}
+      - VERSION=${VERSION}
       - ASPNETCORE_URLS=http://*:${BLAZOR_CONTAINER_PORT}
       - ApiBaseUrl=http://${API_CONTAINER_NAME}:${API_CONTAINER_PORT}
     ports:
