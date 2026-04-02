@@ -51,7 +51,7 @@ try
     builder.Services.AddScoped(sp => sp.GetRequiredService<IHttpClientFactory>().CreateClient("ApiClient"));
     builder.Services.AddScoped<MyApiClient>();
     builder.Services.AddDataProtection()
-        .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(Directory.GetCurrentDirectory(), "keys")))
+        .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(builder.Environment.ContentRootPath, "keys")))
         .SetApplicationName("LinteumApp");
     builder.Services.AddScoped<LocalStorageService>();
     builder.Services.AddScoped<NotificationService>();

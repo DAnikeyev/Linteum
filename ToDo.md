@@ -22,6 +22,7 @@
  - Google Auth
  - ~~Canvas auto zoom on loading~~: Done
  - Conway's Game of Life bot
+ - Write text bot
  - ~~Better home screen~~ **Resolution**: Kinda Done
  - ~~Auto navigation improvements~~ **Resolution**: Done
 # Technical debt:
@@ -41,6 +42,7 @@
  - ~~unsubscribe button misplaced for long canvas names~~
  - ~~Fast-clicking between canvases load image of one for a second canvas.~~
  - Canvas can have a space in front of it's name.
+ - Scrolling on side of canvas do micro-scroll up and down.
  - Parameters Set is called more frequiently than expected for CanvasManager (Partially fixed with Cache)
 # 1.1 Features
  - Canvas modes

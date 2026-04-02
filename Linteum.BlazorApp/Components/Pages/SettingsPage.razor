@@ -15,7 +15,7 @@
     <div class="mb-4">
         <label for="emailInput" class="form-label">Email</label>
         <div class="input-group fixed-width">
-            <input id="emailInput" class="form-control" value="@_email" disabled />
+            <input id="emailInput" class="form-control" value="@_email" disabled autocomplete="off" />
             <span class="input-group-text email-lock-bg"><i class="bi bi-lock-fill"></i></span>
         </div>
         <small class="text-muted">Email address cannot be changed.</small>
@@ -25,7 +25,7 @@
     <div class="mb-4">
         <label for="usernameInput" class="form-label">Username (4-32 characters)</label>
         <div class="d-flex align-items-center gap-2">
-            <input id="usernameInput" class="form-control fixed-width me-2" @bind="_userName" autocomplete="off"/>
+            <input id="usernameInput" class="form-control fixed-width me-2" @bind="_userName" autocomplete="off" />
             <button class="btn btn-primary" @onclick="SaveUsername">Update Username</button>
         </div>
     </div>
@@ -33,14 +33,14 @@
     <!-- New Password -->
     <div class="mb-3">
         <label for="passwordInput" class="form-label">New Password (4-32 characters)</label>
-        <input type="password" id="passwordInput" class="form-control fixed-width" @bind="_password" autocomplete="off"/>
+        <input type="password" id="passwordInput" class="form-control fixed-width" @bind="_password" autocomplete="new-password" />
     </div>
 
     <!-- Confirm New Password and Update Button -->
     <div class="mb-4">
         <label for="confirmPasswordInput" class="form-label">Confirm New Password</label>
         <div class="d-flex align-items-center gap-2">
-            <input type="password" id="confirmPasswordInput" class="form-control fixed-width me-2" @bind="_confirmPassword" />
+            <input type="password" id="confirmPasswordInput" class="form-control fixed-width me-2" @bind="_confirmPassword" autocomplete="new-password" />
             <button class="btn btn-primary" @onclick="SavePassword" disabled="@(!CanSavePassword())">Update Password</button>
         </div>
     </div>

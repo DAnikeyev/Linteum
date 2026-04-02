@@ -18,6 +18,7 @@ internal class MyApiClient
     private static readonly TimeSpan CacheDuration = TimeSpan.FromMinutes(1);
     private readonly Dictionary<Guid, (List<HistoryResponseItem> Data, DateTime Expiry)> _historyCache = new();
     private readonly Dictionary<(string CanvasName, int X, int Y), (PixelDto Data, DateTime Expiry)> _pixelCache = new();
+    private List<ColorDto>? _colorsCache;
 
     public MyApiClient(HttpClient httpClient, LocalStorageService localStorage, ILogger<MyApiClient> logger)
     {
@@ -111,8 +112,20 @@ internal class MyApiClient
     public async Task<List<ColorDto>?> GetColorsAsync()
     {
         _logger.LogInformation("GetColorsAsync called");
-        return await _httpClient.GetFromJsonAsync<List<ColorDto>>("/colors");
-    }    
+        if (_colorsCache is not null)
+        {
+            return new List<ColorDto>(_colorsCache);
+        }
+
+        var colors = await _httpClient.GetFromJsonAsync<List<ColorDto>>("/colors");
+        if (colors is null)
+        {
+            return null;
+        }
+
+        _colorsCache = new List<ColorDto>(colors);
+        return new List<ColorDto>(_colorsCache);
+    }
     
     public async Task<CanvasDto?> AddCanvasAsync(CanvasDto canvasDto, string? password)
     {
@@ -574,7 +587,7 @@ internal class MyApiClient
         {
             _historyCache.Clear();
             _pixelCache.Clear();
+            _colorsCache = null;
         }
     }
 }
-

@@ -354,7 +354,10 @@ else
 
         try
         {
-            _colors = await ApiClient.GetColorsAsync();
+            if (_colors is null)
+            {
+                _colors = await ApiClient.GetColorsAsync();
+            }
             if (loadVersion != _canvasLoadVersion || requestedCanvasName != canvasName) return;
 
             var loadedCanvas = await ApiClient.GetCanvas(requestedCanvasName);

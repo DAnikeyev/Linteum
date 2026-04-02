@@ -60,14 +60,14 @@
     --accent-2p5: #ef8d49;
     --accent-3: var(--accent-orange-700);
 
-    --sb-bg: linear-gradient(180deg, rgba(255, 245, 232, 0.95) 0%, rgba(255, 235, 213, 0.85) 100%);
+    --sb-bg: linear-gradient(180deg, rgba(255, 245, 232, 0.88) 0%, rgba(255, 235, 213, 0.78) 100%);
     --sb-nm-light: #fffaf3;
     --sb-nm-dark: #f0cfae;
     --sb-accent: var(--accent-orange-500);
     --sb-accent-dark: var(--accent-orange-700);
     --sb-accent-soft: #ffe8d2;
 
-    --pm-bg-color: linear-gradient(180deg, rgba(236, 244, 255, 0.95) 0%, rgba(224, 238, 255, 0.84) 100%);
+    --pm-bg-color: linear-gradient(180deg, rgba(236, 244, 255, 0.88) 0%, rgba(224, 238, 255, 0.78) 100%);
     --pm-nm-light: #f6faff;
     --pm-nm-dark: #bdd6f7;
     --pm-accent: var(--accent-blue-600);

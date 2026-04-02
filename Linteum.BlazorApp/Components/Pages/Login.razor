@@ -31,7 +31,12 @@
 
         <!-- Password -->
         <div class="mb-4">
-            <label for="passwordInput" class="form-label">Password</label>
+            <label for="passwordInput" class="form-label">
+                Password
+                <span class="ms-1 text-muted"
+                      title="We don't store unhashed passwords. We don't use your email for anything except login."
+                      aria-label="Security and privacy info">?</span>
+            </label>
             <input id="passwordInput" type="password" class="form-control fixed-width" @bind="_password" @oninput="ClearError" />
             @if (!string.IsNullOrEmpty(_passwordError))
             {
