@@ -283,6 +283,26 @@ internal class MyApiClient
             throw new Exception("Password is incorrect.");
         throw new Exception($"Failed to subscribe to {canvasName}. This exception is unexpected.");
     }
+
+    public async Task<List<CanvasDto>> SearchCanvasesAsync(string name)
+    {
+        _logger.LogInformation("SearchCanvasesAsync called with name: {Name}", name);
+        if (string.IsNullOrWhiteSpace(name))
+            return new List<CanvasDto>();
+
+        var request = new HttpRequestMessage(HttpMethod.Get, $"/canvases/search?name={Uri.EscapeDataString(name)}");
+        await request.AddSessionId(_localStorage);
+        var response = await _httpClient.SendAsync(request);
+        
+        if (response.IsSuccessStatusCode)
+        {
+            var canvases = await response.Content.ReadFromJsonAsync<List<CanvasDto>>();
+            return canvases ?? new List<CanvasDto>();
+        }
+
+        _logger.LogWarning("Failed to search canvases with name: {Name}, Status: {StatusCode}", name, response.StatusCode);
+        return new List<CanvasDto>();
+    }
     
     public async Task<CanvasDto> GetCanvas(string canvasName)
     {

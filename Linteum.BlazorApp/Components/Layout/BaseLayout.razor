@@ -16,6 +16,15 @@
         <CascadingValue Value="_sidebarMargin" Name="SidebarMargin">
             @Body
         </CascadingValue>
+        @if (!string.IsNullOrWhiteSpace(HubLink))
+        {
+            <a class="btn btn-outline-primary"
+               href="@HubLink"
+               style="position: fixed; top: 12px; left: calc(@_sidebarMargin + 12px); z-index: 11000;">
+                <i class="bi bi-arrow-left me-1"></i>
+                Back to hub
+            </a>
+        }
         <div style="position: fixed; right: 12px; bottom: 8px; z-index: 11000; font-size: 12px; color: rgba(0, 0, 0, 0.55); pointer-events: none; user-select: none;">
             @($"v{Version}")
         </div>
@@ -28,6 +37,7 @@
     private string _sidebarMargin = "300px";
     private NotificationManager? _notificationManagerRef;
     private string Version => Configuration["VERSION"] ?? Environment.GetEnvironmentVariable("VERSION") ?? "dev";
+    private string HubLink => Configuration["HUB_LINK"] ?? Environment.GetEnvironmentVariable("HUB_LINK") ?? string.Empty;
 
     private void OnSidebarCollapseChanged(bool isCollapsed)
     {

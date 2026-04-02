@@ -14,6 +14,8 @@ public class CanvasDto
     
     public CanvasMode CanvasMode { get; set; }
     
+    public bool IsPasswordProtected { get; set; }
+
     public DateTime CreatedAt { get; set; }
     
     public DateTime? UpdatedAt { get; set; }

@@ -51,6 +51,7 @@ services:
       - API_CONTAINER_NAME=api
       - API_CONTAINER_PORT=${API_CONTAINER_PORT}
       - VERSION=${VERSION}
+      - HUB_LINK=${HUB_LINK}
       - ASPNETCORE_URLS=http://*:${BLAZOR_CONTAINER_PORT}
       - ApiBaseUrl=http://${API_CONTAINER_NAME}:${API_CONTAINER_PORT}
     ports:

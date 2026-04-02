@@ -52,6 +52,33 @@ public class CanvasRepository : ICanvasRepository
                 .ToListAsync();
     }
 
+    public async Task<IEnumerable<CanvasDto>> SearchByNameAsync(string name, bool includePrivate = false)
+    {
+        var trimmedName = name.Trim();
+        if (trimmedName.Length == 0)
+        {
+            return Array.Empty<CanvasDto>();
+        }
+
+        // Escape wildcard chars so user input is treated as plain text.
+        var escapedName = trimmedName
+            .Replace("\\", "\\\\")
+            .Replace("%", "\\%")
+            .Replace("_", "\\_");
+
+        var pattern = $"%{escapedName}%";
+        var query = _context.Canvases
+            .AsNoTracking()
+            .Where(c => EF.Functions.ILike(c.Name, pattern, "\\"));
+
+        if (!includePrivate)
+        {
+            query = query.Where(c => c.PasswordHash == null);
+        }
+
+        return await query.ProjectTo<CanvasDto>(_mapper.ConfigurationProvider).ToListAsync();
+    }
+
     
     //ToDo: Do we need to remove subsciptions and pixels?
     public async Task<bool> TryDeleteCanvasByName(string name)
