@@ -7,45 +7,52 @@
 @inject NotificationService NotificationService
 
 <div class="settings-container">
-    <h2>Add Canvas</h2>
+    <div class="settings-header">
+        <h2>Add Canvas</h2>
+        <p>Create a new collaborative canvas and set its dimensions.</p>
+    </div>
 
-    <!-- Canvas Name -->
-    <div class="mb-4">
-        <label for="canvasNameInput" class="form-label">Canvas Name</label>
-        <div class="d-flex align-items-center gap-2">
-            <input id="canvasNameInput" class="form-control fixed-width me-2" @bind="_canvasName" autocomplete="off" />
+    <section class="settings-section">
+        <h6 class="settings-section-title">Canvas Details</h6>
+
+        <div class="mb-4">
+            <label for="canvasNameInput" class="form-label">Canvas Name</label>
+            <div class="action-row">
+                <input id="canvasNameInput" class="form-control fixed-width me-2" @bind="_canvasName" autocomplete="off" />
+            </div>
         </div>
-    </div>
 
-    <!-- Optional Password -->
-    <div class="mb-4">
-        <label for="canvasPasswordInput" class="form-label">Optional Password</label>
-        <div class="d-flex align-items-center gap-2">
-            <input type="password" id="canvasPasswordInput" class="form-control fixed-width me-2" @bind="_canvasPassword" autocomplete="new-password"/>
+        <div class="mb-4">
+            <label for="canvasPasswordInput" class="form-label">Optional Password</label>
+            <div class="action-row">
+                <input type="password" id="canvasPasswordInput" class="form-control fixed-width me-2" @bind="_canvasPassword" autocomplete="new-password" />
+            </div>
+            <small class="text-muted">Leave empty for no password.</small>
         </div>
-        <small class="text-muted">Leave empty for no password.</small>
-    </div>
 
-    <!-- Canvas Width -->
-    <div class="mb-4">
-        <label for="canvasWidthInput" class="form-label">Canvas Width (pixels)</label>
-        <div class="d-flex align-items-center gap-2">
-            <input type="number" id="canvasWidthInput" class="form-control fixed-width me-2" @bind="_canvasWidth" />
+        <div class="dimension-grid">
+            <div class="mb-4">
+                <label for="canvasWidthInput" class="form-label">Canvas Width (pixels)</label>
+                <div class="action-row">
+                    <input type="number" id="canvasWidthInput" class="form-control fixed-width me-2" @bind="_canvasWidth" />
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <label for="canvasHeightInput" class="form-label">Canvas Height (pixels)</label>
+                <div class="action-row">
+                    <input type="number" id="canvasHeightInput" class="form-control fixed-width me-2" @bind="_canvasHeight" />
+                </div>
+            </div>
         </div>
-    </div>
+    </section>
 
-    <!-- Canvas Height -->
-    <div class="mb-4">
-        <label for="canvasHeightInput" class="form-label">Canvas Height (pixels)</label>
-        <div class="d-flex align-items-center gap-2">
-            <input type="number" id="canvasHeightInput" class="form-control fixed-width me-2" @bind="_canvasHeight" />
+    <section class="settings-section settings-section-actions">
+        <h6 class="settings-section-title">Publish</h6>
+        <div class="action-row">
+            <button class="btn btn-primary" @onclick="AddCanvas">Add Canvas</button>
         </div>
-    </div>
-
-    <!-- Submit Button -->
-    <div class="mt-4 d-flex align-items-center gap-2">
-        <button class="btn btn-primary" @onclick="AddCanvas">Add Canvas</button>
-    </div>
+    </section>
 </div>
 
 @code {

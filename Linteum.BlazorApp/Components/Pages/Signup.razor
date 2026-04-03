@@ -6,8 +6,11 @@
 
 <div class="background">
     <div class="brand-title">LINTEUM</div>
-    <div class="login-container">
-        <h3>Sign Up</h3>
+    <div class="login-container auth-card">
+        <div class="auth-header">
+            <h3>Sign Up</h3>
+            <p>Create your account to start collaborating on canvases.</p>
+        </div>
 
         @if (!string.IsNullOrEmpty(_error))
         {
@@ -47,7 +50,7 @@
         <div class="d-flex gap-2">
             <button class="btn btn-primary flex-fill" @onclick="HandleSignup">Sign Up</button>
         </div>
-        <p>
+        <p class="auth-switch">
             Already have an account? <a href="/login">Login</a>
         </p>
     </div>

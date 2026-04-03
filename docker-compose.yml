@@ -65,7 +65,7 @@ services:
       - linteum_dev
     pull_policy: build
     volumes:
-      - "./Linteum.BlazorApp/keys:/app/keys"
+      - blazor_keys:/app/keys
 
 networks:
   linteum_dev:
@@ -73,3 +73,4 @@ networks:
 
 volumes:
   db_data:
+  blazor_keys:

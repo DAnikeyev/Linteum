@@ -10,55 +10,61 @@
 @inject NotificationService NotificationService
 
 <div class="settings-container">
-    <h2>Settings</h2>
-
-    <!-- Email (read-only) -->
-    <div class="mb-4">
-        <label for="emailInput" class="form-label">Email</label>
-        <div class="input-group fixed-width">
-            <input id="emailInput" class="form-control" value="@_email" disabled autocomplete="off" />
-            <span class="input-group-text email-lock-bg"><i class="bi bi-lock-fill"></i></span>
-        </div>
-        <small class="text-muted">Email address cannot be changed.</small>
+    <div class="settings-header">
+        <h2>Settings</h2>
+        <p>Manage your account details and security preferences.</p>
     </div>
 
-    <!-- Username -->
-    <div class="mb-4">
-        <label for="usernameInput" class="form-label">Username (4-32 characters)</label>
-        <div class="d-flex align-items-center gap-2">
-            <input id="usernameInput" class="form-control fixed-width me-2" @bind="_userName" autocomplete="off" />
-            <button class="btn btn-primary" @onclick="SaveUsername">Update Username</button>
-        </div>
-    </div>
+    <section class="settings-section">
+        <h6 class="settings-section-title">Account</h6>
 
-    <!-- New Password -->
-    @if (_loginMethod == LoginMethod.Password)
-    {
-        <div class="mb-3">
-            <label for="passwordInput" class="form-label">New Password (4-32 characters)</label>
-            <input type="password" id="passwordInput" class="form-control fixed-width" @bind="_password" autocomplete="new-password" />
-        </div>
-
-        <!-- Confirm New Password and Update Button -->
         <div class="mb-4">
-            <label for="confirmPasswordInput" class="form-label">Confirm New Password</label>
-            <div class="d-flex align-items-center gap-2">
-                <input type="password" id="confirmPasswordInput" class="form-control fixed-width me-2" @bind="_confirmPassword" autocomplete="new-password" />
-                <button class="btn btn-primary" @onclick="SavePassword" disabled="@(!CanSavePassword())">Update Password</button>
+            <label for="emailInput" class="form-label">Email</label>
+            <div class="input-group fixed-width">
+                <input id="emailInput" class="form-control" value="@_email" disabled autocomplete="off" />
+                <span class="input-group-text email-lock-bg">Locked</span>
+            </div>
+            <small class="text-muted">Email address cannot be changed.</small>
+        </div>
+
+        <div class="mb-4">
+            <label for="usernameInput" class="form-label">Username (4-32 characters)</label>
+            <div class="action-row">
+                <input id="usernameInput" class="form-control fixed-width me-2" @bind="_userName" autocomplete="off" />
+                <button class="btn btn-primary" @onclick="SaveUsername">Update Username</button>
             </div>
         </div>
-    }
-    else
-    {
-        <div class="mb-4">
-            <small class="text-muted">Password is managed by your Google account and cannot be changed here.</small>
-        </div>
-    }
+    </section>
 
-    <!-- Logout -->
-    <div class="mt-4 d-flex align-items-center gap-2">
-        <button class="btn btn-danger" @onclick="Logout">Logout</button>
-    </div>
+    <section class="settings-section">
+        <h6 class="settings-section-title">Security</h6>
+        @if (_loginMethod == LoginMethod.Password)
+        {
+            <div class="mb-3">
+                <label for="passwordInput" class="form-label">New Password (4-32 characters)</label>
+                <input type="password" id="passwordInput" class="form-control fixed-width" @bind="_password" autocomplete="new-password" />
+            </div>
+
+            <div class="mb-4">
+                <label for="confirmPasswordInput" class="form-label">Confirm New Password</label>
+                <div class="action-row">
+                    <input type="password" id="confirmPasswordInput" class="form-control fixed-width me-2" @bind="_confirmPassword" autocomplete="new-password" />
+                    <button class="btn btn-primary" @onclick="SavePassword" disabled="@(!CanSavePassword())">Update Password</button>
+                </div>
+            </div>
+        }
+        else
+        {
+            <small class="text-muted">Password is managed by your Google account and cannot be changed here.</small>
+        }
+    </section>
+
+    <section class="settings-section settings-section-actions">
+        <h6 class="settings-section-title">Session</h6>
+        <div class="action-row">
+            <button class="btn btn-danger" @onclick="Logout">Logout</button>
+        </div>
+    </section>
 </div>
 
 @code {

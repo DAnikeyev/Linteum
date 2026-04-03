@@ -14,8 +14,12 @@
 
 <div class="background">
     <div class="brand-title">LINTEUM</div>
-    <div class="login-container">
-        <h3>Login</h3>
+    <div class="login-container auth-card">
+        <div class="auth-header">
+            <h3>Login</h3>
+            <p>Continue to your canvases and live collaborations.</p>
+        </div>
+
         @if (!string.IsNullOrEmpty(_error))
         {
             <div class="alert alert-danger">@_error</div>
@@ -35,7 +39,7 @@
         <div class="mb-4">
             <label for="passwordInput" class="form-label">
                 Password
-                <span class="ms-1 text-muted"
+                <span class="field-hint"
                       title="We don't store unhashed passwords. We don't use your email for anything except login."
                       aria-label="Security and privacy info">?</span>
             </label>
@@ -53,10 +57,10 @@
                     type="button"
                     @onclick="GoogleLoginAsync"
                     disabled="@(!_isGoogleEnabled)">
-                Login with Google
+                Google Login
             </button>
         </div>
-        <p>
+        <p class="auth-switch">
             Don&#39;t have an account? <a href="/signup">Sign up</a>
         </p>
     </div>
