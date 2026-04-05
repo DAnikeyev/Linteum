@@ -1,5 +1,5 @@
 services:
-  db:
+  linteum-db:
     image: postgres:16
     container_name: ${DB_CONTAINER_NAME}
     environment:
@@ -9,7 +9,7 @@ services:
     ports:
       - "${DB_HOST_PORT}:${DB_CONTAINER_PORT}"
     networks:
-      - linteum_dev
+      - linteum_prod1
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
@@ -18,7 +18,7 @@ services:
       timeout: 5s
       retries: 10
 
-  api:
+  linteum-api:
     build:
       context: .
       dockerfile: Linteum.Api/Dockerfile
@@ -37,20 +37,20 @@ services:
       - CorsOrigins__0=http://localhost:${BLAZOR_HOST_PORT}
       - CorsOrigins__1=http://${BLAZOR_CONTAINER_NAME}:${BLAZOR_CONTAINER_PORT}
     depends_on:
-      db:
+      linteum-db:
         condition: service_healthy
     networks:
-      - linteum_dev
+      - linteum_prod1
     pull_policy: build
 
-  blazor:
+  linteum-blazor:
     build:
       context: .
       dockerfile: Linteum.BlazorApp/Dockerfile
     container_name: ${BLAZOR_CONTAINER_NAME}
     environment:
       - PASSWORD_SALT=${PASSWORD_SALT}
-      - API_CONTAINER_NAME=api
+      - API_CONTAINER_NAME=${API_CONTAINER_NAME}
       - API_CONTAINER_PORT=${API_CONTAINER_PORT}
       - VERSION=${VERSION}
       - HUB_LINK=${HUB_LINK}
@@ -60,15 +60,15 @@ services:
     ports:
       - "${BLAZOR_HOST_PORT}:${BLAZOR_CONTAINER_PORT}"
     depends_on:
-      - api
+      - linteum-api
     networks:
-      - linteum_dev
+      - linteum_prod1
     pull_policy: build
     volumes:
       - blazor_keys:/app/keys
 
 networks:
-  linteum_dev:
+  linteum_prod1:
     driver: bridge
 
 volumes:

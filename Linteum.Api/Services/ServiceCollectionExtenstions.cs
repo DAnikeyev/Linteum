@@ -27,7 +27,7 @@ namespace Linteum.Api.Services
             services.AddSingleton(Channel.CreateUnbounded<PixelDto>());
             services.AddDbContext<AppDbContext>(options =>
                 options.UseNpgsql(connectionString,
-                    b => b.MigrationsAssembly(typeof(AppDbContext).Assembly.GetName().Name)));
+                    b => b.MigrationsAssembly("Linteum.Api")));
             services.AddSingleton(new Config());
             services.AddSingleton<SessionService>();
             

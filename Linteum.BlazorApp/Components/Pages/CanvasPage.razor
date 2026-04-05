@@ -89,7 +89,10 @@ else
             <!-- Coordinates Display -->
             @if (_hoveredPixel.HasValue)
             {
-                <div class="canvas-coordinates" style="position:absolute; top:0; right:0px; z-index:20; pointer-events:none;">
+                <div class="canvas-coordinates" style="position: absolute; top: 10px; right: 310px; z-index: 10000; pointer-events: none; 
+                                                     background: rgba(255, 255, 255, 0.72); color: #1a4f9e; padding: 6px 12px; border-radius: 11px; 
+                                                     border: 1px solid rgba(45, 114, 221, 0.26); box-shadow: 0 10px 22px rgba(29, 83, 169, 0.12);
+                                                     font-weight: 700; backdrop-filter: blur(8px); font-family: 'Sora', sans-serif;">
                     X: @_hoveredPixel.Value.X, Y: @_hoveredPixel.Value.Y
                 </div>
             }
@@ -478,9 +481,10 @@ else
         }
 
         var pixel = GetPixelFromMouse(e);
-        if (_hoveredPixel != pixel)
+        if (_hoveredPixel.HasValue != pixel.HasValue || (_hoveredPixel.HasValue && pixel.HasValue && (_hoveredPixel.Value.X != pixel.Value.X || _hoveredPixel.Value.Y != pixel.Value.Y)))
         {
             _hoveredPixel = pixel;
+            StateHasChanged();
         }
     }
 

@@ -37,7 +37,15 @@
     private string _sidebarMargin = "300px";
     private NotificationManager? _notificationManagerRef;
     private string Version => Configuration["VERSION"] ?? Environment.GetEnvironmentVariable("VERSION") ?? "dev";
-    private string HubLink => Configuration["HUB_LINK"] ?? Environment.GetEnvironmentVariable("HUB_LINK") ?? string.Empty;
+    private string HubLink
+    {
+        get
+        {
+            var link = Configuration["HUB_LINK"] ?? Environment.GetEnvironmentVariable("HUB_LINK");
+            if (string.IsNullOrEmpty(link)) return string.Empty;
+            return link.StartsWith("http") ? link : $"https://{link}";
+        }
+    }
 
     private void OnSidebarCollapseChanged(bool isCollapsed)
     {

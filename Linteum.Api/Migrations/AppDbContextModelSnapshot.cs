@@ -17,7 +17,7 @@ namespace Linteum.Api.Migrations
         {
 #pragma warning disable 612, 618
             modelBuilder
-                .HasAnnotation("ProductVersion", "9.0.6")
+                .HasAnnotation("ProductVersion", "10.0.5")
                 .HasAnnotation("Relational:MaxIdentifierLength", 63);
 
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
@@ -52,7 +52,7 @@ namespace Linteum.Api.Migrations
 
                     b.HasIndex("UserId", "CanvasId");
 
-                    b.ToTable("BalanceChangedEvents");
+                    b.ToTable("BalanceChangedEvents", (string)null);
                 });
 
             modelBuilder.Entity("Linteum.Domain.Canvas", b =>
@@ -60,6 +60,11 @@ namespace Linteum.Api.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
+
+                    b.Property<int>("CanvasMode")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer")
+                        .HasDefaultValue(1);
 
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
@@ -92,7 +97,7 @@ namespace Linteum.Api.Migrations
                     b.HasIndex("Name")
                         .IsUnique();
 
-                    b.ToTable("Canvases");
+                    b.ToTable("Canvases", (string)null);
                 });
 
             modelBuilder.Entity("Linteum.Domain.Color", b =>
@@ -114,7 +119,7 @@ namespace Linteum.Api.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Colors");
+                    b.ToTable("Colors", (string)null);
                 });
 
             modelBuilder.Entity("Linteum.Domain.LoginEvent", b =>
@@ -140,7 +145,7 @@ namespace Linteum.Api.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("LoginEvents");
+                    b.ToTable("LoginEvents", (string)null);
                 });
 
             modelBuilder.Entity("Linteum.Domain.Pixel", b =>
@@ -174,7 +179,7 @@ namespace Linteum.Api.Migrations
                     b.HasIndex("CanvasId", "X", "Y")
                         .IsUnique();
 
-                    b.ToTable("Pixels");
+                    b.ToTable("Pixels", (string)null);
                 });
 
             modelBuilder.Entity("Linteum.Domain.PixelChangedEvent", b =>
@@ -214,7 +219,7 @@ namespace Linteum.Api.Migrations
 
                     b.HasIndex("PixelId");
 
-                    b.ToTable("PixelChangedEvents");
+                    b.ToTable("PixelChangedEvents", (string)null);
                 });
 
             modelBuilder.Entity("Linteum.Domain.Subscription", b =>
@@ -231,7 +236,7 @@ namespace Linteum.Api.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("Subscriptions");
+                    b.ToTable("Subscriptions", (string)null);
                 });
 
             modelBuilder.Entity("Linteum.Domain.User", b =>
@@ -269,7 +274,7 @@ namespace Linteum.Api.Migrations
                     b.HasIndex("UserName")
                         .IsUnique();
 
-                    b.ToTable("Users");
+                    b.ToTable("Users", (string)null);
                 });
 
             modelBuilder.Entity("Linteum.Domain.BalanceChangedEvent", b =>
