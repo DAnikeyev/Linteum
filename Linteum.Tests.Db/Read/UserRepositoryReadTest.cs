@@ -60,7 +60,7 @@ internal class UserRepositoryReadTest : SyntheticDataTest
         {
             Email = "123@gmail.com",
             UserName = "TestUser",
-            Id = newUser.Id,
+            Id = newUser!.Id,
             LoginMethod = LoginMethod.Password,
         };
         var loginPasswordDto = new UserPaswordDto
@@ -108,7 +108,7 @@ internal class UserRepositoryReadTest : SyntheticDataTest
         {
             Email = "123@gmail.com",
             UserName = "TestUser",
-            Id = newUser.Id,
+            Id = newUser!.Id,
             LoginMethod = LoginMethod.Password,
         };
         var loginPasswordDto = new UserPaswordDto

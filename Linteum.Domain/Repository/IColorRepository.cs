@@ -6,6 +6,6 @@ public interface IColorRepository
 {
     public Task<IEnumerable<ColorDto>> GetAllAsync();
     
-    public Task<ColorDto> GetDefautColor();
+    public Task<ColorDto?> GetDefautColor();
 }
 

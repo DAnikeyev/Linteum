@@ -7,8 +7,9 @@ namespace Linteum.Bots;
 
 public class VanGogh2Bot : BotBase
 {
-    private const int WorkerCount = 24;
-    private const int QueueCapacity = 2048;
+    private const int WorkerCount = 4;
+    private const int QueueCapacity = 1024;
+    private readonly string CanvasName = "VanGogh";
 
     public VanGogh2Bot() : base("vangogh2@linteum.com", "SecurePassword123!", "VanGogh2Bot")
     {
@@ -18,14 +19,14 @@ public class VanGogh2Bot : BotBase
     {
         try
         {
-            return await HttpClient.GetFromJsonAsync<CanvasDto>("Canvases/name/VanGogh2");
+            return await HttpClient.GetFromJsonAsync<CanvasDto>($"Canvases/name/{CanvasName}");
         }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
-            Console.WriteLine("Canvas 'VanGogh2' not found, creating...");
+            Console.WriteLine($"Canvas '{CanvasName}' not found, creating...");
             var newCanvas = new CanvasDto
             {
-                Name = "VanGogh2",
+                Name = CanvasName,
                 Width = 100,
                 Height = 80,
                 CanvasMode = CanvasMode.Sandbox
@@ -42,7 +43,7 @@ public class VanGogh2Bot : BotBase
         }
     }
 
-    protected override async Task RunBehaviorAsync(CanvasDto canvas, List<ColorDto> colors)
+    protected override async Task RunBehaviorAsync(CanvasDto canvas, List<ColorDto> colors, CancellationToken ct)
     {
         string imagePath = Path.Combine(AppContext.BaseDirectory, "StarryNight.jpg");
         if (!File.Exists(imagePath))
@@ -65,26 +66,44 @@ public class VanGogh2Bot : BotBase
         var workers = new List<Task>(WorkerCount);
         for (int i = 0; i < WorkerCount; i++)
         {
+            int workerId = i;
             workers.Add(Task.Run(async () =>
             {
-                await foreach (var item in channel.Reader.ReadAllAsync())
+                await foreach (var item in channel.Reader.ReadAllAsync(ct))
                 {
-                    await PaintPixelAsync(canvas, item.X, item.Y, item.ColorId);
+                    try
+                    {
+                        await PaintPixelAsync(canvas, item.X, item.Y, item.ColorId);
+                        await Task.Delay(10, ct);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[Worker {workerId}] Unexpected error: {ex.Message}");
+                        await Task.Delay(100, ct);
+                    }
                 }
             }));
         }
 
         Console.WriteLine("Starting continuous painting loop with bounded queue...");
-        while (true)
+        try
         {
-            for (int y = 0; y < canvas.Height; y++)
+            while (!ct.IsCancellationRequested)
             {
-                for (int x = 0; x < canvas.Width; x++)
+                for (int y = 0; y < canvas.Height; y++)
                 {
-                    var targetColor = grid[x, y];
-                    await channel.Writer.WriteAsync((x, y, targetColor.Id));
+                    for (int x = 0; x < canvas.Width; x++)
+                    {
+                        var targetColor = grid[x, y];
+                        await channel.Writer.WriteAsync((x, y, targetColor.Id), ct);
+                    }
                 }
             }
+        }
+        finally
+        {
+            channel.Writer.Complete();
+            await Task.WhenAll(workers);
         }
     }
 }

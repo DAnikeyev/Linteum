@@ -67,6 +67,22 @@ services:
     volumes:
       - blazor_keys:/app/keys
 
+  linteum-bots:
+    build:
+      context: .
+      dockerfile: Linteum.Bots/Dockerfile
+    container_name: linteum-bots
+    environment:
+      - BOT_API_URL=http://${API_CONTAINER_NAME}:${API_CONTAINER_PORT}
+      - BOT_TIMEOUT_MINUTES=10
+    depends_on:
+      - linteum-api
+    networks:
+      - linteum_prod1
+    profiles:
+      - bots
+    pull_policy: build
+
 networks:
   linteum_prod1:
     driver: bridge

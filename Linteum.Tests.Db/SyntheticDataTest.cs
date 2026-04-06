@@ -5,7 +5,7 @@ using Microsoft.Extensions.Logging;
 
 namespace Linteum.Tests.Db;
 
-internal class SyntheticDataTest
+internal abstract class SyntheticDataTest
 {
     protected AppDbContext DbContext;
     protected DbContextOptions<AppDbContext> Options;

@@ -29,7 +29,7 @@ public class CleanerBot : BotBase
         }
     }
 
-    protected override async Task RunBehaviorAsync(CanvasDto canvas, List<ColorDto> colors)
+    protected override async Task RunBehaviorAsync(CanvasDto canvas, List<ColorDto> colors, CancellationToken ct)
     {
         var whiteColor = colors.FirstOrDefault(c => c.HexValue.Normalize().ToUpper() == "#FFFFFF" || c.Name?.ToLower() == "white")
                          ?? colors.FirstOrDefault();
@@ -54,7 +54,7 @@ public class CleanerBot : BotBase
         {
             workers.Add(Task.Run(async () =>
             {
-                await foreach (var item in channel.Reader.ReadAllAsync())
+                await foreach (var item in channel.Reader.ReadAllAsync(ct))
                 {
                     await PaintPixelAsync(canvas, item.X, item.Y, whiteColor.Id);
                 }
@@ -65,7 +65,7 @@ public class CleanerBot : BotBase
         {
             for (int x = 0; x < canvas.Width; x++)
             {
-                await channel.Writer.WriteAsync((x, y));
+                await channel.Writer.WriteAsync((x, y), ct);
             }
         }
 
