@@ -1,6 +1,34 @@
 # 0.1.1 - 2026/04/07
 
-## UI improvements
+## Authentication and Security
+- Added Google OAuth2 authentication support (`LoginWithGoogle`, `LoginWithGoogleCode`).
+- Added session validation endpoint (`POST /users/validate`) to verify and refresh active sessions.
+- Implemented `Session-Id` header-based authentication across all API controllers.
+- Added password protection and verification for canvases.
+
+## Canvas and Rendering
+- Introduced a performance-optimized Javascript-based canvas renderer for smooth panning and zooming.
+- Added client-side GPU-accelerated viewport scaling and translation to minimize SignalR round-trips.
+- Added canvas search functionality by name (`GET /canvases/search`).
+- Added support for user-owned canvases with private/public visibility settings.
+- Added canvas image export endpoint (`GET /canvases/image/{name}`) to download snapshots.
+
+## Realtime and Backend
+- Integrated SignalR `CanvasHub` for real-time pixel updates and online user tracking.
+- Added `ConnectionTracker` service to monitor active connections and per-canvas participant counts.
+- Implemented background cleanup services (`DailyCleanupService`, `MinuteCleanupService`) for expired sessions and database maintenance.
+- Expanded repository layer with structured logging and performance tracking.
+
+## UI and UX Improvements
+- Rebuilt Blazor application layout with a responsive sidebar and unified navigation.
+- Added `PixelManager` component for detailed pixel inspection and history viewing.
+- Implemented responsive design for mobile devices and varied screen sizes.
+- Refreshed styling for Login, Signup, and Settings pages.
+
+## Bots and Tooling
+- Introduced bot framework with `CleanerBot`, `MunchBot`, and artist bots (`VanGogh`, `VanGogh2`).
+- Updated Docker configuration for multi-service deployment with environment variable support.
+- Added database migration and seeding tools for automated environment setup.
 
 # 0.1.0 - 2026/04/01
 
