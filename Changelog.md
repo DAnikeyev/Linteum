@@ -1,3 +1,7 @@
+# 0.1.1 - 2026/04/07
+
+## UI improvements
+
 # 0.1.0 - 2026/04/01
 
 ## API and backend
