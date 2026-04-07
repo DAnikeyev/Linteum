@@ -5,6 +5,7 @@ namespace Linteum.Shared;
 public class Config
 {
     public string DefaultCanvasName { get; set; } = "home";
+    public List<string> SecondaryCanvasNames { get; set; } = new() { "VanGogh" };
     public string MasterPasswordHash { get; set; } = "MasterPasswordHash";
     public string GoogleClientId { get; set; } = string.Empty;
     

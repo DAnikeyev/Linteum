@@ -24,7 +24,7 @@
 }
 else
 {
-    <div class="canvas-shell d-flex align-items-start">
+    <div class="canvas-shell">
         <div @ref="_viewportRef" class="canvas-viewport"
              style="width:@(ViewportWidth)px; height:@(ViewportHeight)px; overflow:hidden; position:relative;">
 
@@ -267,13 +267,6 @@ else
             var windowWidth = await JSRuntime.InvokeAsync<double>("eval", "window.innerWidth");
             var windowHeight = await JSRuntime.InvokeAsync<double>("eval", "window.visualViewport ? window.visualViewport.height : window.innerHeight");
 
-            double sidebarWidth = 300;
-            if (!string.IsNullOrEmpty(SidebarMargin) && double.TryParse(SidebarMargin.Replace("px", ""), out var marginVal))
-            {
-                sidebarWidth = marginVal;
-            }
-
-            var pixelManagerWidth = await JSRuntime.InvokeAsync<double>("eval", "document.querySelector('.pixelmanager') ? document.querySelector('.pixelmanager').offsetWidth : 300");
             var mainHorizontalPadding = await JSRuntime.InvokeAsync<double>("eval", @"(() => {
                 const main = document.querySelector('main');
                 if (!main) return 0;
@@ -288,9 +281,28 @@ else
             })()");
 
             const double safetyPadding = 2;
+            var isMobile = windowWidth <= 768;
 
-            ViewportWidth = Math.Max(100, windowWidth - sidebarWidth - pixelManagerWidth - mainHorizontalPadding - safetyPadding);
-            ViewportHeight = Math.Max(100, windowHeight - mainVerticalPadding - safetyPadding);
+            if (isMobile)
+            {
+                // PixelManager is a fixed bottom-sheet; reserve space for its collapsed header
+                const double mobileBottomSheetHeader = 56;
+                ViewportWidth = Math.Max(100, windowWidth - mainHorizontalPadding - safetyPadding);
+                ViewportHeight = Math.Max(100, windowHeight - mainVerticalPadding - mobileBottomSheetHeader - safetyPadding);
+            }
+            else
+            {
+                double sidebarWidth = 300;
+                if (!string.IsNullOrEmpty(SidebarMargin) && double.TryParse(SidebarMargin.Replace("px", ""), out var marginVal))
+                {
+                    sidebarWidth = marginVal;
+                }
+
+                var pixelManagerWidth = await JSRuntime.InvokeAsync<double>("eval", "document.querySelector('.pixelmanager') ? document.querySelector('.pixelmanager').offsetWidth : 300");
+
+                ViewportWidth = Math.Max(100, windowWidth - sidebarWidth - pixelManagerWidth - mainHorizontalPadding - safetyPadding);
+                ViewportHeight = Math.Max(100, windowHeight - mainVerticalPadding - safetyPadding);
+            }
         }
         catch (Exception ex)
         {

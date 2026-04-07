@@ -6,7 +6,7 @@
 @inject NotificationService NotificationService
 
 <div class="pixelmanager">
-    <div class="pm-header">
+    <div class="pm-header" @onclick="ToggleMobilePanel">
         @if (Canvas == null)
         {
             <span class="pm-title">Canvas not loaded</span>
@@ -15,9 +15,13 @@
         {
             <span class="pm-title">@Canvas.Name : (@Canvas.Width x @Canvas.Height)</span>
         }
+        <button class="pm-mobile-toggle" @onclick="ToggleMobilePanel" @onclick:stopPropagation="true"
+                title="@(_isMobileExpanded ? "Collapse panel" : "Expand panel")">
+            @(_isMobileExpanded ? "▾" : "▴")
+        </button>
     </div>
 
-    <div class="pm-content">
+    <div class="pm-content @(_isMobileExpanded ? "" : "pm-content-collapsed")">
         @if (Canvas?.CanvasMode == CanvasMode.Economy)
         {
             <div class="pm-gold">Gold: @Gold <span class="pm-coin">🪙</span></div>
@@ -124,6 +128,9 @@
 
     [Parameter]
     public List<string> OnlineUsers { get; set; } = new();
+
+    private bool _isMobileExpanded = true;
+    private void ToggleMobilePanel() => _isMobileExpanded = !_isMobileExpanded;
 
     private static readonly NLog.Logger _nlog = NLog.LogManager.GetCurrentClassLogger();
     private List<ColorDto>? _colors;

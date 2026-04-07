@@ -12,20 +12,20 @@
         <CanvasSidebar @ref="Sidebar" CollapseToggled="OnSidebarCollapseChanged" />
     </CascadingValue>
 
-    <main style="margin-left:@_sidebarMargin; background: linear-gradient(110deg, rgba(247, 160, 84, 0.08) 0%, rgba(249, 241, 228, 0.5) 38%, rgba(228, 239, 255, 0.56) 72%, rgba(77, 142, 239, 0.08) 100%); min-height: 100vh; padding: 1.25rem 1.1rem 1.1rem; position: relative; transition: margin-left .24s ease;">
+    <main class="main-content" style="margin-left:@_sidebarMargin;">
         <CascadingValue Value="_sidebarMargin" Name="SidebarMargin">
             @Body
         </CascadingValue>
         @if (!string.IsNullOrWhiteSpace(HubLink))
         {
-            <a class="btn btn-outline-primary"
+            <a class="btn btn-outline-primary hub-back-btn"
                href="@HubLink"
-               style="position: fixed; top: 12px; left: calc(@_sidebarMargin + 12px); z-index: 11000;">
+               style="left: calc(@_sidebarMargin + 12px);">
                 <i class="bi bi-arrow-left me-1"></i>
                 Back to hub
             </a>
         }
-        <div style="position: fixed; right: 12px; bottom: 8px; z-index: 11000; font-size: 12px; color: rgba(0, 0, 0, 0.55); pointer-events: none; user-select: none;">
+        <div class="version-label">
             @($"v{Version}")
         </div>
     </main>

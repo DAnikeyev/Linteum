@@ -1,7 +1,7 @@
-/**
- * Canvas Viewport Controller
- * Handles all pan, zoom, hover, and click interactions entirely client-side
- * to avoid Blazor Server SignalR round-trips for high-frequency mouse events.
+        this.eventLayer.removeEventListener('mouseup', this._onUp);
+    this.showClick();
+    self.eventLayer.addEventListener('mousemove', self._onMove);
+    self.eventLayer.addEventListener('mouseup', self._onUp);
  *
  * Performance optimizations:
  *  - GPU-accelerated CSS transform (translate3d + scale) instead of left/top/width/height
@@ -9,54 +9,54 @@
  *  - Cached viewport rect (invalidated on scroll/resize/zoom)
  *  - Document-level mousemove/mouseup during drag so panning never "sticks"
  *  - Pointer events (with mouse fallback) + passive touch for mobile pinch-zoom
- */
-window.canvasViewport = {
-    _instance: null,
+        // Update hover position after zoom
+        var p = self.pixelAt(e.clientX, e.clientY);
+        if (p) {
+            self.hoverEl.style.left = (self.ox + p.x * self.scale) + 'px';
+            self.hoverEl.style.top = (self.oy + p.y * self.scale) + 'px';
+            self.hoverEl.style.width = self.scale + 'px';
+            self.hoverEl.style.height = self.scale + 'px';
+            self.coordsEl.textContent = 'X: ' + p.x + ', Y: ' + p.y;
+        self.applyTransform();
+        self.showClick();
+        var rect = self.eventLayer.getBoundingClientRect();
+        self.dragging = false;
+        self.hoverEl.style.display = 'none';
+        self.coordsEl.style.display = 'none';
+        self.eventLayer.style.cursor = 'crosshair';
+                self.showClick();
+            // Click (not a drag) — notify Blazor server
+    self._onUp = function (e) {
 
-    init: function (dotNetRef, viewportEl, rendererEl, canvasWidth, canvasHeight, vpWidth, vpHeight) {
-        if (this._instance) {
-            this._instance.destroy();
+        // Update hover indicator
+        var p = self.pixelAt(e.clientX, e.clientY);
+        if (p) {
+            self.hoverEl.style.display = 'block';
+            self.hoverEl.style.left = (self.ox + p.x * self.scale) + 'px';
+            self.hoverEl.style.top = (self.oy + p.y * self.scale) + 'px';
+            self.hoverEl.style.width = self.scale + 'px';
+            self.hoverEl.style.height = self.scale + 'px';
+            self.coordsEl.style.display = 'block';
+            self.coordsEl.textContent = 'X: ' + p.x + ', Y: ' + p.y;
+        } else {
+            self.hoverEl.style.display = 'none';
+            self.coordsEl.style.display = 'none';
         }
-        this._instance = new CanvasViewportController(dotNetRef, viewportEl, rendererEl, canvasWidth, canvasHeight, vpWidth, vpHeight);
-    },
-
-    fitCanvas: function (vpWidth, vpHeight) {
-        if (this._instance) this._instance.fit(vpWidth, vpHeight);
-    },
-
-    dispose: function () {
-        if (this._instance) {
-            this._instance.destroy();
-            this._instance = null;
-        }
-    }
-};
-
-function CanvasViewportController(dotNetRef, viewportEl, rendererEl, cw, ch, vpW, vpH) {
-    var self = this;
-    self.dotNet = dotNetRef;
-    self.viewport = viewportEl;
-    self.renderer = rendererEl;
-    self.cw = cw;
-    self.ch = ch;
-    self.vpW = vpW;
-    self.vpH = vpH;
-
-    self.scale = 1;
-    self.ox = 0;
-    self.oy = 0;
-    self.minScale = 0.1;
-    self.maxScale = 50;
-
-    self.dragging = false;
-    self.dragMoved = false;
-    self.lastX = 0;
-    self.lastY = 0;
-    self.startX = 0;
-    self.startY = 0;
-
-    self.clickedPx = null;
-
+    self._onMove = function (e) {
+        if (self.dragging) {
+            self.ox += e.clientX - self.lastX;
+            self.oy += e.clientY - self.lastY;
+            self.clamp();
+            self.lastX = e.clientX;
+            self.lastY = e.clientY;
+            if (Math.abs(e.clientX - self.startX) + Math.abs(e.clientY - self.startY) > 4) {
+                self.dragMoved = true;
+            }
+            self.applyTransform();
+            self.showClick();
+        if (e.button === 0) {
+            self.dragging = true;
+            self.dragMoved = false;
     // rAF batching
     self._rafId = 0;
     self._rafScheduled = false;
@@ -75,35 +75,35 @@ function CanvasViewportController(dotNetRef, viewportEl, rendererEl, cw, ch, vpW
     rendererEl.style.width = cw + 'px';
     rendererEl.style.height = ch + 'px';
 
-    // ── Create overlay UI elements ──
-
-    self.hoverEl = document.createElement('div');
-    self.hoverEl.className = 'canvas-hover-indicator';
-    self.hoverEl.style.cssText =
+            self.lastX = e.clientX;
+            self.lastY = e.clientY;
+            self.startX = e.clientX;
+            self.startY = e.clientY;
+            self.eventLayer.style.cursor = 'grabbing';
         'position:absolute;box-shadow:inset 0 0 0 1px rgba(31,76,145,0.6);pointer-events:none;z-index:5;display:none;will-change:transform;';
-    viewportEl.appendChild(self.hoverEl);
-
-    self.clickEl = document.createElement('div');
-    self.clickEl.className = 'canvas-click-indicator';
-    self.clickEl.style.cssText =
+    // ── Event handlers ──
+    self.showClick = function () {
+        if (!self.clickedPx) { self.clickEl.style.display = 'none'; return; }
+        self.clickEl.style.display = 'block';
+        self.clickEl.style.left = (self.ox + self.clickedPx.x * self.scale) + 'px';
         'position:absolute;box-shadow:inset 0 0 0 2px var(--accent-3);pointer-events:none;z-index:6;display:none;will-change:transform;';
-    viewportEl.appendChild(self.clickEl);
-
-    self.coordsEl = document.createElement('div');
-    self.coordsEl.className = 'canvas-coordinates';
-    self.coordsEl.style.cssText =
-        "position:absolute;top:10px;right:310px;z-index:10000;pointer-events:none;" +
-        "background:rgba(255,255,255,0.72);color:#1a4f9e;padding:6px 12px;border-radius:11px;" +
-        "border:1px solid rgba(45,114,221,0.26);box-shadow:0 10px 22px rgba(29,83,169,0.12);" +
-        "font-weight:700;backdrop-filter:blur(8px);font-family:'Sora',sans-serif;display:none;";
-    viewportEl.appendChild(self.coordsEl);
-
-    self.eventLayer = document.createElement('div');
-    self.eventLayer.style.cssText =
+        self.clickEl.style.width = self.scale + 'px';
+        self.clickEl.style.height = self.scale + 'px';
+        var s = self.renderer.style;
+        s.left = self.ox + 'px';
+        s.top = self.oy + 'px';
+        s.width = (self.cw * self.scale) + 'px';
+        s.height = (self.ch * self.scale) + 'px';
+        var rect = self.eventLayer.getBoundingClientRect();
+        'position:absolute;top:0;left:0;width:100%;height:100%;z-index:10;cursor:crosshair;';
+        'position:absolute;box-shadow:inset 0 0 0 2px var(--accent-3);pointer-events:none;z-index:6;display:none;';
+        'position:absolute;box-shadow:inset 0 0 0 1px rgba(31,76,145,0.6);pointer-events:none;z-index:5;display:none;';
+/**
+ * Canvas Viewport Controller
         'position:absolute;top:0;left:0;width:100%;height:100%;z-index:10;cursor:crosshair;touch-action:none;';
-    viewportEl.appendChild(self.eventLayer);
-
-    // ── Helpers ──
+ * to avoid Blazor Server SignalR round-trips for high-frequency mouse events.
+window.canvasViewport = {
+    _instance: null,
 
     self._getRect = function () {
         if (self._rectDirty || !self._cachedRect) {
@@ -117,28 +117,28 @@ function CanvasViewportController(dotNetRef, viewportEl, rendererEl, cw, ch, vpW
         self._rectDirty = true;
     };
 
-    self.pixelAt = function (clientX, clientY) {
+    init: function (dotNetRef, viewportEl, rendererEl, canvasWidth, canvasHeight, vpWidth, vpHeight) {
         var rect = self._getRect();
-        var mx = clientX - rect.left;
-        var my = clientY - rect.top;
-        var lx = (mx - self.ox) / self.scale;
-        var ly = (my - self.oy) / self.scale;
-        var px = Math.floor(lx);
-        var py = Math.floor(ly);
-        if (px >= 0 && px < self.cw && py >= 0 && py < self.ch) return { x: px, y: py };
-        return null;
-    };
+            this._instance.destroy();
+        }
+        this._instance = new CanvasViewportController(dotNetRef, viewportEl, rendererEl, canvasWidth, canvasHeight, vpWidth, vpHeight);
+    },
 
-    self.clamp = function () {
-        var m = 50;
-        var rw = self.cw * self.scale;
-        var rh = self.ch * self.scale;
-        self.ox = Math.max(m - rw, Math.min(self.vpW - m, self.ox));
-        self.oy = Math.max(m - rh, Math.min(self.vpH - m, self.oy));
-    };
+    fitCanvas: function (vpWidth, vpHeight) {
+        if (this._instance) this._instance.fit(vpWidth, vpHeight);
+    },
 
+    dispose: function () {
+        if (this._instance) {
+            this._instance.destroy();
+            this._instance = null;
+        }
+    }
+};
+
+function CanvasViewportController(dotNetRef, viewportEl, rendererEl, cw, ch, vpW, vpH) {
     // GPU-accelerated: use translate3d + scale instead of left/top/width/height
-    self.applyTransform = function () {
+    var self = this;
         self.renderer.style.transform =
             'translate3d(' + self.ox + 'px,' + self.oy + 'px,0) scale(' + self.scale + ')';
     };
@@ -148,8 +148,8 @@ function CanvasViewportController(dotNetRef, viewportEl, rendererEl, cw, ch, vpW
             self._rafScheduled = true;
             self._rafId = requestAnimationFrame(self._onFrame);
         }
-    };
-
+    self.vpW = vpW;
+    self.vpH = vpH;
     // Pending hover pixel for the next frame
     self._pendingHover = null;
     self._hoverVisible = false;
@@ -192,11 +192,11 @@ function CanvasViewportController(dotNetRef, viewportEl, rendererEl, cw, ch, vpW
             self.coordsEl.style.display = 'none';
             self._hoverVisible = false;
         }
-    };
-
+    self.dragging = false;
+    self.dragMoved = false;
     // ── Mouse event handlers ──
-
-    self._onDown = function (e) {
+    self.lastY = 0;
+    self.startX = 0;
         if (e.button !== 0) return;
         e.preventDefault();
         self.dragging = true;
@@ -210,8 +210,8 @@ function CanvasViewportController(dotNetRef, viewportEl, rendererEl, cw, ch, vpW
         // Listen on document so drag continues even outside viewport
         document.addEventListener('mousemove', self._onDocMove, { passive: true });
         document.addEventListener('mouseup', self._onDocUp);
-    };
-
+        'position:absolute;box-shadow:inset 0 0 0 1px rgba(31,76,145,0.6);pointer-events:none;z-index:5;display:none;';
+    viewportEl.appendChild(self.hoverEl);
     self._onDocMove = function (e) {
         if (!self.dragging) return;
         self.ox += e.clientX - self.lastX;
@@ -221,27 +221,27 @@ function CanvasViewportController(dotNetRef, viewportEl, rendererEl, cw, ch, vpW
         self.lastY = e.clientY;
         if (!self.dragMoved && Math.abs(e.clientX - self.startX) + Math.abs(e.clientY - self.startY) > 4) {
             self.dragMoved = true;
-        }
+        "border:1px solid rgba(45,114,221,0.26);box-shadow:0 10px 22px rgba(29,83,169,0.12);" +
         self._pendingHover = self.pixelAt(e.clientX, e.clientY);
         self._scheduleFrame();
-    };
-
+        var ly = (my - self.oy) / self.scale;
+        var px = Math.floor(lx);
     self._onDocUp = function (e) {
         document.removeEventListener('mousemove', self._onDocMove);
         document.removeEventListener('mouseup', self._onDocUp);
 
-        if (self.dragging && !self.dragMoved) {
-            var p = self.pixelAt(e.clientX, e.clientY);
-            if (p) {
-                self.clickedPx = p;
-                self._scheduleFrame();
-                self.dotNet.invokeMethodAsync('OnPixelClicked', p.x, p.y);
-            }
-        }
-        self.dragging = false;
-        self.eventLayer.style.cursor = 'crosshair';
+        if (px >= 0 && px < self.cw && py >= 0 && py < self.ch) return { x: px, y: py };
     };
 
+    self.clamp = function () {
+                self._scheduleFrame();
+        var rw = self.cw * self.scale;
+        var rh = self.ch * self.scale;
+        self.ox = Math.max(m - rw, Math.min(self.vpW - m, self.ox));
+        self.oy = Math.max(m - rh, Math.min(self.vpH - m, self.oy));
+    };
+
+    self.applyTransform = function () {
     self._onMove = function (e) {
         // Hover-only (non-drag) moves on the event layer
         if (self.dragging) return; // drag is handled by _onDocMove
@@ -249,28 +249,28 @@ function CanvasViewportController(dotNetRef, viewportEl, rendererEl, cw, ch, vpW
         self._scheduleFrame();
     };
 
-    self._onOut = function () {
+        var s = self.renderer.style;
         if (!self.dragging) {
             self._pendingHover = null;
             self._scheduleFrame();
         }
     };
 
-    self._onWheel = function (e) {
-        e.preventDefault();
-        var factor = e.deltaY < 0 ? 1.1 : 0.9;
-        var ns = Math.max(self.minScale, Math.min(self.maxScale, self.scale * factor));
-
+    self.showClick = function () {
+        if (!self.clickedPx) { self.clickEl.style.display = 'none'; return; }
+        self.clickEl.style.display = 'block';
+        self.clickEl.style.left = (self.ox + self.clickedPx.x * self.scale) + 'px';
+        self.clickEl.style.top = (self.oy + self.clickedPx.y * self.scale) + 'px';
         var rect = self._getRect();
-        var mx = e.clientX - rect.left;
-        var my = e.clientY - rect.top;
-        var wx = (mx - self.ox) / self.scale;
-        var wy = (my - self.oy) / self.scale;
+        self.clickEl.style.height = self.scale + 'px';
+    };
 
-        self.scale = ns;
-        self.ox = mx - wx * ns;
-        self.oy = my - wy * ns;
-        self.clamp();
+    // ── Event handlers ──
+
+    self._onDown = function (e) {
+        if (e.button === 0) {
+            self.dragging = true;
+            self.dragMoved = false;
         self._invalidateRect(); // zoom changes the visual transform, rect may shift
 
         self._pendingHover = self.pixelAt(e.clientX, e.clientY);
@@ -288,7 +288,7 @@ function CanvasViewportController(dotNetRef, viewportEl, rendererEl, cw, ch, vpW
         var dy = a.clientY - b.clientY;
         return Math.sqrt(dx * dx + dy * dy);
     };
-
+            self.startX = e.clientX;
     self._touchMid = function (a, b) {
         return { x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 };
     };
@@ -400,18 +400,18 @@ function CanvasViewportController(dotNetRef, viewportEl, rendererEl, cw, ch, vpW
             self.lastY = t.clientY;
             self._lastPinchDist = 0;
             self._lastPinchMid = null;
-        }
-    };
+            self.oy += e.clientY - self.lastY;
+            self.clamp();
 
     // ── Rect invalidation on scroll/resize ──
     self._onScrollOrResize = function () { self._invalidateRect(); };
-
-    // ── Attach events ──
-    self.eventLayer.addEventListener('mousedown', self._onDown);
+            self.lastX = e.clientX;
+            self.lastY = e.clientY;
+            if (Math.abs(e.clientX - self.startX) + Math.abs(e.clientY - self.startY) > 4) {
     self.eventLayer.addEventListener('mousemove', self._onMove, { passive: true });
-    self.eventLayer.addEventListener('mouseout', self._onOut);
-    self.eventLayer.addEventListener('wheel', self._onWheel, { passive: false });
-
+            self.applyTransform();
+            self.showClick();
+        }
     self.eventLayer.addEventListener('touchstart', self._onTouchStart, { passive: false });
     self.eventLayer.addEventListener('touchmove', self._onTouchMove, { passive: false });
     self.eventLayer.addEventListener('touchend', self._onTouchEnd);
@@ -420,6 +420,93 @@ function CanvasViewportController(dotNetRef, viewportEl, rendererEl, cw, ch, vpW
     window.addEventListener('scroll', self._onScrollOrResize, { passive: true });
     window.addEventListener('resize', self._onScrollOrResize, { passive: true });
 
+
+        // Update hover indicator
+        var p = self.pixelAt(e.clientX, e.clientY);
+        if (p) {
+            self.hoverEl.style.display = 'block';
+            self.hoverEl.style.left = (self.ox + p.x * self.scale) + 'px';
+            self.hoverEl.style.top = (self.oy + p.y * self.scale) + 'px';
+    this._invalidateRect();
+            self.hoverEl.style.width = self.scale + 'px';
+            self.hoverEl.style.height = self.scale + 'px';
+            self.coordsEl.style.display = 'block';
+            self.coordsEl.textContent = 'X: ' + p.x + ', Y: ' + p.y;
+        } else {
+            self.hoverEl.style.display = 'none';
+            self.coordsEl.style.display = 'none';
+        }
+    };
+
+    this._updateOverlays();
+        if (self.dragging && !self.dragMoved) {
+            // Click (not a drag) — notify Blazor server
+            var p = self.pixelAt(e.clientX, e.clientY);
+    if (this._rafId) cancelAnimationFrame(this._rafId);
+
+    // Remove document-level listeners that may still be attached from a drag
+    document.removeEventListener('mousemove', this._onDocMove);
+    document.removeEventListener('mouseup', this._onDocUp);
+
+    window.removeEventListener('scroll', this._onScrollOrResize);
+    window.removeEventListener('resize', this._onScrollOrResize);
+
+            if (p) {
+                self.clickedPx = p;
+                self.showClick();
+            }
+        }
+        this.eventLayer.removeEventListener('touchstart', this._onTouchStart);
+        this.eventLayer.removeEventListener('touchmove', this._onTouchMove);
+        this.eventLayer.removeEventListener('touchend', this._onTouchEnd);
+        this.eventLayer.removeEventListener('touchcancel', this._onTouchEnd);
+        self.dragging = false;
+        self.eventLayer.style.cursor = 'crosshair';
+    };
+
+    self._onOut = function () {
+        self.dragging = false;
+        self.hoverEl.style.display = 'none';
+        self.coordsEl.style.display = 'none';
+        self.eventLayer.style.cursor = 'crosshair';
+    };
+
+    self._onWheel = function (e) {
+        e.preventDefault();
+        var factor = e.deltaY < 0 ? 1.1 : 0.9;
+        var ns = Math.max(self.minScale, Math.min(self.maxScale, self.scale * factor));
+
+        var rect = self.eventLayer.getBoundingClientRect();
+        var mx = e.clientX - rect.left;
+        var my = e.clientY - rect.top;
+        var wx = (mx - self.ox) / self.scale;
+        var wy = (my - self.oy) / self.scale;
+
+        self.scale = ns;
+        self.ox = mx - wx * ns;
+        self.oy = my - wy * ns;
+        self.clamp();
+        self.applyTransform();
+        self.showClick();
+
+        // Update hover position after zoom
+        var p = self.pixelAt(e.clientX, e.clientY);
+        if (p) {
+            self.hoverEl.style.left = (self.ox + p.x * self.scale) + 'px';
+            self.hoverEl.style.top = (self.oy + p.y * self.scale) + 'px';
+            self.hoverEl.style.width = self.scale + 'px';
+            self.hoverEl.style.height = self.scale + 'px';
+            self.coordsEl.textContent = 'X: ' + p.x + ', Y: ' + p.y;
+        }
+    };
+
+    // ── Attach events ──
+    self.eventLayer.addEventListener('mousedown', self._onDown);
+    self.eventLayer.addEventListener('mousemove', self._onMove);
+    self.eventLayer.addEventListener('mouseup', self._onUp);
+    self.eventLayer.addEventListener('mouseout', self._onOut);
+    self.eventLayer.addEventListener('wheel', self._onWheel, { passive: false });
+
     // ── Initial fit ──
     self.fit(vpW, vpH);
 }
@@ -427,7 +514,6 @@ function CanvasViewportController(dotNetRef, viewportEl, rendererEl, cw, ch, vpW
 CanvasViewportController.prototype.fit = function (vpW, vpH) {
     this.vpW = vpW;
     this.vpH = vpH;
-    this._invalidateRect();
     var margin = 1;
     if (this.cw > 0 && this.ch > 0) {
         var aw = Math.max(1, vpW - margin * 2);
@@ -438,28 +524,16 @@ CanvasViewportController.prototype.fit = function (vpW, vpH) {
         this.oy = (vpH - this.ch * this.scale) / 2;
     }
     this.applyTransform();
-    this._updateOverlays();
+    this.showClick();
 };
 
 CanvasViewportController.prototype.destroy = function () {
-    if (this._rafId) cancelAnimationFrame(this._rafId);
-
-    // Remove document-level listeners that may still be attached from a drag
-    document.removeEventListener('mousemove', this._onDocMove);
-    document.removeEventListener('mouseup', this._onDocUp);
-
-    window.removeEventListener('scroll', this._onScrollOrResize);
-    window.removeEventListener('resize', this._onScrollOrResize);
-
     if (this.eventLayer) {
         this.eventLayer.removeEventListener('mousedown', this._onDown);
         this.eventLayer.removeEventListener('mousemove', this._onMove);
+        this.eventLayer.removeEventListener('mouseup', this._onUp);
         this.eventLayer.removeEventListener('mouseout', this._onOut);
         this.eventLayer.removeEventListener('wheel', this._onWheel);
-        this.eventLayer.removeEventListener('touchstart', this._onTouchStart);
-        this.eventLayer.removeEventListener('touchmove', this._onTouchMove);
-        this.eventLayer.removeEventListener('touchend', this._onTouchEnd);
-        this.eventLayer.removeEventListener('touchcancel', this._onTouchEnd);
         this.eventLayer.remove();
     }
     if (this.hoverEl) this.hoverEl.remove();

@@ -208,3 +208,31 @@
         width: 100%;
     }
 }
+
+@media (max-width: 768px) {
+    .settings-container {
+        width: 100%;
+        margin: 0.25rem auto;
+        padding: 0.85rem;
+        border-radius: 18px;
+        gap: 0.7rem;
+    }
+
+    .settings-section {
+        padding: 0.75rem 0.7rem;
+    }
+
+    .settings-container .btn {
+        min-height: 44px;
+    }
+
+    .settings-container .form-control {
+        min-height: 44px;
+    }
+
+    .canvas-search-results .list-group-item {
+        padding: 0.55rem 0.7rem;
+        min-height: 40px;
+    }
+}
+

@@ -389,3 +389,41 @@ h1:focus {
         right: -130px;
     }
 }
+
+/* ── Mobile-responsive base ── */
+@media (max-width: 768px) {
+    html {
+        font-size: 14.5px;
+        -webkit-text-size-adjust: 100%;
+    }
+
+    body {
+        -webkit-tap-highlight-color: transparent;
+    }
+
+    .btn {
+        min-height: 44px;
+        font-size: 0.82rem;
+    }
+
+    .form-control,
+    .form-select,
+    .input-group-text {
+        min-height: 44px;
+        font-size: 0.88rem;
+        padding: 0.6rem 0.8rem;
+    }
+
+    .nm-card {
+        padding: 1rem;
+    }
+
+    /* Override JS-created coordinates element positioning on mobile */
+    .canvas-coordinates {
+        right: 10px !important;
+        top: auto !important;
+        bottom: 10px !important;
+        font-size: 0.68rem !important;
+    }
+}
+

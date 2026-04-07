@@ -117,6 +117,27 @@ public class UserRepository : IUserRepository
                 }
 
                 await _subscriptionRepository.Subscribe(newUser.Id, mainCanvas.Id, null);
+
+                foreach (var secondaryName in _defaultsConfig.SecondaryCanvasNames)
+                {
+                    var secondaryCanvas = await _context.Canvases.AsNoTracking()
+                        .FirstOrDefaultAsync(x => x.Name == secondaryName);
+                    if (secondaryCanvas != null)
+                    {
+                        try
+                        {
+                            await _subscriptionRepository.Subscribe(newUser.Id, secondaryCanvas.Id, null);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Could not auto-subscribe new user {UserId} to secondary canvas '{CanvasName}'", newUser.Id, secondaryName);
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogWarning("Secondary canvas '{CanvasName}' not found, skipping auto-subscription for user {UserId}", secondaryName, newUser.Id);
+                    }
+                }
             }
 
             var userInDb = await GetByEmailAsync(userDto.Email);

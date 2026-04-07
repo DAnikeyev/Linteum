@@ -60,3 +60,28 @@
         grid-column: auto;
     }
 }
+
+@media (max-width: 768px) {
+    .faq-container {
+        padding: 0.5rem 0.25rem 1.2rem;
+    }
+
+    .faq-section {
+        padding: 0.8rem 0.75rem;
+        border-radius: 14px;
+    }
+
+    .faq-section h4 {
+        font-size: 0.88rem;
+    }
+
+    .faq-section p {
+        font-size: 0.82rem;
+    }
+
+    .faq-header p {
+        font-size: 0.82rem;
+        margin-bottom: 0.8rem;
+    }
+}
+

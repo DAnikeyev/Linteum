@@ -8,6 +8,7 @@
 @inject LocalStorageService LocalStorageService
 @inject NavigationManager Navigation
 @inject NotificationService NotificationService
+@inject IJSRuntime JSRuntime
 
 @code {
     [Parameter]
@@ -80,28 +81,48 @@
         await CollapseToggled.InvokeAsync(_isCollapsed);
     }
 
-    private void NavigateToCanvas(string canvasName)
+    private async Task AutoCollapseOnMobile()
+    {
+        try
+        {
+            var isMobile = await JSRuntime.InvokeAsync<bool>("eval", "window.innerWidth <= 768");
+            if (isMobile && !_isCollapsed)
+            {
+                _isCollapsed = true;
+                await CollapseToggled.InvokeAsync(true);
+                StateHasChanged();
+            }
+        }
+        catch { }
+    }
+
+    private async Task NavigateToCanvas(string canvasName)
     {
         Navigation.NavigateTo($"/canvas/{canvasName}");
+        await AutoCollapseOnMobile();
     }
 
-    private void GoToAddCanvas()
+    private async Task GoToAddCanvas()
     {
         Navigation.NavigateTo("/canvas_add");
+        await AutoCollapseOnMobile();
     }
 
-    private void GoToSubscribeCanvas()
+    private async Task GoToSubscribeCanvas()
     {
         Navigation.NavigateTo("/canvas_subscribe");
+        await AutoCollapseOnMobile();
     }
-    private void GoToSettings()
+    private async Task GoToSettings()
     {
         Navigation.NavigateTo("/settings");
+        await AutoCollapseOnMobile();
     }
     
-    private void GoToFaq()
+    private async Task GoToFaq()
     {
         Navigation.NavigateTo("/faq");
+        await AutoCollapseOnMobile();
     }
 
     private async Task NotifyAsync(CustomNotification note)

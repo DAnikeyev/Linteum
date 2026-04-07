@@ -221,3 +221,20 @@
         padding: 1.1rem;
     }
 }
+
+@media (max-width: 768px) {
+    .login-container .form-control {
+        min-height: 44px;
+        font-size: 0.88rem;
+    }
+
+    .login-container .btn {
+        min-height: 46px;
+        font-size: 0.82rem;
+    }
+
+    .background {
+        padding: 1rem 0.75rem;
+    }
+}
+

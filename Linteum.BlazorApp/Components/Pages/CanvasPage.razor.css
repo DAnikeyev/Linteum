@@ -1,4 +1,6 @@
 .canvas-shell {
+    display: flex;
+    align-items: flex-start;
     gap: 0;
     padding: 0;
     width: 100%;
@@ -37,3 +39,20 @@
         gap: 0;
     }
 }
+
+/* ── Mobile: canvas fills available space above fixed bottom-sheet ── */
+@media (max-width: 768px) {
+    .canvas-shell {
+        flex-direction: column;
+        align-items: stretch;
+        overflow: hidden;
+    }
+
+    .canvas-viewport {
+        flex: 0 0 auto;
+        max-width: 100%;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+}
+
