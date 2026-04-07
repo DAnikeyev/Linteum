@@ -39,7 +39,7 @@ public class VanGoghBot : BotBase
         }
     }
 
-    protected override async Task RunBehaviorAsync(CanvasDto canvas, List<ColorDto> colors)
+    protected override async Task RunBehaviorAsync(CanvasDto canvas, List<ColorDto> colors, CancellationToken ct)
     {
         string imagePath = Path.Combine(AppContext.BaseDirectory, "StarryNight.jpg");
         if (!File.Exists(imagePath))
@@ -64,7 +64,7 @@ public class VanGoghBot : BotBase
         var random = new Random();
 
         Console.WriteLine("Starting painting loop...");
-        while (true)
+        while (!ct.IsCancellationRequested)
         {
             int x = random.Next(canvas.Width);
             int y = random.Next(canvas.Height);
@@ -82,7 +82,7 @@ public class VanGoghBot : BotBase
 
             await PaintPixelAsync(canvas, x, y, targetColor.Id);
 
-            await Task.Delay(1);
+            await Task.Delay(1, ct);
         }
     }
 }

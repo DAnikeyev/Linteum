@@ -2,6 +2,7 @@
 @page "/login"
 @layout EmptyLayout
 @rendermode InteractiveServer
+@implements IDisposable
 @using Linteum.BlazorApp.Components.Layout
 @using Linteum.Shared
 @inject NavigationManager Navigation
@@ -9,11 +10,16 @@
 @inject Config Config
 @inject LocalStorageService LocalStorageService
 @inject ILogger<Login> Logger
+@inject IJSRuntime JS
 
 <div class="background">
     <div class="brand-title">LINTEUM</div>
-    <div class="login-container">
-        <h3>Login</h3>
+    <div class="login-container auth-card">
+        <div class="auth-header">
+            <h3>Login</h3>
+            <p>Continue to your canvases and live collaborations.</p>
+        </div>
+
         @if (!string.IsNullOrEmpty(_error))
         {
             <div class="alert alert-danger">@_error</div>
@@ -31,7 +37,12 @@
 
         <!-- Password -->
         <div class="mb-4">
-            <label for="passwordInput" class="form-label">Password</label>
+            <label for="passwordInput" class="form-label">
+                Password
+                <span class="field-hint"
+                      title="We don't store unhashed passwords. We don't use your email for anything except login."
+                      aria-label="Security and privacy info">?</span>
+            </label>
             <input id="passwordInput" type="password" class="form-control fixed-width" @bind="_password" @oninput="ClearError" />
             @if (!string.IsNullOrEmpty(_passwordError))
             {
@@ -40,11 +51,16 @@
         </div>
 
         <!-- Buttons -->
-        <div class="d-flex gap-2">
+        <div class="d-flex gap-2 login-actions">
             <button class="btn btn-primary flex-fill" @onclick="HandleLogin">Login</button>
-            <button class="btn btn-outline-primary flex-fill" type="button" @onclick="GoogleLogin">Login with Google</button>
+            <button class="btn btn-outline-primary flex-fill"
+                    type="button"
+                    @onclick="GoogleLoginAsync"
+                    disabled="@(!_isGoogleEnabled)">
+                Google Login
+            </button>
         </div>
-        <p>
+        <p class="auth-switch">
             Don&#39;t have an account? <a href="/signup">Sign up</a>
         </p>
     </div>
@@ -56,6 +72,9 @@
     private string? _emailError;
     private string? _passwordError;
     private string? _error;
+    private DotNetObjectReference<Login>? _googleLoginReference;
+    private bool _isGoogleInitialized;
+    private bool _isGoogleEnabled => !string.IsNullOrWhiteSpace(Config.GoogleClientId);
 
     private void ClearError(ChangeEventArgs e)
     {
@@ -97,9 +116,91 @@
         }
     }
 
-    private void GoogleLogin()
+    private async Task GoogleLoginAsync()
     {
-        Navigation.NavigateTo("/auth/google", true);
+        _error = null;
+        if (!_isGoogleEnabled)
+        {
+            _error = "Google login is not configured.";
+            return;
+        }
+
+        if (!_isGoogleInitialized)
+        {
+            await InitializeGoogleAsync();
+        }
+
+        if (!_isGoogleInitialized)
+        {
+            _error = "Google login is currently unavailable.";
+            return;
+        }
+
+        try
+        {
+            await JS.InvokeVoidAsync("googleAuth.prompt");
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to start Google login flow.");
+            _error = "Could not start Google login. Please try again.";
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnGoogleCodeReceived(string authCode)
+    {
+        _error = null;
+        if (string.IsNullOrWhiteSpace(authCode))
+        {
+            _error = "Google login failed because no authorization code was returned.";
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        var (user, sessionId, error) = await ApiClient.LoginWithGoogleCodeAsync(authCode);
+        if (user != null && sessionId != null)
+        {
+            Logger.LogInformation("Google login successful for {Email}", user.Email);
+            Navigation.NavigateTo(Config.DefaultPage);
+            return;
+        }
+
+        _error = string.IsNullOrWhiteSpace(error) ? "Google login failed." : error;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task OnGoogleError(string error)
+    {
+        _error = string.IsNullOrWhiteSpace(error)
+            ? "Google login was canceled or blocked."
+            : $"Google login failed: {error}";
+        StateHasChanged();
+        return Task.CompletedTask;
+    }
+
+    private async Task InitializeGoogleAsync()
+    {
+        if (!_isGoogleEnabled)
+        {
+            return;
+        }
+
+        try
+        {
+            _googleLoginReference ??= DotNetObjectReference.Create(this);
+            _isGoogleInitialized = await JS.InvokeAsync<bool>("googleAuth.initialize", Config.GoogleClientId, _googleLoginReference);
+            if (!_isGoogleInitialized)
+            {
+                Logger.LogWarning("Google Identity Services is not ready on login page.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Failed to initialize Google Identity Services.");
+            _isGoogleInitialized = false;
+        }
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -138,6 +239,13 @@
                 await LocalStorageService.ClearAsync();
                 ApiClient.ClearSession();
             }
+
+            await InitializeGoogleAsync();
         }
+    }
+
+    public void Dispose()
+    {
+        _googleLoginReference?.Dispose();
     }
 }

@@ -39,7 +39,7 @@ public class MunchBot : BotBase
         }
     }
 
-    protected override async Task RunBehaviorAsync(CanvasDto canvas, List<ColorDto> colors)
+    protected override async Task RunBehaviorAsync(CanvasDto canvas, List<ColorDto> colors, CancellationToken ct)
     {
         string imagePath = Path.Combine(AppContext.BaseDirectory, "Scream.jpg");
         if (!File.Exists(imagePath))
@@ -63,7 +63,7 @@ public class MunchBot : BotBase
         var random = new Random();
 
         Console.WriteLine("Starting painting loop (1ms delay, 80% accuracy)...");
-        while (true)
+        while (!ct.IsCancellationRequested)
         {
             var x = random.Next(canvas.Width);
             var y = random.Next(canvas.Height);
@@ -81,7 +81,7 @@ public class MunchBot : BotBase
 
             await PaintPixelAsync(canvas, x, y, targetColor.Id);
 
-            await Task.Delay(1);
+            await Task.Delay(1, ct);
         }
     }
 }

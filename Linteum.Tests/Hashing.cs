@@ -9,6 +9,7 @@ public class Hashing
     [Test]
     public void HashingTest()
     {
-        Console.WriteLine(SecurityHelper.HashPassword("password", HashSalt));
+        var result = SecurityHelper.HashPassword("password", HashSalt);
+        Console.WriteLine(result);
     }
 }

@@ -103,7 +103,6 @@ public class AppDbContext : DbContext
             entity.HasMany(c => c.Pixels).WithOne(p => p.Canvas).HasForeignKey(p => p.CanvasId);
             entity.Property(c => c.CreatorId);
             entity.Property(c => c.CanvasMode)
-                .HasConversion<int>()
                 .HasDefaultValue(CanvasMode.Sandbox);
             entity.HasOne(c => c.Creator)
                 .WithMany()

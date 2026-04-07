@@ -17,6 +17,7 @@ public class PixelRepository : IPixelRepository
     private readonly IMapper _mapper;
     private readonly ILogger<PixelRepository> _logger;
     private readonly IPixelNotifier _notifier;
+    private readonly IColorRepository _colorRepository;
 
     public PixelRepository(AppDbContext context, IMapper mapper, ILogger<PixelRepository> logger, IPixelNotifier notifier, IColorRepository colorRepository)
     {
@@ -24,11 +25,19 @@ public class PixelRepository : IPixelRepository
         _mapper = mapper;
         _logger = logger;
         _notifier = notifier;
-        if (DefaultColorId == null)
+        _colorRepository = colorRepository;
+    }
+
+    private async Task<int?> GetDefaultColorIdAsync()
+    {
+        if (DefaultColorId != null) return DefaultColorId;
+
+        var defaultColor = await _colorRepository.GetDefautColor();
+        if (defaultColor != null)
         {
-            var defaultColor = colorRepository.GetDefautColor().GetAwaiter().GetResult();
             DefaultColorId = defaultColor.Id;
         }
+        return DefaultColorId;
     }
 
     public async Task<IEnumerable<PixelDto>> GetByCanvasIdAsync(Guid canvasId)

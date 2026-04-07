@@ -6,23 +6,31 @@ namespace Linteum.Bots;
 
 public abstract class BotBase
 {
+    private static readonly TimeSpan DefaultTimeout = TimeSpan.FromMinutes(300);
+
     protected readonly HttpClient HttpClient;
-    protected readonly string ApiUrl = "http://localhost:5182"; 
+    protected readonly string ApiUrl;
     protected string BotEmail { get; }
     protected string BotPassword { get; }
     protected string BotUserName { get; }
+    private long _requestCount;
 
     protected BotBase(string email, string password, string userName)
     {
         BotEmail = email;
         BotPassword = password;
         BotUserName = userName;
+        ApiUrl = Environment.GetEnvironmentVariable("BOT_API_URL") ?? "http://localhost:5182";
 
         var handler = new HttpClientHandler
         {
             ServerCertificateCustomValidationCallback = (_, _, _, _) => true
         };
-        HttpClient = new HttpClient(handler) { BaseAddress = new Uri(ApiUrl) };
+        HttpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri(ApiUrl),
+            Timeout = TimeSpan.FromSeconds(10)
+        };
     }
 
     public async Task RunAsync()
@@ -55,12 +63,42 @@ public abstract class BotBase
 
         Console.WriteLine($"Canvas '{canvas.Name}' ready. Id: {canvas.Id}");
 
-        await RunBehaviorAsync(canvas, colors);
+        var timeout = DefaultTimeout;
+        var envMinutes = Environment.GetEnvironmentVariable("BOT_TIMEOUT_MINUTES");
+        if (double.TryParse(envMinutes, out var minutes))
+            timeout = TimeSpan.FromMinutes(minutes);
+
+        using var cts = new CancellationTokenSource(timeout);
+        Console.WriteLine($"Bot will run for up to {timeout.TotalMinutes} minute(s).");
+
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                while (!cts.Token.IsCancellationRequested)
+                {
+                    await Task.Delay(1000, cts.Token);
+                    long currentCount = Interlocked.Exchange(ref _requestCount, 0);
+                    Console.WriteLine($"[{BotUserName}] Requests per second: {currentCount}");
+                }
+            }
+            catch (OperationCanceledException) { }
+        });
+
+        try
+        {
+            await RunBehaviorAsync(canvas, colors, cts.Token);
+            Console.WriteLine($"[{BotUserName}] Finished.");
+        }
+        catch (OperationCanceledException)
+        {
+            Console.WriteLine($"[{BotUserName}] Timed out after {timeout.TotalMinutes} minute(s). Exiting.");
+        }
     }
 
     protected abstract Task<CanvasDto?> GetOrCreateCanvasAsync();
     
-    protected abstract Task RunBehaviorAsync(CanvasDto canvas, List<ColorDto> colors);
+    protected abstract Task RunBehaviorAsync(CanvasDto canvas, List<ColorDto> colors, CancellationToken ct);
 
     protected async Task<List<ColorDto>?> GetColorsAsync()
     {
@@ -115,6 +153,7 @@ public abstract class BotBase
     
     protected async Task PaintPixelAsync(CanvasDto canvas, int x, int y, int colorId)
     {
+        Interlocked.Increment(ref _requestCount);
         var pixelDto = new PixelDto
         {
             X = x, 
@@ -125,7 +164,8 @@ public abstract class BotBase
 
         try
         {
-            var response = await HttpClient.PostAsJsonAsync($"Pixels/change/{canvas.Name}", pixelDto);
+            using var response = await HttpClient.PostAsJsonAsync($"Pixels/change/{canvas.Name}", pixelDto);
+            await response.Content.CopyToAsync(Stream.Null);
             if (!response.IsSuccessStatusCode)
             {
                 Console.WriteLine($"Failed to paint pixel at {x},{y}: {response.StatusCode}");

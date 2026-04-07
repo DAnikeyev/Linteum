@@ -1,7 +1,7 @@
 @inject NotificationService NotificationService
 @inject ILogger<NotificationManager> Logger
 
-<div class="notification-container" style="@(Visible ? "display:block;" : "display:none;")">
+<div class="notification-container" style="@(Visible ? "display:flex;" : "display:none;")">
     @if (Visible && CurrentNotification is not null)
     {
         <div class="notification-box @CurrentNotification.Type.ToString().ToLower() @(NotFading ? "" : "fade-out")">

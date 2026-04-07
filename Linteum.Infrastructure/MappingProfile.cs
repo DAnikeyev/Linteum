@@ -10,8 +10,11 @@ namespace Linteum.Infrastructure
         {
             CreateMap<UserDto, User>();
             CreateMap<User, UserDto>();
-            CreateMap<CanvasDto, Canvas>();
-            CreateMap<Canvas, CanvasDto>();
+            CreateMap<CanvasDto, Canvas>()
+                .ForMember(dest => dest.PasswordHash, opt => opt.Ignore());
+            CreateMap<Canvas, CanvasDto>()
+                .ForMember(dest => dest.IsPasswordProtected,
+                    opt => opt.MapFrom(src => !string.IsNullOrWhiteSpace(src.PasswordHash)));
             CreateMap<ColorDto, Color>();
             CreateMap<Color, ColorDto>();
             CreateMap<SubscriptionDto, Subscription>();

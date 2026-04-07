@@ -3,16 +3,16 @@ using Linteum.Shared;
 
 namespace Linteum.Api.Services;
 
-public class PeriodicCleanupService : BackgroundService
+public class DailyCleanupService : BackgroundService
 {
     private readonly IServiceProvider _serviceProvider;
-    private readonly ILogger<PeriodicCleanupService> _logger;
+    private readonly ILogger<DailyCleanupService> _logger;
     private readonly Config _config;
     private static readonly TimeSpan Interval = TimeSpan.FromDays(1);
 
-    public PeriodicCleanupService(
+    public DailyCleanupService(
         IServiceProvider serviceProvider,
-        ILogger<PeriodicCleanupService> logger,
+        ILogger<DailyCleanupService> logger,
         Config config)
     {
         _serviceProvider = serviceProvider;
@@ -26,6 +26,15 @@ public class PeriodicCleanupService : BackgroundService
 
         while (!stoppingToken.IsCancellationRequested)
         {
+            try
+            {
+                _logger.LogInformation($"Next daily cleanup task will run at: {DateTime.UtcNow.Add(Interval)}.");
+                await Task.Delay(Interval, stoppingToken);
+            }
+            catch (TaskCanceledException)
+            {
+            }
+
             _logger.LogInformation("Starting daily cleanup task.");
 
             try
@@ -44,13 +53,6 @@ public class PeriodicCleanupService : BackgroundService
                 _logger.LogError(ex, "An error occurred during the daily cleanup task.");
             }
 
-            try
-            {
-                await Task.Delay(Interval, stoppingToken);
-            }
-            catch (TaskCanceledException)
-            {
-            }
         }
 
         _logger.LogInformation("Periodic Cleanup Service is stopping.");

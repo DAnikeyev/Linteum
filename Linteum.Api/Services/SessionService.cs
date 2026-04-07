@@ -99,7 +99,7 @@ public class SessionService
         }
     }
 
-    public void CleanupExpiredSessions()
+    public List<UserSession> CleanupExpiredSessions()
     {
         var expired = _sessionToUser.Where(s => s.Value.CreatedOrUpdatedAt + _expiredSessionTimeout <= DateTime.UtcNow).ToList();
         foreach (var session in expired)
@@ -107,5 +107,6 @@ public class SessionService
             _sessionToUser.TryRemove(session.Key, out _);
             _userToSession.TryRemove(session.Value.UserId, out _);
         }
+        return expired.Select(s => s.Value).ToList();
     }
 }

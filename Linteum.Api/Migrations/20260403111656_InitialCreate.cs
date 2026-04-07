@@ -51,6 +51,7 @@ namespace Linteum.Api.Migrations
                     Name = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: false),
                     Width = table.Column<int>(type: "integer", nullable: false),
                     Height = table.Column<int>(type: "integer", nullable: false),
+                    CanvasMode = table.Column<int>(type: "integer", nullable: false, defaultValue: 1),
                     CreatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     UpdatedAt = table.Column<DateTime>(type: "timestamp with time zone", nullable: false),
                     PasswordHash = table.Column<string>(type: "character varying(128)", maxLength: 128, nullable: true)

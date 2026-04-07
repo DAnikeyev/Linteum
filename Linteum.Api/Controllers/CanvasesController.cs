@@ -59,6 +59,17 @@ namespace Linteum.Api.Controllers
             return Ok(canvas);
         }
 
+        [HttpGet("search")]
+        public async Task<IActionResult> Search([FromQuery] string name, [FromQuery] bool includePrivate = true)
+        {
+            if (string.IsNullOrWhiteSpace(name))
+            {
+                return Ok(new List<CanvasDto>());
+            }
+            var canvases = await _repoManager.CanvasRepository.SearchByNameAsync(name, includePrivate);
+            return Ok(canvases);
+        }
+
         private bool IsCanvasSizeValid(CanvasDto canvas)
         {
             return canvas.Width >= _canvasSizeOptions.MinWidth &&

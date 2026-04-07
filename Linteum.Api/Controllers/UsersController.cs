@@ -1,8 +1,11 @@
+using System.Globalization;
+using Google.Apis.Auth;
 using Linteum.Api.Services;
 using Linteum.Infrastructure;
 using Linteum.Shared;
 using Linteum.Shared.DTO;
 using Microsoft.AspNetCore.Mvc;
+using System.Text.Json.Serialization;
 
 namespace Linteum.Api.Controllers;
 
@@ -12,12 +15,18 @@ public class UsersController : ControllerBase
 {
     private readonly RepositoryManager _repoManager;
     private readonly SessionService _sessionService;
+    private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<UsersController> _logger;
 
-    public UsersController(RepositoryManager repoManager, SessionService sessionService, ILogger<UsersController> logger)
+    public UsersController(
+        RepositoryManager repoManager,
+        SessionService sessionService,
+        IHttpClientFactory httpClientFactory,
+        ILogger<UsersController> logger)
     {
         _repoManager = repoManager;
         _sessionService = sessionService;
+        _httpClientFactory = httpClientFactory;
         _logger = logger;
     }
 
@@ -89,8 +98,75 @@ public class UsersController : ControllerBase
 
         var sessionId = _sessionService.CreateSession(result.Id.Value);
         _logger.LogInformation("Login successful for user: {Email} with ID: {UserId}, session created: {SessionId}", userDto.Email, result.Id.Value, sessionId);
+        await TryAddLoginEventAsync(result.Id.Value, userDto.LoginMethod);
 
         return Ok(new LoginResponse { User = result, SessionId = sessionId });
+    }
+
+    [HttpPost("login-google-code")]
+    public async Task<IActionResult> LoginWithGoogleCode([FromBody] GoogleLoginCodeRequestDto request)
+    {
+        if (string.IsNullOrWhiteSpace(request.Code))
+        {
+            return BadRequest("Google authorization code is required.");
+        }
+
+        var clientId = Environment.GetEnvironmentVariable("GOOGLE_CLIENT_ID");
+        var clientSecret = Environment.GetEnvironmentVariable("GOOGLE_CLIENT_SECRET");
+        if (string.IsNullOrWhiteSpace(clientId) || string.IsNullOrWhiteSpace(clientSecret))
+        {
+            _logger.LogError("Google login failed: GOOGLE_CLIENT_ID or GOOGLE_CLIENT_SECRET is not configured.");
+            return StatusCode(StatusCodes.Status500InternalServerError, "Google login is not configured.");
+        }
+
+        var httpClient = _httpClientFactory.CreateClient();
+        var tokenExchangeResponse = await httpClient.PostAsync(
+            "https://oauth2.googleapis.com/token",
+            new FormUrlEncodedContent(new Dictionary<string, string>
+            {
+                ["code"] = request.Code,
+                ["client_id"] = clientId,
+                ["client_secret"] = clientSecret,
+                ["redirect_uri"] = "postmessage",
+                ["grant_type"] = "authorization_code",
+            }));
+
+        if (!tokenExchangeResponse.IsSuccessStatusCode)
+        {
+            var responseBody = await tokenExchangeResponse.Content.ReadAsStringAsync();
+            _logger.LogWarning(
+                "Google token exchange failed with status {StatusCode}: {ResponseBody}",
+                tokenExchangeResponse.StatusCode,
+                responseBody);
+            return Unauthorized("Google authorization code is invalid or expired.");
+        }
+
+        var tokenPayload = await tokenExchangeResponse.Content.ReadFromJsonAsync<GoogleTokenResponse>();
+        if (string.IsNullOrWhiteSpace(tokenPayload?.IdToken))
+        {
+            _logger.LogWarning("Google token exchange succeeded but id_token is missing.");
+            return Unauthorized("Google login failed.");
+        }
+
+        return await LoginWithGoogleIdTokenAsync(tokenPayload.IdToken, clientId);
+    }
+
+    [HttpPost("login-google")]
+    public async Task<IActionResult> LoginWithGoogle([FromBody] GoogleLoginRequestDto request)
+    {
+        if (string.IsNullOrWhiteSpace(request.IdToken))
+        {
+            return BadRequest("Google token is required.");
+        }
+
+        var clientId = Environment.GetEnvironmentVariable("GOOGLE_CLIENT_ID");
+        if (string.IsNullOrWhiteSpace(clientId))
+        {
+            _logger.LogError("Google login failed: GOOGLE_CLIENT_ID is not configured.");
+            return StatusCode(StatusCodes.Status500InternalServerError, "Google login is not configured.");
+        }
+
+        return await LoginWithGoogleIdTokenAsync(request.IdToken, clientId);
     }
     
     [HttpPost("validate")]
@@ -217,10 +293,17 @@ public class UsersController : ControllerBase
             return NotFound();
         }
 
+        var parsedLoginMethod = (Linteum.Shared.LoginMethod)loginMethod;
+        if (user.LoginMethod != LoginMethod.Password || parsedLoginMethod != LoginMethod.Password)
+        {
+            _logger.LogWarning("Password change blocked for user {UserId} with login method {LoginMethod}.", userId.Value, user.LoginMethod);
+            return BadRequest("Password can only be changed for password-based accounts.");
+        }
+
         var passwordDto = new UserPaswordDto
         {
             PasswordHashOrKey = Uri.EscapeDataString(passwordHashOrKey),
-            LoginMethod = (Linteum.Shared.LoginMethod)loginMethod,
+            LoginMethod = parsedLoginMethod,
         };
 
         var result = await _repoManager.UserRepository.AddOrUpdateUserAsync(user, passwordDto);
@@ -232,6 +315,159 @@ public class UsersController : ControllerBase
 
         _logger.LogInformation("Password updated successfully for user ID: {UserId}", userId.Value);
         return Ok();
+    }
+
+    private async Task<IActionResult> LoginWithGoogleIdTokenAsync(string idToken, string clientId)
+    {
+        GoogleJsonWebSignature.Payload payload;
+        try
+        {
+            payload = await GoogleJsonWebSignature.ValidateAsync(
+                idToken,
+                new GoogleJsonWebSignature.ValidationSettings
+                {
+                    Audience = new[] { clientId },
+                });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Google token validation failed.");
+            return Unauthorized("Invalid Google token.");
+        }
+
+        return await CompleteGoogleLoginAsync(payload);
+    }
+
+    private async Task<IActionResult> CompleteGoogleLoginAsync(GoogleJsonWebSignature.Payload payload)
+    {
+        if (!payload.EmailVerified || string.IsNullOrWhiteSpace(payload.Email) || string.IsNullOrWhiteSpace(payload.Subject))
+        {
+            _logger.LogWarning("Google login rejected because email is not verified or mandatory claims are missing.");
+            return Unauthorized("Google account email must be verified.");
+        }
+
+        var email = payload.Email.Trim();
+        var googleKey = payload.Subject.Trim();
+        var passwordDto = new UserPaswordDto
+        {
+            PasswordHashOrKey = googleKey,
+            LoginMethod = LoginMethod.Google,
+        };
+
+        var existingUserByEmail = await _repoManager.UserRepository.GetByEmailAsync(email);
+        UserDto? result;
+
+        if (existingUserByEmail is null)
+        {
+            var baseUserName = BuildUserNameSeed(payload.Name, email);
+            var uniqueUserName = await BuildUniqueUserNameAsync(baseUserName);
+            result = await _repoManager.UserRepository.AddOrUpdateUserAsync(
+                new UserDto
+                {
+                    Email = email,
+                    UserName = uniqueUserName,
+                    LoginMethod = LoginMethod.Google,
+                },
+                passwordDto);
+
+            if (result == null)
+            {
+                _logger.LogError("Failed to create a user during Google login for email: {Email}", email);
+                return BadRequest("Could not create user.");
+            }
+        }
+        else
+        {
+            if (existingUserByEmail.LoginMethod != LoginMethod.Google)
+            {
+                _logger.LogWarning("Google login blocked because email {Email} belongs to a password-based account.", email);
+                return Conflict("This email is already registered with email/password. Use password login.");
+            }
+
+            result = await _repoManager.UserRepository.TryLogin(existingUserByEmail, passwordDto);
+            if (result == null)
+            {
+                // If Google key changed in DB, reconcile it for this verified Google identity.
+                result = await _repoManager.UserRepository.AddOrUpdateUserAsync(existingUserByEmail, passwordDto);
+                if (result == null)
+                {
+                    _logger.LogError("Failed to update Google key for existing user: {Email}", email);
+                    return Unauthorized("Google login failed for this account.");
+                }
+            }
+        }
+
+        if (!result.Id.HasValue)
+        {
+            _logger.LogError("Google login succeeded but user ID is null for email: {Email}", email);
+            return BadRequest("Can't retrieve user ID after login.");
+        }
+
+        var sessionId = _sessionService.CreateSession(result.Id.Value);
+        await TryAddLoginEventAsync(result.Id.Value, LoginMethod.Google);
+        _logger.LogInformation("Google login successful for user {Email} with ID {UserId}.", email, result.Id.Value);
+        return Ok(new LoginResponse { User = result, SessionId = sessionId });
+    }
+
+    private async Task TryAddLoginEventAsync(Guid userId, LoginMethod provider)
+    {
+        try
+        {
+            await _repoManager.LoginEventRepository.AddLoginEvent(new LoginEventDto
+            {
+                Id = Guid.NewGuid(),
+                UserId = userId,
+                Provider = provider,
+                IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
+            });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Failed to store login event for user {UserId}.", userId);
+        }
+    }
+
+    private async Task<string> BuildUniqueUserNameAsync(string baseUserName)
+    {
+        var candidate = baseUserName;
+        var suffix = 1;
+
+        while (await _repoManager.UserRepository.GetByUserNameAsync(candidate) != null)
+        {
+            var suffixText = suffix.ToString(CultureInfo.InvariantCulture);
+            var maxBaseLength = Math.Max(1, 32 - suffixText.Length);
+            var basePart = baseUserName.Length > maxBaseLength ? baseUserName[..maxBaseLength] : baseUserName;
+            candidate = $"{basePart}{suffixText}";
+            suffix++;
+        }
+
+        return candidate;
+    }
+
+    private static string BuildUserNameSeed(string? googleName, string email)
+    {
+        var raw = string.IsNullOrWhiteSpace(googleName) ? email.Split('@')[0] : googleName;
+        var sanitized = new string(raw
+            .Where(c => char.IsLetterOrDigit(c) || c == '_')
+            .ToArray());
+
+        if (string.IsNullOrWhiteSpace(sanitized))
+        {
+            sanitized = "user";
+        }
+
+        if (sanitized.Length < 4)
+        {
+            sanitized = sanitized.PadRight(4, '0');
+        }
+
+        return sanitized.Length > 32 ? sanitized[..32] : sanitized;
+    }
+
+    private sealed class GoogleTokenResponse
+    {
+        [JsonPropertyName("id_token")]
+        public string? IdToken { get; set; }
     }
 }
 

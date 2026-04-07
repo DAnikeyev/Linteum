@@ -1,0 +1,87 @@
+.faq-container {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 1.25rem 0.5rem 2rem;
+}
+
+.faq-header h2 {
+    margin: 0;
+}
+
+.faq-header p {
+    margin: 0.45rem 0 1.1rem;
+    color: rgba(47, 74, 114, 0.84);
+    font-size: 0.88rem;
+}
+
+.faq-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.85rem;
+}
+
+.faq-section {
+    margin: 0;
+    padding: 1rem 1rem 0.95rem;
+    border: 1px solid rgba(95, 118, 153, 0.22);
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.68);
+    box-shadow: 0 12px 26px rgba(22, 60, 126, 0.12);
+}
+
+.faq-section h4 {
+    margin: 0 0 0.6rem;
+    color: #1a4f9e;
+    font-size: 0.92rem;
+    letter-spacing: 0.01em;
+}
+
+.faq-section p {
+    margin-bottom: 0.5rem;
+    color: #27466d;
+    font-size: 0.85rem;
+    line-height: 1.5;
+}
+
+.faq-section p:last-child {
+    margin-bottom: 0;
+}
+
+.faq-wide {
+    grid-column: span 2;
+}
+
+@media (max-width: 900px) {
+    .faq-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .faq-wide {
+        grid-column: auto;
+    }
+}
+
+@media (max-width: 768px) {
+    .faq-container {
+        padding: 0.5rem 0.25rem 1.2rem;
+    }
+
+    .faq-section {
+        padding: 0.8rem 0.75rem;
+        border-radius: 14px;
+    }
+
+    .faq-section h4 {
+        font-size: 0.88rem;
+    }
+
+    .faq-section p {
+        font-size: 0.82rem;
+    }
+
+    .faq-header p {
+        font-size: 0.82rem;
+        margin-bottom: 0.8rem;
+    }
+}
+

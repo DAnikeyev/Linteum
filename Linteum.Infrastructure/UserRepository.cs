@@ -77,7 +77,7 @@ public class UserRepository : IUserRepository
         await using var transaction = await _context.Database.BeginTransactionAsync();
         try
         {
-            var existingUser = (userDto.Id != Guid.Empty) ?
+            var existingUser = (userDto.Id.HasValue && userDto.Id.Value != Guid.Empty) ?
                 await _context.Users.FirstOrDefaultAsync(u => u.Id == userDto.Id) : 
                 await _context.Users
                 .FirstOrDefaultAsync(u => u.Email == userDto.Email);
@@ -98,7 +98,7 @@ public class UserRepository : IUserRepository
             }
             else
             {
-                if(passwordDto.PasswordHashOrKey == null)
+                if (passwordDto?.PasswordHashOrKey == null)
                 {
                     throw new InvalidDataException($"Password hash or key is required for new user: {userDto.Email}");
                 }
@@ -117,6 +117,27 @@ public class UserRepository : IUserRepository
                 }
 
                 await _subscriptionRepository.Subscribe(newUser.Id, mainCanvas.Id, null);
+
+                foreach (var secondaryName in _defaultsConfig.SecondaryCanvasNames)
+                {
+                    var secondaryCanvas = await _context.Canvases.AsNoTracking()
+                        .FirstOrDefaultAsync(x => x.Name == secondaryName);
+                    if (secondaryCanvas != null)
+                    {
+                        try
+                        {
+                            await _subscriptionRepository.Subscribe(newUser.Id, secondaryCanvas.Id, null);
+                        }
+                        catch (Exception ex)
+                        {
+                            _logger.LogWarning(ex, "Could not auto-subscribe new user {UserId} to secondary canvas '{CanvasName}'", newUser.Id, secondaryName);
+                        }
+                    }
+                    else
+                    {
+                        _logger.LogWarning("Secondary canvas '{CanvasName}' not found, skipping auto-subscription for user {UserId}", secondaryName, newUser.Id);
+                    }
+                }
             }
 
             var userInDb = await GetByEmailAsync(userDto.Email);

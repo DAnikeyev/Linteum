@@ -2,41 +2,77 @@
 @using Linteum.BlazorApp.Components.Layout
 @using Linteum.BlazorApp.Components.Notification
 @using Linteum.Shared.DTO
+@using System.Threading
 @layout Layout.BaseLayout
 @inject MyApiClient ApiClient
 @inject NotificationService NotificationService
+@implements IDisposable
 
 <div class="settings-container">
-    <h2>Subscribe to Canvas</h2>
+    <div class="settings-header">
+        <h2>Subscribe to Canvas</h2>
+        <p>Find an existing canvas and join it in one click.</p>
+    </div>
 
-    <!-- Canvas Name -->
-    <div class="mb-4">
-        <label for="canvasNameInput" class="form-label">Canvas Name</label>
-        <div class="d-flex align-items-center gap-2">
-            <input id="canvasNameInput"
-                   class="form-control fixed-width me-2"
-                   @bind="_canvasName"
-                   autocomplete="new-name" />
+    <section class="settings-section">
+        <h6 class="settings-section-title">Find Canvas</h6>
+        <div class="mb-4 position-relative">
+            <label for="canvasNameInput" class="form-label">Canvas Name</label>
+            <div class="action-row">
+                <input id="canvasNameInput"
+                       class="form-control fixed-width me-2"
+                       value="@_canvasName"
+                       @oninput="OnCanvasNameInput"
+                       autocomplete="off" />
+            </div>
+            @if (_isSearching || _searchResults.Any() || _showNoResults)
+            {
+                <ul class="list-group canvas-search-results">
+                    @if (_isSearching)
+                    {
+                        <li class="list-group-item text-muted">Searching...</li>
+                    }
+                    else if (_showNoResults)
+                    {
+                        <li class="list-group-item text-muted">No canvases found</li>
+                    }
+                    else
+                    {
+                        @foreach (var canvas in _searchResults)
+                        {
+                            <li class="list-group-item list-group-item-action d-flex justify-content-between align-items-center canvas-search-item"
+                                @onclick="() => SelectCanvas(canvas.Name)">
+                                <span>@canvas.Name</span>
+                                @if (canvas.IsPasswordProtected)
+                                {
+                                    <span class="canvas-lock-hint" title="Password protected" aria-label="Password protected">Locked</span>
+                                }
+                            </li>
+                        }
+                    }
+                </ul>
+            }
         </div>
-    </div>
 
-    <!-- Optional Password -->
-    <div class="mb-4">
-        <label for="canvasPasswordInput" class="form-label">Canvas Password (optional)</label>
-        <div class="d-flex align-items-center gap-2">
-            <input type="password"
-                   id="canvasPasswordInput"
-                   class="form-control fixed-width me-2"
-                   @bind="_canvasPassword"
-                   autocomplete="new-password" />
+        <div class="mb-4">
+            <label for="canvasPasswordInput" class="form-label">Canvas Password (optional)</label>
+            <div class="action-row">
+                <input type="password"
+                       id="canvasPasswordInput"
+                       class="form-control fixed-width me-2"
+                       @bind="_canvasPassword"
+                       autocomplete="new-password" />
+            </div>
+            <small class="text-muted">Leave empty if the canvas has no password.</small>
         </div>
-        <small class="text-muted">Leave empty if the canvas has no password.</small>
-    </div>
+    </section>
 
-    <!-- Submit Button -->
-    <div class="mt-4 d-flex align-items-center gap-2">
-        <button class="btn btn-primary" @onclick="SubscribeToCanvas">Subscribe</button>
-    </div>
+    <section class="settings-section settings-section-actions">
+        <h6 class="settings-section-title">Join</h6>
+        <div class="action-row">
+            <button class="btn btn-primary" @onclick="SubscribeToCanvas">Subscribe</button>
+        </div>
+    </section>
 </div>
 
 @code {
@@ -45,6 +81,86 @@
     private CanvasSidebar? Sidebar { get; set; }
     private string? _canvasName;
     private string? _canvasPassword;
+
+    private List<CanvasDto> _searchResults = new();
+    private bool _isSearching;
+    private bool _showNoResults;
+    private CancellationTokenSource? _searchCts;
+
+    private async Task OnCanvasNameInput(ChangeEventArgs e)
+    {
+        _canvasName = e.Value?.ToString();
+
+        _searchCts?.Cancel();
+        _searchCts?.Dispose();
+        _searchCts = new CancellationTokenSource();
+        var token = _searchCts.Token;
+
+        if (string.IsNullOrWhiteSpace(_canvasName))
+        {
+            _isSearching = false;
+            _showNoResults = false;
+            _searchResults.Clear();
+            return;
+        }
+
+        _isSearching = true;
+        _showNoResults = false;
+
+        try
+        {
+            await Task.Delay(300, token);
+            await SearchCanvases(token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Ignore
+        }
+        finally
+        {
+            if (_searchCts?.Token == token)
+                _isSearching = false;
+        }
+    }
+
+    private async Task SearchCanvases(CancellationToken token)
+    {
+        try
+        {
+            var searchTerm = _canvasName?.Trim() ?? string.Empty;
+            var results = await ApiClient.SearchCanvasesAsync(searchTerm);
+
+            if (!token.IsCancellationRequested)
+            {
+                _searchResults = results
+                    .OrderBy(c => c.Name)
+                    .Take(20)
+                    .ToList();
+                _showNoResults = _searchResults.Count == 0;
+            }
+        }
+        catch
+        {
+            if (!token.IsCancellationRequested)
+            {
+                _searchResults.Clear();
+                _showNoResults = false;
+            }
+        }
+    }
+
+    private void SelectCanvas(string name)
+    {
+        _canvasName = name;
+        _searchResults.Clear();
+        _showNoResults = false;
+    }
+
+    public void Dispose()
+    {
+        _searchCts?.Cancel();
+        _searchCts?.Dispose();
+    }
 
     private async Task SubscribeToCanvas()
     {
@@ -65,9 +181,10 @@
             
             _canvasName = null;
             _canvasPassword = null;
+            _searchResults.Clear();
+            _showNoResults = false;
             if (Sidebar != null)
                 await Sidebar.RefreshCanvases();
-            StateHasChanged();
         }
         catch (Exception ex)
         {

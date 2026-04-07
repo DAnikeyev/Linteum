@@ -26,13 +26,18 @@ try
                 .AllowCredentials();
         });
     });
+    logger.Info("CORS policy 'AllowBlazorApp' added with origins: {Origins}", string.Join(", ", allowedOrigins));
+    
     builder.Services.AddSignalR();
+    logger.Info("SignalR service added");
+    builder.Services.AddHttpClient();
     
     builder.Services.AddSingleton<IConnectionTracker, ConnectionTracker>();
     builder.Services.AddScoped<IPixelNotifier, SignalRPixelNotifier>();
     builder.Services.Configure<CanvasSizeOptions>(builder.Configuration.GetSection("CanvasSize"));
     builder.Services.AddApplicationServices(builder.Configuration);
     builder.Services.AddControllers();
+    logger.Info("Application services and controllers added");
 
     var app = builder.Build();
 

@@ -2,6 +2,7 @@
 @inject NavigationManager Navigation
 @inject ILogger<BaseLayout> Logger
 @inject MyApiClient ApiClient
+@inject IConfiguration Configuration
 @using Linteum.BlazorApp.Components.Notification
 @inherits LayoutComponentBase
 
@@ -11,10 +12,22 @@
         <CanvasSidebar @ref="Sidebar" CollapseToggled="OnSidebarCollapseChanged" />
     </CascadingValue>
 
-    <main style="margin-left:@_sidebarMargin; background-color: var(--accent0); min-height: 100vh; padding: 1rem; position: relative;">
+    <main class="main-content" style="margin-left:@_sidebarMargin;">
         <CascadingValue Value="_sidebarMargin" Name="SidebarMargin">
             @Body
         </CascadingValue>
+        @if (!string.IsNullOrWhiteSpace(HubLink))
+        {
+            <a class="btn btn-outline-primary hub-back-btn"
+               href="@HubLink"
+               style="left: calc(@_sidebarMargin + 12px);">
+                <i class="bi bi-arrow-left me-1"></i>
+                Back to hub
+            </a>
+        }
+        <div class="version-label">
+            @($"v{Version}")
+        </div>
     </main>
 
     <NotificationManager @ref="_notificationManagerRef" />
@@ -23,6 +36,16 @@
     public CanvasSidebar? Sidebar { get; set; }
     private string _sidebarMargin = "300px";
     private NotificationManager? _notificationManagerRef;
+    private string Version => Configuration["VERSION"] ?? Environment.GetEnvironmentVariable("VERSION") ?? "dev";
+    private string HubLink
+    {
+        get
+        {
+            var link = Configuration["HUB_LINK"] ?? Environment.GetEnvironmentVariable("HUB_LINK");
+            if (string.IsNullOrEmpty(link)) return string.Empty;
+            return link.StartsWith("http") ? link : $"https://{link}";
+        }
+    }
 
     private void OnSidebarCollapseChanged(bool isCollapsed)
     {

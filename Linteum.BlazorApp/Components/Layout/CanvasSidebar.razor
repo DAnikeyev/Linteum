@@ -8,6 +8,7 @@
 @inject LocalStorageService LocalStorageService
 @inject NavigationManager Navigation
 @inject NotificationService NotificationService
+@inject IJSRuntime JSRuntime
 
 @code {
     [Parameter]
@@ -80,23 +81,48 @@
         await CollapseToggled.InvokeAsync(_isCollapsed);
     }
 
-    private void NavigateToCanvas(string canvasName)
+    private async Task AutoCollapseOnMobile()
+    {
+        try
+        {
+            var isMobile = await JSRuntime.InvokeAsync<bool>("eval", "window.innerWidth <= 768");
+            if (isMobile && !_isCollapsed)
+            {
+                _isCollapsed = true;
+                await CollapseToggled.InvokeAsync(true);
+                StateHasChanged();
+            }
+        }
+        catch { }
+    }
+
+    private async Task NavigateToCanvas(string canvasName)
     {
         Navigation.NavigateTo($"/canvas/{canvasName}");
+        await AutoCollapseOnMobile();
     }
 
-    private void GoToAddCanvas()
+    private async Task GoToAddCanvas()
     {
         Navigation.NavigateTo("/canvas_add");
+        await AutoCollapseOnMobile();
     }
 
-    private void GoToSubscribeCanvas()
+    private async Task GoToSubscribeCanvas()
     {
         Navigation.NavigateTo("/canvas_subscribe");
+        await AutoCollapseOnMobile();
     }
-    private void GoToSettings()
+    private async Task GoToSettings()
     {
         Navigation.NavigateTo("/settings");
+        await AutoCollapseOnMobile();
+    }
+    
+    private async Task GoToFaq()
+    {
+        Navigation.NavigateTo("/faq");
+        await AutoCollapseOnMobile();
     }
 
     private async Task NotifyAsync(CustomNotification note)
@@ -205,6 +231,8 @@
             var success = await ApiClient.UnsubscribeAsync(canvasName);
             if (success)
             {
+                ApiClient.ClearCanvasCache(canvasName);
+
                 var item = _canvases?.FirstOrDefault(c => c.Name == canvasName);
                 if (item != null)
                     _canvases?.Remove(item);
@@ -262,6 +290,9 @@
 <div class="sidebar @(_isCollapsed ? "collapsed" : "")"
      style=@($"position:fixed; left:0; top:0; height:100vh; width:300px; z-index:1000; transition:transform .2s ease; transform:{(_isCollapsed ? "translateX(-100%)" : "translateX(0)")};")>
     <div class="sidebar-header">
+        <button class="btn btn-outline-primary sidebar-faq-btn" title="FAQ" @onclick="GoToFaq">
+            FAQ
+        </button>
         <span class="sidebar-username text-truncate" title="@_userName">@(_userName ?? "Guest")</span>
         <button class="btn btn-link p-0 sidebar-cog-btn" title="Settings" @onclick="GoToSettings">
             <img src="images/cog-2.svg" alt="Settings" class="sidebar-cog-img" />

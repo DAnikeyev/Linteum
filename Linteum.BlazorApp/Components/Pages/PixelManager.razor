@@ -1,11 +1,12 @@
 @using Linteum.Shared.DTO
 @using Linteum.BlazorApp.Components.Notification
 @using Linteum.BlazorApp.Services
+@using Linteum.Shared
 @inject MyApiClient ApiClient
 @inject NotificationService NotificationService
 
 <div class="pixelmanager">
-    <div class="pm-header">
+    <div class="pm-header" @onclick="ToggleMobilePanel">
         @if (Canvas == null)
         {
             <span class="pm-title">Canvas not loaded</span>
@@ -14,16 +15,24 @@
         {
             <span class="pm-title">@Canvas.Name : (@Canvas.Width x @Canvas.Height)</span>
         }
+        <button class="pm-mobile-toggle" @onclick="ToggleMobilePanel" @onclick:stopPropagation="true"
+                title="@(_isMobileExpanded ? "Collapse panel" : "Expand panel")">
+            @(_isMobileExpanded ? "▾" : "▴")
+        </button>
     </div>
 
-    <div class="pm-content">
-        <span style="margin-left:20px;">Gold: @Gold 🪙</span>
-        <div class="pm-drawing" style="display:flex;flex-direction:column;align-items:center;">
-            <h6 style="margin:0 0 0.5rem 0;text-align:center;">Pixel Drawing</h6>
+    <div class="pm-content @(_isMobileExpanded ? "" : "pm-content-collapsed")">
+        @if (Canvas?.CanvasMode == CanvasMode.Economy)
+        {
+            <div class="pm-gold">Gold: @Gold <span class="pm-coin">🪙</span></div>
+        }
 
-            <div style="display:flex;flex-direction:column;gap:0.75rem;width:100%;">
-                <div>
-                    <label class="form-label" style="display:block;margin-bottom:0.25rem;">Selected Pixel</label>
+        <div class="pm-drawing">
+            <h6>Pixel Drawing</h6>
+
+            <div class="pm-fields">
+                <div class="pm-field">
+                    <label class="form-label">Selected Pixel</label>
                     @if (ClickedPixel.HasValue)
                     {
                         <div>X: @ClickedPixel.Value.X, Y: @ClickedPixel.Value.Y</div>
@@ -34,51 +43,42 @@
                     }
                 </div>
 
-                <div>
-                    <div class="color-dropdown">
-                        <button type="button" class="color-dropdown-toggle" @onclick="ToggleColorDropdown" aria-expanded="@_colorDropdownOpen">
-                            <div style="display:flex;align-items:center;gap:0.5rem;width:100%;">
-                                <div class="color-swatch" style="background:@(SelectedColor?.HexValue ?? "#ffffff");"></div>
-                                <span class="color-label">@(SelectedColor == null ? "-- Select color --" : (string.IsNullOrEmpty(SelectedColor.Name) ? SelectedColor.HexValue : SelectedColor.Name))</span>
-                                <span style="margin-left:auto;opacity:0.7;">▾</span>
-                            </div>
-                        </button>
-
-
-                        @if (_colorDropdownOpen && _colors != null)
+                <div class="pm-field">
+                    <label class="form-label">Color Palette</label>
+                    <div class="color-palette">
+                        @if (_colors != null)
                         {
-                            <ul class="color-dropdown-menu" role="listbox">
-                                @foreach (var c in _colors)
-                                {
-                                    <li class="color-option" role="option" @onclick="() => SelectColor(c)">
-                                        <div class="color-swatch" style="background:@c.HexValue;"></div>
-                                        <span>@(string.IsNullOrEmpty(c.Name) ? c.HexValue : c.Name)</span>
-                                    </li>
-                                }
-                            </ul>
+                            @foreach (var c in _colors)
+                            {
+                                <div class="color-square @(c.Id == _selectedColorId ? "selected" : "")" 
+                                     style="background:@c.HexValue;" 
+                                     title="@(string.IsNullOrEmpty(c.Name) ? c.HexValue : c.Name)"
+                                     @onclick="() => SelectColor(c)">
+                                </div>
+                            }
                         }
                     </div>
                 </div>
 
-                <div style="padding:0.25rem 0;">
-                    <button class="btn" style="display:block;width:100%;padding:0.75rem 0;font-weight:600;border-radius:6px;" @onclick="PaintClick" disabled="@(SelectedColor == null || !ClickedPixel.HasValue)">PAINT</button>
+                <div class="pm-field pm-paint-wrap">
+                    <button class="btn pm-paint-btn" @onclick="PaintClick" disabled="@(SelectedColor == null || !ClickedPixel.HasValue)">Paint</button>
                 </div>
             </div>
         </div>
 
-        <div class="pm-online-users" style="margin-top: 1rem; padding: 0.5rem; background: rgba(0,0,0,0.05); border-radius: 6px;">
-            <h6 style="margin-bottom: 0.5rem; font-size: 0.85rem; text-transform: uppercase; color: #666;">Online Users (@OnlineUsers.Count)</h6>
-            <div style="display: flex; flex-wrap: wrap; gap: 0.4rem; max-height: 100px; overflow-y: auto;">
+        <div class="pm-online-users">
+            <h6>Online Users (@OnlineUsers.Count)</h6>
+            <div class="pm-user-list">
                 @if (OnlineUsers.Any())
                 {
                     @foreach (var user in OnlineUsers)
                     {
-                        <span style="background: #e9ecef; padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.75rem; border: 1px solid #dee2e6;">@user</span>
+                        <span class="pm-user-chip">@user</span>
                     }
                 }
                 else
                 {
-                    <span style="font-size: 0.75rem; color: #999;">Only you are here</span>
+                    <span class="pm-user-empty">Only you are here</span>
                 }
             </div>
         </div>
@@ -129,56 +129,118 @@
     [Parameter]
     public List<string> OnlineUsers { get; set; } = new();
 
+    private bool _isMobileExpanded = true;
+    private void ToggleMobilePanel() => _isMobileExpanded = !_isMobileExpanded;
+
     private static readonly NLog.Logger _nlog = NLog.LogManager.GetCurrentClassLogger();
     private List<ColorDto>? _colors;
     private List<HistoryResponseItem>? _pixelChangeHistory;
     private Guid? PrevPixelId;
+    private (int X, int Y)? _prevClickedPixel;
     private int? _selectedColorId;
     private ColorDto? SelectedColor => _colors?.FirstOrDefault(c => c.Id == _selectedColorId);
-
-    private bool _colorDropdownOpen = false;
 
     protected override async Task OnInitializedAsync()
     {
         _colors = await ApiClient.GetColorsAsync();
-        _colors.Sort((c1, c2) => string.Compare(c1.Name ?? string.Empty, c2.Name ?? string.Empty, StringComparison.OrdinalIgnoreCase));
+        if (_colors != null)
+        {
+            _colors = _colors
+                .Select(c => new { Color = c, Hsv = ColorToHsv(c.HexValue) })
+                .OrderBy(x => x.Hsv.h)
+                .ThenBy(x => x.Hsv.s)
+                .ThenBy(x => x.Hsv.v)
+                .Select(x => x.Color)
+                .ToList();
+        }
     }
 
     protected override async Task OnParametersSetAsync()
     {
-        if (ClickedPixelData == null || (PrevPixelId.HasValue && PrevPixelId.Value == ClickedPixelData.Id))
+        if (ClickedPixelData == null || !ClickedPixel.HasValue)
+        {
+            PrevPixelId = null;
+            _prevClickedPixel = null;
+            _pixelChangeHistory = null;
+            return;
+        }
+
+        if (ClickedPixelData.Id == null)
+        {
+            // Pixel has never been changed before - clear stale history from previously selected pixels.
+            PrevPixelId = null;
+            _prevClickedPixel = ClickedPixel;
+            _pixelChangeHistory = null;
+            return;
+        }
+
+        var samePixel =
+            _prevClickedPixel.HasValue &&
+            _prevClickedPixel.Value.X == ClickedPixel.Value.X &&
+            _prevClickedPixel.Value.Y == ClickedPixel.Value.Y;
+
+        if (samePixel && PrevPixelId.HasValue && PrevPixelId.Value == ClickedPixelData.Id.Value)
         {
             return;
         }
 
-        _colorDropdownOpen = false;
-        if (ClickedPixelData?.Id == null)
-        {
-            return;
-        }
-
-        _pixelChangeHistory = await ApiClient.GetHistoryAsync(ClickedPixelData.Id.Value);
-        PrevPixelId = ClickedPixelData.Id;
+        _prevClickedPixel = ClickedPixel;
+        PrevPixelId = ClickedPixelData.Id.Value;
+        _pixelChangeHistory = await ApiClient.GetHistoryAsync(ClickedPixelData.Id.Value, useCache: true);
     }
 
     public async Task UpdatePixelHistory()
     {
         if (ClickedPixelData?.Id != null)
         {
-            _pixelChangeHistory = await ApiClient.GetHistoryAsync(ClickedPixelData.Id.Value);
+            _pixelChangeHistory = await ApiClient.GetHistoryAsync(ClickedPixelData.Id.Value, useCache: false);
             StateHasChanged();
         }
-    }
-
-    private void ToggleColorDropdown()
-    {
-        _colorDropdownOpen = !_colorDropdownOpen;
     }
 
     private void SelectColor(ColorDto c)
     {
         _selectedColorId = c.Id;
-        _colorDropdownOpen = false;
+    }
+
+    private (double h, double s, double v) ColorToHsv(string hex)
+    {
+        if (string.IsNullOrEmpty(hex)) return (0, 0, 0);
+        hex = hex.TrimStart('#');
+        if (hex.Length != 6) return (0, 0, 0);
+
+        try
+        {
+            int r = int.Parse(hex.Substring(0, 2), System.Globalization.NumberStyles.HexNumber);
+            int g = int.Parse(hex.Substring(2, 2), System.Globalization.NumberStyles.HexNumber);
+            int b = int.Parse(hex.Substring(4, 2), System.Globalization.NumberStyles.HexNumber);
+
+            double doubleR = r / 255.0;
+            double doubleG = g / 255.0;
+            double doubleB = b / 255.0;
+
+            double max = Math.Max(doubleR, Math.Max(doubleG, doubleB));
+            double min = Math.Min(doubleR, Math.Min(doubleG, doubleB));
+            double delta = max - min;
+
+            double h = 0;
+            if (delta > 0)
+            {
+                if (Math.Abs(max - doubleR) < 0.0001) h = 60 * (((doubleG - doubleB) / delta) % 6);
+                else if (Math.Abs(max - doubleG) < 0.0001) h = 60 * (((doubleB - doubleR) / delta) + 2);
+                else if (Math.Abs(max - doubleB) < 0.0001) h = 60 * (((doubleR - doubleG) / delta) + 4);
+            }
+            if (h < 0) h += 360;
+
+            double s = max == 0 ? 0 : delta / max;
+            double v = max;
+
+            return (h, s, v);
+        }
+        catch
+        {
+            return (0, 0, 0);
+        }
     }
 
     private async Task PaintClick()
@@ -192,7 +254,7 @@
             });
             return;
         }
-        
+
         if(SelectedColor == null || !ClickedPixel.HasValue)
         {
             await NotifyAsync( new CustomNotification
@@ -216,8 +278,12 @@
                 Message = $"Painted pixel at ({newPixel.X}, {newPixel.Y}) with color {SelectedColor.Name ?? SelectedColor.HexValue}.",
                 Type = NotificationType.Success,
             });
-            if(ClickedPixelData != null && ClickedPixelData.Id!= null)
-                _pixelChangeHistory = await ApiClient.GetHistoryAsync(ClickedPixelData.Id.Value);
+            if (newPixel.Id.HasValue)
+            {
+                PrevPixelId = newPixel.Id.Value;
+                _prevClickedPixel = ClickedPixel;
+                _pixelChangeHistory = await ApiClient.GetHistoryAsync(newPixel.Id.Value, useCache: false);
+            }
         }
         catch (Exception ex)
         {

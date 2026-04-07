@@ -1,5 +1,5 @@
 services:
-  db:
+  linteum-db:
     image: postgres:16
     container_name: ${DB_CONTAINER_NAME}
     environment:
@@ -9,7 +9,7 @@ services:
     ports:
       - "${DB_HOST_PORT}:${DB_CONTAINER_PORT}"
     networks:
-      - linteum_dev
+      - linteum_prod1
     volumes:
       - db_data:/var/lib/postgresql/data
     healthcheck:
@@ -18,7 +18,7 @@ services:
       timeout: 5s
       retries: 10
 
-  api:
+  linteum-api:
     build:
       context: .
       dockerfile: Linteum.Api/Dockerfile
@@ -31,40 +31,62 @@ services:
       - MASTER_USER=${MASTER_USER}
       - MASTER_EMAIL=${MASTER_EMAIL}
       - PASSWORD_SALT=${PASSWORD_SALT}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
+      - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
       - ASPNETCORE_URLS=http://*:${API_CONTAINER_PORT}
       - CorsOrigins__0=http://localhost:${BLAZOR_HOST_PORT}
       - CorsOrigins__1=http://${BLAZOR_CONTAINER_NAME}:${BLAZOR_CONTAINER_PORT}
     depends_on:
-      db:
+      linteum-db:
         condition: service_healthy
     networks:
-      - linteum_dev
+      - linteum_prod1
     pull_policy: build
 
-  blazor:
+  linteum-blazor:
     build:
       context: .
       dockerfile: Linteum.BlazorApp/Dockerfile
     container_name: ${BLAZOR_CONTAINER_NAME}
     environment:
       - PASSWORD_SALT=${PASSWORD_SALT}
-      - API_CONTAINER_NAME=api
+      - API_CONTAINER_NAME=${API_CONTAINER_NAME}
       - API_CONTAINER_PORT=${API_CONTAINER_PORT}
+      - VERSION=${VERSION}
+      - HUB_LINK=${HUB_LINK}
+      - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - ASPNETCORE_URLS=http://*:${BLAZOR_CONTAINER_PORT}
       - ApiBaseUrl=http://${API_CONTAINER_NAME}:${API_CONTAINER_PORT}
     ports:
       - "${BLAZOR_HOST_PORT}:${BLAZOR_CONTAINER_PORT}"
     depends_on:
-      - api
+      - linteum-api
     networks:
-      - linteum_dev
+      - linteum_prod1
     pull_policy: build
     volumes:
-      - "./keys:/app/keys"
+      - blazor_keys:/app/keys
+
+  linteum-bots:
+    build:
+      context: .
+      dockerfile: Linteum.Bots/Dockerfile
+    container_name: linteum-bots
+    environment:
+      - BOT_API_URL=http://${API_CONTAINER_NAME}:${API_CONTAINER_PORT}
+      - BOT_TIMEOUT_MINUTES=10
+    depends_on:
+      - linteum-api
+    networks:
+      - linteum_prod1
+    profiles:
+      - bots
+    pull_policy: build
 
 networks:
-  linteum_dev:
+  linteum_prod1:
     driver: bridge
 
 volumes:
   db_data:
+  blazor_keys:
