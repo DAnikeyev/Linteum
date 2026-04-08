@@ -1,10 +1,45 @@
+.canvas-page-container {
+    position: relative;
+    width: 100%;
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.canvas-loading-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 20;
+    pointer-events: none;
+}
+
 .canvas-shell {
     display: flex;
-    align-items: flex-start;
+    align-items: stretch;
     gap: 0;
     padding: 0;
     width: 100%;
+    flex: 1 1 auto;
+    min-height: 0;
     overflow: hidden;
+    opacity: 0;
+    transition: opacity 0.18s ease-in;
+}
+
+.canvas-shell.ready {
+    opacity: 1;
+}
+
+.canvas-stage {
+    display: flex;
+    flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    position: relative;
 }
 
 .canvas-viewport {
@@ -12,6 +47,10 @@
     background: transparent;
     box-shadow: none;
     flex: 1 1 auto;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    position: relative;
 }
 
 .canvas-renderer {
@@ -22,16 +61,23 @@
 }
 
 .canvas-coordinates {
-    margin: 0.55rem;
-    padding: 0.24rem 0.5rem;
-    border-radius: 9px;
-    border: 1px solid rgba(201, 95, 27, 0.38);
-    background: rgba(255, 242, 230, 0.88);
-    color: #8a360f;
-    box-shadow: 0 8px 20px rgba(149, 71, 20, 0.2);
+    display: none;
+    position: fixed;
+    bottom: 12px;
+    z-index: 11000;
+    padding: 0.34rem 0.8rem;
+    border-radius: 8px;
+    border: 1px solid rgba(45, 114, 221, 0.4);
+    background: rgba(244, 249, 255, 0.95);
+    color: #1e4f9d;
+    box-shadow: 0 4px 14px rgba(29, 83, 169, 0.18);
     font-family: "JetBrains Mono", "Consolas", monospace;
-    font-size: 0.72rem;
+    font-size: 0.78rem;
     font-weight: 700;
+    backdrop-filter: blur(6px);
+    pointer-events: none;
+    white-space: nowrap;
+    transition: left .24s ease;
 }
 
 @media (max-width: 1100px) {
@@ -48,11 +94,23 @@
         overflow: hidden;
     }
 
+    .canvas-stage {
+        width: 100%;
+    }
+
     .canvas-viewport {
-        flex: 0 0 auto;
+        flex: 1 1 auto;
         max-width: 100%;
         border-radius: 8px;
         overflow: hidden;
+    }
+
+    .canvas-coordinates {
+        bottom: auto;
+        top: 8px;
+        left: 8px !important;
+        font-size: 0.68rem;
+        padding: 0.24rem 0.58rem;
     }
 }
 

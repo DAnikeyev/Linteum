@@ -372,6 +372,38 @@ h1:focus {
     }
 }
 
+/* ── Loading spinner ── */
+.loading-spinner-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem;
+    width: 100%;
+}
+
+.loading-spinner-wrap.compact {
+    padding: 0.75rem;
+}
+
+.loading-spinner {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    border: 3px solid var(--line-soft);
+    border-top-color: var(--accent-blue-600);
+    animation: spinnerRotate 0.7s linear infinite;
+}
+
+.loading-spinner-wrap.compact .loading-spinner {
+    width: 20px;
+    height: 20px;
+    border-width: 2.5px;
+}
+
+@keyframes spinnerRotate {
+    to { transform: rotate(360deg); }
+}
+
 @media (max-width: 900px) {
     html {
         font-size: 15px;

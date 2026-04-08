@@ -15,11 +15,11 @@
 window.canvasViewport = {
     _instance: null,
 
-    init: function (dotNetRef, viewportEl, rendererEl, canvasWidth, canvasHeight, vpWidth, vpHeight) {
+    init: function (dotNetRef, viewportEl, rendererEl, coordsEl, canvasWidth, canvasHeight, vpWidth, vpHeight) {
         if (this._instance) {
             this._instance.destroy();
         }
-        this._instance = new CanvasViewportController(dotNetRef, viewportEl, rendererEl, canvasWidth, canvasHeight, vpWidth, vpHeight);
+        this._instance = new CanvasViewportController(dotNetRef, viewportEl, rendererEl, coordsEl, canvasWidth, canvasHeight, vpWidth, vpHeight);
     },
 
     fitCanvas: function (vpWidth, vpHeight) {
@@ -34,7 +34,7 @@ window.canvasViewport = {
     }
 };
 
-function CanvasViewportController(dotNetRef, viewportEl, rendererEl, cw, ch, vpW, vpH) {
+function CanvasViewportController(dotNetRef, viewportEl, rendererEl, coordsEl, cw, ch, vpW, vpH) {
     var self = this;
 
     self.dotNet = dotNetRef;
@@ -101,13 +101,8 @@ function CanvasViewportController(dotNetRef, viewportEl, rendererEl, cw, ch, vpW
         'position:absolute;box-shadow:inset 0 0 0 2px var(--accent-3);pointer-events:none;z-index:6;display:none;will-change:transform;';
     viewportEl.appendChild(self.clickEl);
 
-    // Coords display
-    self.coordsEl = document.createElement('div');
-    self.coordsEl.style.cssText =
-        "position:absolute;bottom:6px;left:6px;padding:2px 8px;font-size:12px;z-index:11;" +
-        "border:1px solid rgba(45,114,221,0.26);box-shadow:0 10px 22px rgba(29,83,169,0.12);" +
-        "background:rgba(255,255,255,0.85);border-radius:4px;pointer-events:none;display:none;";
-    viewportEl.appendChild(self.coordsEl);
+    // Coords display (Blazor-owned element, passed in)
+    self.coordsEl = coordsEl;
 
     // ── Helper methods ──
 
@@ -474,6 +469,6 @@ CanvasViewportController.prototype.destroy = function () {
     }
     if (this.hoverEl) this.hoverEl.remove();
     if (this.clickEl) this.clickEl.remove();
-    if (this.coordsEl) this.coordsEl.remove();
+    if (this.coordsEl) { this.coordsEl.style.display = 'none'; this.coordsEl.textContent = ''; }
 };
 

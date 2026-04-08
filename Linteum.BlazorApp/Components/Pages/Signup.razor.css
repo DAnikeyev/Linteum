@@ -9,9 +9,19 @@
     overflow: hidden;
 
     background:
-        radial-gradient(circle at 12% 18%, rgba(245, 150, 67, 0.36), transparent 42%),
-        radial-gradient(circle at 84% 22%, rgba(75, 139, 234, 0.32), transparent 44%),
-        linear-gradient(140deg, #fff7ef 0%, #f4f9ff 45%, #e9f2ff 100%);
+        radial-gradient(circle at 12% 18%, rgba(245, 150, 67, 0.6), transparent 45%),
+        radial-gradient(circle at 84% 22%, rgba(75, 139, 234, 0.55), transparent 45%),
+        radial-gradient(circle at 58% 80%, rgba(110, 184, 157, 0.45), transparent 50%),
+        radial-gradient(circle at 40% 40%, rgba(239, 122, 47, 0.2), transparent 40%),
+        linear-gradient(130deg, #fff0e0 0%, #e0f0ff 50%, #d8eaff 100%);
+    background-size: 200% 200%;
+    animation: gradientMove 12s ease infinite;
+}
+
+@keyframes gradientMove {
+    0% { background-position: 0 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0 50%; }
 }
 
 .background::before,
@@ -19,26 +29,26 @@
     content: "";
     position: absolute;
     border-radius: 50%;
-    filter: blur(70px);
-    animation: floatBlur 14s ease-in-out infinite;
+    filter: blur(60px);
+    animation: floatBlur 5s ease-in-out infinite;
     pointer-events: none;
 }
 
 .background::before {
-    width: 340px;
-    height: 340px;
+    width: 380px;
+    height: 380px;
     left: -120px;
     top: 52%;
-    background: rgba(239, 122, 47, 0.2);
+    background: rgba(239, 122, 47, 0.35);
 }
 
 .background::after {
-    width: 360px;
-    height: 360px;
+    width: 420px;
+    height: 420px;
     right: -130px;
     top: -70px;
-    background: rgba(45, 114, 221, 0.2);
-    animation-delay: -4s;
+    background: rgba(45, 114, 221, 0.35);
+    animation-delay: -2.5s;
 }
 
 .brand-title {
@@ -203,10 +213,13 @@
 @keyframes floatBlur {
     0%,
     100% {
-        transform: translateY(0);
+        transform: translate(0, 0) scale(1);
     }
-    50% {
-        transform: translateY(14px);
+    33% {
+        transform: translate(20px, -30px) scale(1.1);
+    }
+    66% {
+        transform: translate(-15px, 20px) scale(0.9);
     }
 }
 
