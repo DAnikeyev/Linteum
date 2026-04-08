@@ -1,8 +1,12 @@
 .main-content {
     background: linear-gradient(110deg, rgba(247, 160, 84, 0.08) 0%, rgba(249, 241, 228, 0.5) 38%, rgba(228, 239, 255, 0.56) 72%, rgba(77, 142, 239, 0.08) 100%);
     min-height: 100vh;
+    min-height: 100dvh;
     padding: 1.25rem 1.1rem 1.1rem;
     position: relative;
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
     transition: margin-left .24s ease;
 }
 

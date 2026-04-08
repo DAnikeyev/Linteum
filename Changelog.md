@@ -9,6 +9,9 @@
 ## Canvas and Rendering
 - Introduced a performance-optimized Javascript-based canvas renderer for smooth panning and zooming.
 - Added client-side GPU-accelerated viewport scaling and translation to minimize SignalR round-trips.
+- Made canvas image loading fully awaitable to prevent white flash on initial render.
+- Moved coordinates display to a Blazor-managed fixed-position element for smoother sidebar transitions.
+- Consolidated JS layout measurements into single interop calls (`getLayoutMetrics`, `getElementSize`) to reduce round-trips.
 - Added canvas search functionality by name (`GET /canvases/search`).
 - Added support for user-owned canvases with private/public visibility settings.
 - Added canvas image export endpoint (`GET /canvases/image/{name}`) to download snapshots.
@@ -22,11 +25,18 @@
 ## UI and UX Improvements
 - Rebuilt Blazor application layout with a responsive sidebar and unified navigation.
 - Added `PixelManager` component for detailed pixel inspection and history viewing.
+- Replaced plain-text loading indicators with CSS spinner animations across canvas, colors, and sidebar.
+- Added fade-in reveal animation for the canvas shell to eliminate layout flash during initialization.
+- Refactored canvas page to use flexible container layout for more robust viewport sizing.
+- Enhanced Signup page with animated gradient background and dynamic floating blur effects.
+- Updated base layout to use `dvh` units and flexbox for correct full-height rendering on mobile.
 - Implemented responsive design for mobile devices and varied screen sizes.
 - Refreshed styling for Login, Signup, and Settings pages.
 
 ## Bots and Tooling
 - Introduced bot framework with `CleanerBot`, `MunchBot`, and artist bots (`VanGogh`, `VanGogh2`).
+- Added `XeroxBot` for reproducing images onto canvases with multi-threaded parallel pixel placement (16 workers, channel-based queue).
+- Added `Inception.jpg` and `Earth.jpg` reference images for bot use.
 - Updated Docker configuration for multi-service deployment with environment variable support.
 - Added database migration and seeding tools for automated environment setup.
 

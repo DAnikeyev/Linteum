@@ -28,21 +28,25 @@ window.canvasRenderer = {
     },
 
     loadImage: function (imageBytes) {
-        if (!this.ctx) return;
+        if (!this.ctx) return Promise.resolve();
 
-        // Create a Blob from the byte array (assumed to be PNG/JPG data)
+        const ctx = this.ctx;
         const blob = new Blob([imageBytes]);
         const url = URL.createObjectURL(blob);
         const img = new Image();
 
-        img.onload = () => {
-            // Draw the image onto the canvas at 0,0
-            this.ctx.drawImage(img, 0, 0);
-            // Cleanup memory
-            URL.revokeObjectURL(url);
-        };
-
-        img.src = url;
+        return new Promise(function (resolve) {
+            img.onload = function () {
+                ctx.drawImage(img, 0, 0);
+                URL.revokeObjectURL(url);
+                resolve();
+            };
+            img.onerror = function () {
+                URL.revokeObjectURL(url);
+                resolve();
+            };
+            img.src = url;
+        });
     },
 
     renderBatch: function (batch) {

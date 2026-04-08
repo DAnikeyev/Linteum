@@ -302,7 +302,7 @@
     <div class="sidebar-content" style="display:@(_isCollapsed ? "none" : "block");">
         @if (_isLoading)
         {
-            <div class="p-3">Loading...</div>
+            <div class="loading-spinner-wrap compact"><div class="loading-spinner"></div></div>
         }
         else if (_canvases == null || _canvases.Count == 0)
         {

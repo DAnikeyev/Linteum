@@ -18,41 +18,47 @@
 @using Microsoft.Extensions.Hosting
 @inject IHostEnvironment Environment
 
-@if (_canvas == null)
-{
-    <p><em>Loading...</em></p>
-}
-else
-{
-    <div class="canvas-shell">
-        <div @ref="_viewportRef" class="canvas-viewport"
-             style="width:@(ViewportWidth)px; height:@(ViewportHeight)px; overflow:hidden; position:relative;">
+<div class="canvas-page-container">
+    @if (!_canvasReady)
+    {
+        <div class="canvas-loading-overlay">
+            <div class="loading-spinner"></div>
+        </div>
+    }
 
-            <div @ref="_rendererRef" class="canvas-renderer"
-                 style="position: absolute; background:#ffffff;">
+    @if (_canvas != null)
+    {
+        <div class="canvas-shell @(_canvasReady ? "ready" : "")">
+            <div @ref="_viewportHostRef" class="canvas-stage">
+                <div @ref="_viewportRef" class="canvas-viewport"
+                     style="width:@(ViewportWidth)px; height:@(ViewportHeight)px;">
 
-                <!-- REPLACED IMG WITH CANVAS -->
-                <canvas @ref="_canvasRef"
-                        width="@_canvas.Width"
-                        height="@_canvas.Height"
-                        style="width:100%; height:100%; display:block; pointer-events:none; image-rendering:pixelated;">
-                </canvas>
-                
-                <!-- OVERLAY CANVAS -->
-                <canvas @ref="_overlayRef"
-                        width="@_canvas.Width"
-                        height="@_canvas.Height"
-                        style="width:100%; height:100%; display:block; pointer-events:none; image-rendering:pixelated; position:absolute; top:0; left:0;">
-                </canvas>
+                    <div @ref="_rendererRef" class="canvas-renderer"
+                         style="position: absolute; background:#ffffff;">
 
+                        <canvas @ref="_canvasRef"
+                                width="@_canvas.Width"
+                                height="@_canvas.Height"
+                                style="width:100%; height:100%; display:block; pointer-events:none; image-rendering:pixelated;">
+                        </canvas>
+
+                        <canvas @ref="_overlayRef"
+                                width="@_canvas.Width"
+                                height="@_canvas.Height"
+                                style="width:100%; height:100%; display:block; pointer-events:none; image-rendering:pixelated; position:absolute; top:0; left:0;">
+                        </canvas>
+
+                    </div>
+                </div>
             </div>
 
-            <!-- JS viewport controller creates hover/click/coords/event-layer elements client-side -->
+            <PixelManager @ref="_pixelManager" Canvas="@_canvas" ClickedPixel="@_clickedPixel" ClickedPixelData="@_clickedPixelData" CanvasRenderer="@_renderer" OnlineUsers="@_onlineUsers" />
         </div>
 
-        <PixelManager @ref="_pixelManager" Canvas="@_canvas" ClickedPixel="@_clickedPixel" ClickedPixelData="@_clickedPixelData" CanvasRenderer="@_renderer" OnlineUsers="@_onlineUsers" />
-    </div>
-}
+        <div @ref="_coordsDisplayRef" class="canvas-coordinates"
+             style="left: calc(@(SidebarMargin) + 12px);"></div>
+    }
+</div>
 
 @code {
     [Parameter]
@@ -79,8 +85,10 @@ else
     private CanvasRenderer? _renderer;
 
     // Viewport element refs (passed to JS controller)
+    private ElementReference _viewportHostRef;
     private ElementReference _viewportRef;
     private ElementReference _rendererRef;
+    private ElementReference _coordsDisplayRef;
 
     // Viewport dimensions
     private double ViewportWidth { get; set; } = 900;
@@ -88,12 +96,14 @@ else
 
     // State tracking
     private bool _hasRendered = false;
+    private bool _canvasReady = false;
     private string _lastSidebarMargin = "300px";
     private List<ColorDto>? _colors;
     private DotNetObjectReference<CanvasPage>? _objRef;
     private IJSObjectReference? _resizeListener;
     private int _canvasLoadVersion;
     private bool _jsViewportInitialized;
+    private bool _pendingViewportRefresh = true;
 
     // PixelManager reference
     private PixelManager? _pixelManager;
@@ -202,7 +212,7 @@ else
         {
             _hasRendered = true;
             _lastSidebarMargin = SidebarMargin;
-            await CalculateViewportDimensions();
+            _pendingViewportRefresh = true;
 
             _objRef = DotNetObjectReference.Create(this);
             _resizeListener = await JSRuntime.InvokeAsync<IJSObjectReference>("canvasHelpers.registerResizeListener", _objRef);
@@ -210,11 +220,34 @@ else
 
         if (_canvas != null && _renderer == null)
         {
+            // 1. Calculate the real viewport from the rendered host area first
+            await CalculateViewportDimensions();
+            _pendingViewportRefresh = false;
+            StateHasChanged();
+
+            // 2. Initialize the renderer and load the image (awaitable – no white flash)
             _renderer = new CanvasRenderer(JSRuntime);
             await _renderer.InitializeAsync(_canvasRef, _overlayRef);
             await LoadCanvasImage();
 
+            // 3. Initialize JS viewport (fit + center) now that dimensions are correct
             await InitJsViewport();
+
+            // 3.5. Request one more post-init fit after the shell is visible.
+            // Some deployed layouts settle after first paint, which can skew the first measurement.
+            _pendingViewportRefresh = true;
+
+            // 4. Reveal the canvas shell with a smooth fade-in
+            _canvasReady = true;
+            StateHasChanged();
+            return;
+        }
+
+        if (_pendingViewportRefresh && _canvas != null && _jsViewportInitialized)
+        {
+            await CalculateViewportDimensions();
+            _pendingViewportRefresh = false;
+            await JSRuntime.InvokeVoidAsync("canvasViewport.fitCanvas", ViewportWidth, ViewportHeight);
             StateHasChanged();
         }
     }
@@ -224,7 +257,7 @@ else
         if (_canvas == null || _objRef == null) return;
         _jsViewportInitialized = true;
         await JSRuntime.InvokeVoidAsync("canvasViewport.init",
-            _objRef, _viewportRef, _rendererRef,
+            _objRef, _viewportRef, _rendererRef, _coordsDisplayRef,
             _canvas.Width, _canvas.Height,
             ViewportWidth, ViewportHeight);
     }
@@ -264,31 +297,24 @@ else
     {
         try
         {
-            var windowWidth = await JSRuntime.InvokeAsync<double>("eval", "window.innerWidth");
-            var windowHeight = await JSRuntime.InvokeAsync<double>("eval", "window.visualViewport ? window.visualViewport.height : window.innerHeight");
+            var hostSize = await JSRuntime.InvokeAsync<ElementSize>("canvasHelpers.getElementSize", _viewportHostRef);
+            if (hostSize.Width > 0 && hostSize.Height > 0)
+            {
+                ViewportWidth = Math.Max(100, hostSize.Width);
+                ViewportHeight = Math.Max(100, hostSize.Height);
+                return;
+            }
 
-            var mainHorizontalPadding = await JSRuntime.InvokeAsync<double>("eval", @"(() => {
-                const main = document.querySelector('main');
-                if (!main) return 0;
-                const styles = getComputedStyle(main);
-                return (parseFloat(styles.paddingLeft) || 0) + (parseFloat(styles.paddingRight) || 0);
-            })()");
-            var mainVerticalPadding = await JSRuntime.InvokeAsync<double>("eval", @"(() => {
-                const main = document.querySelector('main');
-                if (!main) return 0;
-                const styles = getComputedStyle(main);
-                return (parseFloat(styles.paddingTop) || 0) + (parseFloat(styles.paddingBottom) || 0);
-            })()");
+            var m = await JSRuntime.InvokeAsync<LayoutMetrics>("canvasHelpers.getLayoutMetrics");
 
             const double safetyPadding = 2;
-            var isMobile = windowWidth <= 768;
+            var isMobile = m.WindowWidth <= 768;
 
             if (isMobile)
             {
-                // PixelManager is a fixed bottom-sheet; reserve space for its collapsed header
                 const double mobileBottomSheetHeader = 56;
-                ViewportWidth = Math.Max(100, windowWidth - mainHorizontalPadding - safetyPadding);
-                ViewportHeight = Math.Max(100, windowHeight - mainVerticalPadding - mobileBottomSheetHeader - safetyPadding);
+                ViewportWidth = Math.Max(100, m.WindowWidth - m.MainHPad - safetyPadding);
+                ViewportHeight = Math.Max(100, m.WindowHeight - m.MainVPad - mobileBottomSheetHeader - safetyPadding);
             }
             else
             {
@@ -298,10 +324,8 @@ else
                     sidebarWidth = marginVal;
                 }
 
-                var pixelManagerWidth = await JSRuntime.InvokeAsync<double>("eval", "document.querySelector('.pixelmanager') ? document.querySelector('.pixelmanager').offsetWidth : 300");
-
-                ViewportWidth = Math.Max(100, windowWidth - sidebarWidth - pixelManagerWidth - mainHorizontalPadding - safetyPadding);
-                ViewportHeight = Math.Max(100, windowHeight - mainVerticalPadding - safetyPadding);
+                ViewportWidth = Math.Max(100, m.WindowWidth - sidebarWidth - m.PixelManagerWidth - m.MainHPad - safetyPadding);
+                ViewportHeight = Math.Max(100, m.WindowHeight - m.MainVPad - safetyPadding);
             }
         }
         catch (Exception ex)
@@ -310,6 +334,8 @@ else
         }
     }
 
+    private record ElementSize(double Width, double Height);
+    private record LayoutMetrics(double WindowWidth, double WindowHeight, double MainHPad, double MainVPad, double PixelManagerWidth);
 
     protected override async Task OnParametersSetAsync()
     {
@@ -319,7 +345,7 @@ else
         if (_hasRendered && _lastSidebarMargin != SidebarMargin)
         {
             _lastSidebarMargin = SidebarMargin;
-            await CalculateViewportDimensions();
+            _pendingViewportRefresh = true;
         }
         
         if (_hubConnection?.State == HubConnectionState.Connected && _connectedGroup != requestedCanvasName)
@@ -335,8 +361,10 @@ else
         if (_loadedCanvasName == requestedCanvasName && _canvas != null)
             return;
 
+        _canvasReady = false;
         _canvas = null;
         _loadedCanvasName = requestedCanvasName;
+        _pendingViewportRefresh = true;
 
         if (_renderer != null)
         {
@@ -415,6 +443,8 @@ else
 
     public async ValueTask DisposeAsync()
     {
+        _canvasReady = false;
+
         try { await JSRuntime.InvokeVoidAsync("canvasViewport.dispose"); } catch { }
 
         if (_resizeListener != null)
