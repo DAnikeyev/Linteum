@@ -1,6 +1,6 @@
 @page "/colors"
-@layout Layout.BaseLayout
-@using Linteum.Shared.DTO
+@rendermode InteractiveAuto
+@layout BaseLayout
 @inject MyApiClient ApiClient
 
 <h2>Colors</h2>
@@ -43,3 +43,4 @@ else
         _colors.Sort((c1, c2) => string.Compare(c1.Name, c2.Name, StringComparison.OrdinalIgnoreCase));
     }
 }
+

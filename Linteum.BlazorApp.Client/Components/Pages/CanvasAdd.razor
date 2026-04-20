@@ -1,10 +1,9 @@
 @page "/canvas_add"
-@using Linteum.BlazorApp.Components.Layout
-@using Linteum.BlazorApp.Components.Notification
-@using Linteum.Shared.DTO
-@layout Layout.BaseLayout
+@rendermode InteractiveAuto
+@layout BaseLayout
 @inject MyApiClient ApiClient
 @inject NotificationService NotificationService
+@inject SidebarStateService SidebarState
 
 <div class="settings-container">
     <div class="settings-header">
@@ -34,14 +33,14 @@
             <div class="mb-4">
                 <label for="canvasWidthInput" class="form-label">Canvas Width (pixels)</label>
                 <div class="action-row">
-                    <input type="number" id="canvasWidthInput" class="form-control fixed-width me-2" @bind="_canvasWidth" />
+                    <input type="number" id="canvasWidthInput" class="form-control fixed-width me-2" @bind="_canvasWidth" autocomplete="off" />
                 </div>
             </div>
 
             <div class="mb-4">
                 <label for="canvasHeightInput" class="form-label">Canvas Height (pixels)</label>
                 <div class="action-row">
-                    <input type="number" id="canvasHeightInput" class="form-control fixed-width me-2" @bind="_canvasHeight" />
+                    <input type="number" id="canvasHeightInput" class="form-control fixed-width me-2" @bind="_canvasHeight" autocomplete="off" />
                 </div>
             </div>
         </div>
@@ -56,8 +55,6 @@
 </div>
 
 @code {
-    [CascadingParameter]
-    private CanvasSidebar? Sidebar { get; set; }
     private string? _canvasName;
     private string? _canvasPassword;
     private int? _canvasWidth;
@@ -86,8 +83,7 @@
                 _canvasPassword = null;
                 _canvasWidth = null;
                 _canvasHeight = null;
-                if (Sidebar != null)
-                    await Sidebar.RefreshCanvases();
+                await SidebarState.NotifyCanvasListChangedAsync();
             }
             catch (Exception ex)
             {

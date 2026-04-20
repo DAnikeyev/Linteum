@@ -1,7 +1,7 @@
 using System.Text;
 using Linteum.Shared;
 
-namespace Linteum.BlazorApp.ExtensionMethods;
+namespace Linteum.BlazorApp.Client.ExtensionMethods;
 
 public static class HttpRequest
 {
@@ -23,3 +23,4 @@ public static class HttpRequest
         request.Content = new StringContent(json, Encoding.UTF8, "application/json");
     }
 }
+

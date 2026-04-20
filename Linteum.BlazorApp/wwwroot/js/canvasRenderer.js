@@ -5,8 +5,21 @@ window.canvasRenderer = {
     height: 0,
     ripples: [],
     animationFrameId: null,
+    sessionId: 0,
+    latestImageRequestId: 0,
 
-    init: function (canvasElement, overlayElement) {
+    clearSurfaces: function () {
+        if (this.ctx) {
+            this.ctx.clearRect(0, 0, this.width, this.height);
+            this.ctx.fillStyle = '#ffffff';
+            this.ctx.fillRect(0, 0, this.width, this.height);
+        }
+        if (this.overlayCtx) {
+            this.overlayCtx.clearRect(0, 0, this.width, this.height);
+        }
+    },
+
+    init: function (canvasElement, overlayElement, sessionId) {
         this.ctx = canvasElement.getContext('2d');
         // Ensure pixels stay sharp when zooming in (pixel art style)
         this.ctx.imageSmoothingEnabled = false;
@@ -20,33 +33,65 @@ window.canvasRenderer = {
         this.width = canvasElement.width;
         this.height = canvasElement.height;
         this.ripples = [];
+        this.sessionId = sessionId;
+        this.latestImageRequestId = 0;
         
         if (this.animationFrameId) {
             cancelAnimationFrame(this.animationFrameId);
             this.animationFrameId = null;
         }
+
+        this.clearSurfaces();
     },
 
-    loadImage: function (imageBytes) {
-        if (!this.ctx) return Promise.resolve();
+    loadImage: function (imageBytes, sessionId, requestId) {
+        if (!this.ctx) return Promise.resolve(false);
+
+        this.latestImageRequestId = requestId;
 
         const ctx = this.ctx;
+        const renderer = this;
         const blob = new Blob([imageBytes]);
         const url = URL.createObjectURL(blob);
         const img = new Image();
 
         return new Promise(function (resolve) {
             img.onload = function () {
-                ctx.drawImage(img, 0, 0);
+                const isStale = !renderer.ctx || renderer.sessionId !== sessionId || renderer.latestImageRequestId !== requestId;
+                if (!isStale) {
+                    renderer.clearSurfaces();
+                    ctx.drawImage(img, 0, 0);
+                }
                 URL.revokeObjectURL(url);
-                resolve();
+                resolve(!isStale);
             };
             img.onerror = function () {
                 URL.revokeObjectURL(url);
-                resolve();
+                resolve(false);
             };
             img.src = url;
         });
+    },
+
+    dispose: function (sessionId) {
+        if (this.sessionId !== sessionId) {
+            return;
+        }
+
+        this.latestImageRequestId++;
+        this.clearSurfaces();
+        this.ripples = [];
+
+        if (this.animationFrameId) {
+            cancelAnimationFrame(this.animationFrameId);
+            this.animationFrameId = null;
+        }
+
+        this.ctx = null;
+        this.overlayCtx = null;
+        this.width = 0;
+        this.height = 0;
+        this.sessionId = 0;
     },
 
     renderBatch: function (batch) {

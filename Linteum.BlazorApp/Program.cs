@@ -1,8 +1,7 @@
-using Linteum.BlazorApp;
+using Linteum.BlazorApp.Client;
+using Linteum.BlazorApp.Client.Components.Notification;
 using Linteum.BlazorApp.Components;
-using Linteum.BlazorApp.Components.Notification;
 using Linteum.Shared;
-using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage;
 using Microsoft.AspNetCore.DataProtection;
 using NLog;
 using NLog.Web;
@@ -17,36 +16,31 @@ try
     var version = builder.Configuration["VERSION"] ?? Environment.GetEnvironmentVariable("VERSION") ?? "dev";
     logger.Info("Application version: {Version}", version);
 
-    // Configure NLog
     builder.Logging.ClearProviders();
     builder.Host.UseNLog();
 
-    builder.Services.AddScoped<ProtectedLocalStorage>();
-
 #if DEBUG
-    var apiContainerName = "localhost"; 
+    var apiContainerName = "localhost";
     var apiContainerPort = "5182";
 #else
     var apiContainerName = Environment.GetEnvironmentVariable("API_CONTAINER_NAME") ?? "api";
     var apiContainerPort = Environment.GetEnvironmentVariable("API_CONTAINER_PORT") ?? "8080";
 #endif
     var apiBaseAddress = $"http://{apiContainerName}:{apiContainerPort}";
-
     logger.Info("API Base Address configured: {ApiBaseAddress}", apiBaseAddress);
 
-    builder.Services.AddHttpClient("ApiClient", client => {
+    builder.Services.AddHttpClient("ApiClient", client =>
+    {
         client.BaseAddress = new Uri(apiBaseAddress);
     }).ConfigurePrimaryHttpMessageHandler(() =>
     {
         var handler = new HttpClientHandler();
         if (builder.Environment.IsDevelopment())
-        {
             handler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
-        }
         return handler;
     });
     logger.Info("HttpClient 'ApiClient' configured");
-    
+
     builder.Services.AddSingleton(new Config
     {
         GoogleClientId = Environment.GetEnvironmentVariable("GOOGLE_CLIENT_ID") ?? string.Empty,
@@ -57,14 +51,16 @@ try
         .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(builder.Environment.ContentRootPath, "keys")))
         .SetApplicationName("LinteumApp");
     builder.Services.AddScoped<LocalStorageService>();
+    builder.Services.AddScoped<SidebarStateService>();
     builder.Services.AddScoped<NotificationService>();
-    
-    logger.Info("Core services (DataProtection, LocalStorage, Notification) configured");
+
+    logger.Info("Core services configured");
 
     builder.Services.AddRazorComponents()
-        .AddInteractiveServerComponents();
-    
-    logger.Info("Razor Components and Interactive Server Components added");
+        .AddInteractiveServerComponents()
+        .AddInteractiveWebAssemblyComponents();
+
+    logger.Info("Razor Components (Server + WASM) added");
 
     var app = builder.Build();
 
@@ -74,10 +70,19 @@ try
         app.UseHsts();
     }
 
+    // Endpoint for the WASM client to discover the public API URL and Google client ID
+    var publicApiUrl = Environment.GetEnvironmentVariable("PUBLIC_API_URL");
+    if (string.IsNullOrWhiteSpace(publicApiUrl))
+        publicApiUrl = apiBaseAddress;
+    var googleClientId = Environment.GetEnvironmentVariable("GOOGLE_CLIENT_ID") ?? string.Empty;
+    app.MapGet("/client-config", () => new { PublicApiUrl = publicApiUrl, GoogleClientId = googleClientId });
+
     app.UseAntiforgery();
     app.MapStaticAssets();
     app.MapRazorComponents<App>()
-        .AddInteractiveServerRenderMode();
+        .AddInteractiveServerRenderMode()
+        .AddInteractiveWebAssemblyRenderMode()
+        .AddAdditionalAssemblies(typeof(ClientAssemblyMarker).Assembly);
 
     logger.Info("Application started successfully");
     app.Run();

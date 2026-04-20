@@ -1,13 +1,7 @@
 @page "/canvas/{canvasName}"
+@rendermode InteractiveAuto
 @layout Layout.BaseLayout
-@using Linteum.BlazorApp.Components.Notification
-@using Linteum.Shared.DTO
-@using NLog
-@inject IConfiguration Configuration
-@using Linteum.BlazorApp.Components.Layout
-@using Microsoft.AspNetCore.Components.Web
-@using Linteum.Shared
-@using Linteum.BlazorApp.Services
+@using Linteum.BlazorApp.Client.Services
 @using Microsoft.AspNetCore.SignalR.Client
 @implements IAsyncDisposable
 @inject MyApiClient ApiClient
@@ -15,8 +9,8 @@
 @inject IJSRuntime JSRuntime
 @inject LocalStorageService LocalStorageService
 @inject NavigationManager NavigationManager
-@using Microsoft.Extensions.Hosting
-@inject IHostEnvironment Environment
+@inject IConfiguration Configuration
+@inject ILogger<CanvasPage> Logger
 
 <div class="canvas-page-container">
     @if (!_canvasReady)
@@ -32,26 +26,21 @@
             <div @ref="_viewportHostRef" class="canvas-stage">
                 <div @ref="_viewportRef" class="canvas-viewport"
                      style="width:@(ViewportWidth)px; height:@(ViewportHeight)px;">
-
                     <div @ref="_rendererRef" class="canvas-renderer"
                          style="position: absolute; background:#ffffff;">
-
                         <canvas @ref="_canvasRef"
                                 width="@_canvas.Width"
                                 height="@_canvas.Height"
                                 style="width:100%; height:100%; display:block; pointer-events:none; image-rendering:pixelated;">
                         </canvas>
-
                         <canvas @ref="_overlayRef"
                                 width="@_canvas.Width"
                                 height="@_canvas.Height"
                                 style="width:100%; height:100%; display:block; pointer-events:none; image-rendering:pixelated; position:absolute; top:0; left:0;">
                         </canvas>
-
                     </div>
                 </div>
             </div>
-
             <PixelManager @ref="_pixelManager" Canvas="@_canvas" ClickedPixel="@_clickedPixel" ClickedPixelData="@_clickedPixelData" CanvasRenderer="@_renderer" OnlineUsers="@_onlineUsers" />
         </div>
 
@@ -67,34 +56,27 @@
     [CascadingParameter(Name = "SidebarMargin")]
     public string SidebarMargin { get; set; } = "300px";
 
-    private static readonly Logger _nlog = LogManager.GetCurrentClassLogger();
-
     private CanvasDto? _canvas;
     private string? _loadedCanvasName;
     private (int X, int Y)? _clickedPixel;
     private PixelDto? _clickedPixelData;
 
-    // SignalR
     private HubConnection? _hubConnection;
     private string? _connectedGroup;
     private List<string> _onlineUsers = new();
 
-    // Renderer
     private ElementReference _canvasRef;
     private ElementReference _overlayRef;
     private CanvasRenderer? _renderer;
 
-    // Viewport element refs (passed to JS controller)
     private ElementReference _viewportHostRef;
     private ElementReference _viewportRef;
     private ElementReference _rendererRef;
     private ElementReference _coordsDisplayRef;
 
-    // Viewport dimensions
     private double ViewportWidth { get; set; } = 900;
     private double ViewportHeight { get; set; } = 600;
 
-    // State tracking
     private bool _hasRendered = false;
     private bool _canvasReady = false;
     private string _lastSidebarMargin = "300px";
@@ -102,23 +84,30 @@
     private DotNetObjectReference<CanvasPage>? _objRef;
     private IJSObjectReference? _resizeListener;
     private int _canvasLoadVersion;
+    private CancellationTokenSource? _canvasLoadCts;
     private bool _jsViewportInitialized;
     private bool _pendingViewportRefresh = true;
+    private bool _interactiveReady;
 
-    // PixelManager reference
     private PixelManager? _pixelManager;
 
-            
-    // LIFECYCLE: SETUP SIGNALR
-    protected override async Task OnInitializedAsync()
+    protected override Task OnInitializedAsync()
     {
-        try 
+        Logger.LogInformation("CanvasPage.OnInitialized: deferring interactive setup for {CanvasName} until first render.", canvasName);
+        return Task.CompletedTask;
+    }
+
+    private async Task EnsureHubConnectionAsync()
+    {
+        if (_hubConnection != null)
+            return;
+
+        try
         {
-            var apiBase = Configuration["ApiBaseUrl"]; 
-            
-            if (string.IsNullOrEmpty(apiBase)) 
+            var apiBase = Configuration["ApiBaseUrl"];
+            if (string.IsNullOrEmpty(apiBase))
             {
-                _nlog.Warn("ApiBaseUrl missing from config, defaulting to /canvashub relative to page.");
+                Logger.LogWarning("ApiBaseUrl missing from config, defaulting to NavigationManager.BaseUri.");
                 apiBase = NavigationManager.BaseUri;
             }
 
@@ -128,57 +117,32 @@
             _hubConnection = new HubConnectionBuilder()
                 .WithUrl(hubUrl, options =>
                 {
-                    options.Headers[CustomHeaders.SessionId] = sessionId;
-                    if (Environment.IsDevelopment())
-                    {
-                        options.HttpMessageHandlerFactory = (handler) =>
-                        {
-                            if (handler is HttpClientHandler clientHandler)
-                            {
-                                clientHandler.ServerCertificateCustomValidationCallback = (_, _, _, _) => true;
-                            }
-                            return handler;
-                        };
-                        options.WebSocketConfiguration = socketOptions =>
-                        {
-                            socketOptions.RemoteCertificateValidationCallback = (_, _, _, _) => true;
-                        };
-                    }
+                    options.AccessTokenProvider = () => Task.FromResult(sessionId);
+                    if (!string.IsNullOrWhiteSpace(sessionId))
+                        options.Headers[CustomHeaders.SessionId] = sessionId;
                 })
                 .WithAutomaticReconnect()
                 .Build();
-            
-            _nlog.Info($"SignalR HubConnection built for {hubUrl}, starting connection...");
+
+            Logger.LogInformation("SignalR HubConnection built for {HubUrl}, starting connection...", hubUrl);
 
             _hubConnection.On<int, int, int>("ReceivePixelUpdate", async (x, y, colorId) =>
             {
                 if (_renderer == null || _colors == null) return;
-
                 var currentCanvasName = _canvas?.Name ?? canvasName;
                 var selectedPixelId = _clickedPixel.HasValue && _clickedPixel.Value.X == x && _clickedPixel.Value.Y == y
-                    ? _clickedPixelData?.Id
-                    : null;
+                    ? _clickedPixelData?.Id : null;
                 ApiClient.HandlePixelColorChanged(currentCanvasName, x, y, colorId, selectedPixelId);
-
-                // Try to find the color hex from the ID sent
                 var c = _colors.FirstOrDefault(cDto => cDto.Id == colorId);
-                if (c != null)
-                {
-                    _renderer.EnqueuePixel(x, y, c.HexValue);
-                }
-
-                // Update pixel history if this pixel is currently selected
+                if (c != null) _renderer.EnqueuePixel(x, y, c.HexValue);
                 if (_clickedPixel.HasValue && _clickedPixel.Value.X == x && _clickedPixel.Value.Y == y && _pixelManager != null)
                 {
                     if (_clickedPixelData != null)
                     {
                         _clickedPixelData.ColorId = colorId;
                         if (_clickedPixelData.Id.HasValue)
-                        {
                             ApiClient.InvalidateHistoryCache(_clickedPixelData.Id.Value);
-                        }
                     }
-
                     await _pixelManager.UpdatePixelHistory();
                     await InvokeAsync(StateHasChanged);
                 }
@@ -189,20 +153,23 @@
                 _onlineUsers = users;
                 InvokeAsync(StateHasChanged);
             });
-            
+
             _hubConnection.Reconnected += async (_) =>
             {
                 if (!string.IsNullOrEmpty(_connectedGroup))
-                {
                     await _hubConnection.InvokeAsync("JoinCanvasGroup", _connectedGroup);
-                }
             };
 
             await _hubConnection.StartAsync();
         }
-        catch(Exception ex)
+        catch (Exception ex)
         {
-            _nlog.Error(ex, "Failed to start SignalR connection");
+            if (_hubConnection != null)
+            {
+                try { await _hubConnection.DisposeAsync(); } catch { }
+                _hubConnection = null;
+            }
+            Logger.LogError(ex, "Failed to start SignalR connection");
         }
     }
 
@@ -213,31 +180,29 @@
             _hasRendered = true;
             _lastSidebarMargin = SidebarMargin;
             _pendingViewportRefresh = true;
-
             _objRef = DotNetObjectReference.Create(this);
             _resizeListener = await JSRuntime.InvokeAsync<IJSObjectReference>("canvasHelpers.registerResizeListener", _objRef);
+            _interactiveReady = true;
+            await EnsureHubConnectionAsync();
+            await LoadCanvasAsync(canvasName);
+            StateHasChanged();
+            return;
         }
 
         if (_canvas != null && _renderer == null)
         {
-            // 1. Calculate the real viewport from the rendered host area first
+            var renderVersion = _canvasLoadVersion;
+            var renderToken = _canvasLoadCts?.Token ?? CancellationToken.None;
             await CalculateViewportDimensions();
             _pendingViewportRefresh = false;
             StateHasChanged();
-
-            // 2. Initialize the renderer and load the image (awaitable – no white flash)
             _renderer = new CanvasRenderer(JSRuntime);
             await _renderer.InitializeAsync(_canvasRef, _overlayRef);
-            await LoadCanvasImage();
-
-            // 3. Initialize JS viewport (fit + center) now that dimensions are correct
+            var imageLoaded = await LoadCanvasImage(renderVersion, renderToken);
+            if (!imageLoaded || renderVersion != _canvasLoadVersion || _canvas == null || _renderer == null)
+                return;
             await InitJsViewport();
-
-            // 3.5. Request one more post-init fit after the shell is visible.
-            // Some deployed layouts settle after first paint, which can skew the first measurement.
             _pendingViewportRefresh = true;
-
-            // 4. Reveal the canvas shell with a smooth fade-in
             _canvasReady = true;
             StateHasChanged();
             return;
@@ -258,27 +223,21 @@
         _jsViewportInitialized = true;
         await JSRuntime.InvokeVoidAsync("canvasViewport.init",
             _objRef, _viewportRef, _rendererRef, _coordsDisplayRef,
-            _canvas.Width, _canvas.Height,
-            ViewportWidth, ViewportHeight);
+            _canvas.Width, _canvas.Height, ViewportWidth, ViewportHeight);
     }
 
     [JSInvokable]
     public async Task OnPixelClicked(int x, int y)
     {
         if (_canvas == null) return;
-
         _clickedPixel = (x, y);
         _clickedPixelData = await ApiClient.GetPixelData(_canvas.Name, x, y, useCache: true);
-
         if (_clickedPixelData != null && _colors != null)
         {
             var color = _colors.FirstOrDefault(c => c.Id == _clickedPixelData.ColorId);
             if (color != null && _renderer != null)
-            {
                 _renderer.EnqueuePixel(x, y, color.HexValue);
-            }
         }
-
         await InvokeAsync(StateHasChanged);
     }
 
@@ -287,9 +246,7 @@
     {
         await CalculateViewportDimensions();
         if (_jsViewportInitialized)
-        {
             await JSRuntime.InvokeVoidAsync("canvasViewport.fitCanvas", ViewportWidth, ViewportHeight);
-        }
         StateHasChanged();
     }
 
@@ -304,12 +261,9 @@
                 ViewportHeight = Math.Max(100, hostSize.Height);
                 return;
             }
-
             var m = await JSRuntime.InvokeAsync<LayoutMetrics>("canvasHelpers.getLayoutMetrics");
-
             const double safetyPadding = 2;
             var isMobile = m.WindowWidth <= 768;
-
             if (isMobile)
             {
                 const double mobileBottomSheetHeader = 56;
@@ -320,17 +274,14 @@
             {
                 double sidebarWidth = 300;
                 if (!string.IsNullOrEmpty(SidebarMargin) && double.TryParse(SidebarMargin.Replace("px", ""), out var marginVal))
-                {
                     sidebarWidth = marginVal;
-                }
-
                 ViewportWidth = Math.Max(100, m.WindowWidth - sidebarWidth - m.PixelManagerWidth - m.MainHPad - safetyPadding);
                 ViewportHeight = Math.Max(100, m.WindowHeight - m.MainVPad - safetyPadding);
             }
         }
         catch (Exception ex)
         {
-            _nlog.Warn(ex, "Failed to calculate viewport dimensions");
+            Logger.LogWarning(ex, "Failed to calculate viewport dimensions");
         }
     }
 
@@ -339,31 +290,56 @@
 
     protected override async Task OnParametersSetAsync()
     {
-        var requestedCanvasName = canvasName;
-        var loadVersion = System.Threading.Interlocked.Increment(ref _canvasLoadVersion);
-
         if (_hasRendered && _lastSidebarMargin != SidebarMargin)
         {
             _lastSidebarMargin = SidebarMargin;
             _pendingViewportRefresh = true;
         }
-        
+
+        if (!_interactiveReady)
+            return;
+
+        await EnsureHubConnectionAsync();
+        await LoadCanvasAsync(canvasName);
+    }
+
+    private CancellationToken BeginCanvasLoad()
+    {
+        CancelCanvasLoad();
+        _canvasLoadCts = new CancellationTokenSource();
+        return _canvasLoadCts.Token;
+    }
+
+    private void CancelCanvasLoad()
+    {
+        if (_canvasLoadCts == null)
+            return;
+
+        try { _canvasLoadCts.Cancel(); } catch { }
+        _canvasLoadCts.Dispose();
+        _canvasLoadCts = null;
+    }
+
+    private async Task LoadCanvasAsync(string requestedCanvasName)
+    {
+        if (_loadedCanvasName == requestedCanvasName && _canvas != null) return;
+
+        var loadVersion = System.Threading.Interlocked.Increment(ref _canvasLoadVersion);
+        var cancellationToken = BeginCanvasLoad();
+
         if (_hubConnection?.State == HubConnectionState.Connected && _connectedGroup != requestedCanvasName)
         {
             if (!string.IsNullOrEmpty(_connectedGroup))
-            {
                 await _hubConnection.InvokeAsync("LeaveCanvasGroup", _connectedGroup);
-            }
             await _hubConnection.InvokeAsync("JoinCanvasGroup", requestedCanvasName);
             _connectedGroup = requestedCanvasName;
         }
 
-        if (_loadedCanvasName == requestedCanvasName && _canvas != null)
-            return;
-
         _canvasReady = false;
         _canvas = null;
         _loadedCanvasName = requestedCanvasName;
+        _clickedPixel = null;
+        _clickedPixelData = null;
         _pendingViewportRefresh = true;
 
         if (_renderer != null)
@@ -371,82 +347,75 @@
             await _renderer.DisposeAsync();
             _renderer = null;
         }
-
         _jsViewportInitialized = false;
+        await InvokeAsync(StateHasChanged);
 
         try
         {
             if (_colors is null)
-            {
                 _colors = await ApiClient.GetColorsAsync();
-            }
-            if (loadVersion != _canvasLoadVersion || requestedCanvasName != canvasName) return;
+            if (cancellationToken.IsCancellationRequested || loadVersion != _canvasLoadVersion || requestedCanvasName != canvasName) return;
 
-            var loadedCanvas = await ApiClient.GetCanvas(requestedCanvasName);
-            if (loadVersion != _canvasLoadVersion || requestedCanvasName != canvasName) return;
+            var loadedCanvas = await ApiClient.GetCanvas(requestedCanvasName, cancellationToken);
+            if (cancellationToken.IsCancellationRequested || loadVersion != _canvasLoadVersion || requestedCanvasName != canvasName) return;
 
             _canvas = loadedCanvas;
-
-            await LoadCanvasImage(loadVersion);
-
-             if (_hubConnection?.State == HubConnectionState.Connected && _connectedGroup != requestedCanvasName)
+            if (_renderer != null)
             {
-                if (!string.IsNullOrEmpty(_connectedGroup)) await _hubConnection.InvokeAsync("LeaveCanvasGroup", _connectedGroup);
+                var imageLoaded = await LoadCanvasImage(loadVersion, cancellationToken);
+                if (!imageLoaded) return;
+            }
+
+            if (_hubConnection?.State == HubConnectionState.Connected && _connectedGroup != requestedCanvasName)
+            {
+                if (!string.IsNullOrEmpty(_connectedGroup))
+                    await _hubConnection.InvokeAsync("LeaveCanvasGroup", _connectedGroup);
                 await _hubConnection.InvokeAsync("JoinCanvasGroup", requestedCanvasName);
                 _connectedGroup = requestedCanvasName;
             }
 
-            _clickedPixel = null;
-            _clickedPixelData = null;
-
             if (_hasRendered && _renderer != null)
-            {
                 await InitJsViewport();
-            }
+
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            Logger.LogDebug("Canvas load canceled for {CanvasName}", requestedCanvasName);
         }
         catch (Exception ex)
         {
-            _nlog.Warn(ex, "Failed to load canvas {0}", canvasName);
+            Logger.LogWarning(ex, "Failed to load canvas {CanvasName}", canvasName);
         }
     }
 
-    private async Task LoadCanvasImage(int? loadVersion = null)
+    private async Task<bool> LoadCanvasImage(int? loadVersion = null, CancellationToken cancellationToken = default)
     {
-        if (_canvas == null || _renderer == null) return;
+        if (_canvas == null || _renderer == null || cancellationToken.IsCancellationRequested) return false;
         try
         {
             var canvasSnapshot = _canvas;
             var versionSnapshot = loadVersion ?? _canvasLoadVersion;
-
-            var imageBytes = await ApiClient.GetCanvasImage(canvasSnapshot);
-            if (versionSnapshot != _canvasLoadVersion || !ReferenceEquals(canvasSnapshot, _canvas) || _renderer == null) return;
-
-            await _renderer.LoadImageAsync(imageBytes);
+            var imageBytes = await ApiClient.GetCanvasImage(canvasSnapshot, cancellationToken);
+            if (cancellationToken.IsCancellationRequested || versionSnapshot != _canvasLoadVersion || !ReferenceEquals(canvasSnapshot, _canvas) || _renderer == null) return false;
+            return await _renderer.LoadImageAsync(imageBytes, versionSnapshot);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            return false;
         }
         catch (Exception ex)
         {
-            _nlog.Warn(ex, "Failed to load image for canvas {0}", canvasName);
-        }
-    }
-
-    private async Task NotifyAsync(CustomNotification note)
-    {
-        try
-        {
-            await NotificationService.Writer.WriteAsync(note);
-        }
-        catch (Exception ex)
-        {
-            _nlog.Warn(ex, "NotificationService.Writer.WriteAsync failed");
+            Logger.LogWarning(ex, "Failed to load image for canvas {CanvasName}", canvasName);
+            return false;
         }
     }
 
     public async ValueTask DisposeAsync()
     {
         _canvasReady = false;
-
+        CancelCanvasLoad();
         try { await JSRuntime.InvokeVoidAsync("canvasViewport.dispose"); } catch { }
-
         if (_resizeListener != null)
         {
             try
@@ -456,17 +425,9 @@
             }
             catch { }
         }
-
         _objRef?.Dispose();
-
-        if (_renderer != null)
-        {
-            await _renderer.DisposeAsync();
-        }
-        
-        if (_hubConnection != null)
-        {
-            await _hubConnection.DisposeAsync();
-        }
+        if (_renderer != null) await _renderer.DisposeAsync();
+        if (_hubConnection != null) await _hubConnection.DisposeAsync();
     }
 }
+

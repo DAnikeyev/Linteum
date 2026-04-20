@@ -11,6 +11,8 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 ARG BUILD_CONFIGURATION=Release
 WORKDIR /src
 COPY ["Linteum.BlazorApp/Linteum.BlazorApp.csproj", "Linteum.BlazorApp/"]
+COPY ["Linteum.BlazorApp.Client/Linteum.BlazorApp.Client.csproj", "Linteum.BlazorApp.Client/"]
+COPY ["Linteum.Shared/Linteum.Shared.csproj", "Linteum.Shared/"]
 RUN dotnet restore "Linteum.BlazorApp/Linteum.BlazorApp.csproj"
 COPY . .
 WORKDIR "/src/Linteum.BlazorApp"

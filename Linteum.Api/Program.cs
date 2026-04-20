@@ -13,9 +13,12 @@ try
 
     builder.Logging.ClearProviders();
     builder.Host.UseNLog();
-    var allowedOrigins = builder.Configuration.GetSection("CorsOrigins").Get<string[]>() 
+    var allowedOrigins = builder.Configuration.GetSection("CorsOrigins").Get<string[]>()?
+                             .Where(origin => !string.IsNullOrWhiteSpace(origin))
+                             .Distinct(StringComparer.OrdinalIgnoreCase)
+                             .ToArray()
                          ?? Array.Empty<string>();
-    
+
     builder.Services.AddCors(options =>
     {
         options.AddPolicy("AllowBlazorApp", policy =>
@@ -27,11 +30,11 @@ try
         });
     });
     logger.Info("CORS policy 'AllowBlazorApp' added with origins: {Origins}", string.Join(", ", allowedOrigins));
-    
+
     builder.Services.AddSignalR();
     logger.Info("SignalR service added");
     builder.Services.AddHttpClient();
-    
+
     builder.Services.AddSingleton<IConnectionTracker, ConnectionTracker>();
     builder.Services.AddScoped<IPixelNotifier, SignalRPixelNotifier>();
     builder.Services.Configure<CanvasSizeOptions>(builder.Configuration.GetSection("CanvasSize"));

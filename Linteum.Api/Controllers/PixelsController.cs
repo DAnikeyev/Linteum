@@ -33,7 +33,7 @@ public class PixelsController : ControllerBase
     
     
     [HttpGet("getpixel/{canvasName}")]
-    public async Task<IActionResult> GetByPixelDto(string canvasName, [FromBody]PixelDto pixelDto)
+    public async Task<IActionResult> GetByPixelDto(string canvasName, [FromQuery] int x, [FromQuery] int y)
     {
         if (!Request.Headers.TryGetValue(CustomHeaders.SessionId, out var sessionIdStr) || !Guid.TryParse(sessionIdStr, out var sessionId))
         {
@@ -57,13 +57,13 @@ public class PixelsController : ControllerBase
         var pixelDtoReq = new PixelDto
         {
             CanvasId = canvas.Id,
-            X = pixelDto.X,
-            Y = pixelDto.Y,
+            X = x,
+            Y = y,
         };
         var pixelExtracted = await _repoManager.PixelRepository.GetByPixelDto(pixelDtoReq);
         if (pixelExtracted == null)
         {
-            _logger.LogInformation("Pixel not found at ({X}, {Y}) for canvas {CanvasName}, returning default pixel.", pixelDto.X, pixelDto.Y, canvasName);
+            _logger.LogInformation("Pixel not found at ({X}, {Y}) for canvas {CanvasName}, returning default pixel.", x, y, canvasName);
             pixelExtracted = await GetDefaultPixel(pixelDtoReq);
         }
         return Ok(pixelExtracted);

@@ -1,9 +1,6 @@
-@using Linteum.Shared.DTO
-@using Linteum.BlazorApp.Components.Notification
-@using Linteum.BlazorApp.Services
-@using Linteum.Shared
 @inject MyApiClient ApiClient
 @inject NotificationService NotificationService
+@inject ILogger<PixelManager> Logger
 
 <div class="pixelmanager">
     <div class="pm-header" @onclick="ToggleMobilePanel">
@@ -29,7 +26,6 @@
 
         <div class="pm-drawing">
             <h6>Pixel Drawing</h6>
-
             <div class="pm-fields">
                 <div class="pm-field">
                     <label class="form-label">Selected Pixel</label>
@@ -50,8 +46,8 @@
                         {
                             @foreach (var c in _colors)
                             {
-                                <div class="color-square @(c.Id == _selectedColorId ? "selected" : "")" 
-                                     style="background:@c.HexValue;" 
+                                <div class="color-square @(c.Id == _selectedColorId ? "selected" : "")"
+                                     style="background:@c.HexValue;"
                                      title="@(string.IsNullOrEmpty(c.Name) ? c.HexValue : c.Name)"
                                      @onclick="() => SelectColor(c)">
                                 </div>
@@ -92,7 +88,6 @@
                     {
                         var oldColor = _colors?.FirstOrDefault(c => c.Id == item.OldColorId);
                         var newColor = _colors?.FirstOrDefault(c => c.Id == item.NewColorId);
-
                         <div class="history-item">
                             <div class="history-colors">
                                 <div class="color-swatch-sm" style="background:@(oldColor?.HexValue ?? "transparent");" title="Old: @(oldColor?.Name ?? "?")"></div>
@@ -112,27 +107,16 @@
 </div>
 
 @code {
-    [Parameter]
-    public CanvasDto? Canvas { get; set; }
-
-    [Parameter]
-    public (int X, int Y)? ClickedPixel { get; set; }
-
-    [Parameter]
-    public CanvasRenderer? CanvasRenderer { get; set; }
-
-    [Parameter]
-    public PixelDto? ClickedPixelData { get; set; }
-
+    [Parameter] public CanvasDto? Canvas { get; set; }
+    [Parameter] public (int X, int Y)? ClickedPixel { get; set; }
+    [Parameter] public CanvasRenderer? CanvasRenderer { get; set; }
+    [Parameter] public PixelDto? ClickedPixelData { get; set; }
     public long Gold { get; set; }
-
-    [Parameter]
-    public List<string> OnlineUsers { get; set; } = new();
+    [Parameter] public List<string> OnlineUsers { get; set; } = new();
 
     private bool _isMobileExpanded = true;
     private void ToggleMobilePanel() => _isMobileExpanded = !_isMobileExpanded;
 
-    private static readonly NLog.Logger _nlog = NLog.LogManager.GetCurrentClassLogger();
     private List<ColorDto>? _colors;
     private List<HistoryResponseItem>? _pixelChangeHistory;
     private Guid? PrevPixelId;
@@ -147,9 +131,7 @@
         {
             _colors = _colors
                 .Select(c => new { Color = c, Hsv = ColorToHsv(c.HexValue) })
-                .OrderBy(x => x.Hsv.h)
-                .ThenBy(x => x.Hsv.s)
-                .ThenBy(x => x.Hsv.v)
+                .OrderBy(x => x.Hsv.h).ThenBy(x => x.Hsv.s).ThenBy(x => x.Hsv.v)
                 .Select(x => x.Color)
                 .ToList();
         }
@@ -164,26 +146,17 @@
             _pixelChangeHistory = null;
             return;
         }
-
         if (ClickedPixelData.Id == null)
         {
-            // Pixel has never been changed before - clear stale history from previously selected pixels.
             PrevPixelId = null;
             _prevClickedPixel = ClickedPixel;
             _pixelChangeHistory = null;
             return;
         }
-
-        var samePixel =
-            _prevClickedPixel.HasValue &&
+        var samePixel = _prevClickedPixel.HasValue &&
             _prevClickedPixel.Value.X == ClickedPixel.Value.X &&
             _prevClickedPixel.Value.Y == ClickedPixel.Value.Y;
-
-        if (samePixel && PrevPixelId.HasValue && PrevPixelId.Value == ClickedPixelData.Id.Value)
-        {
-            return;
-        }
-
+        if (samePixel && PrevPixelId.HasValue && PrevPixelId.Value == ClickedPixelData.Id.Value) return;
         _prevClickedPixel = ClickedPixel;
         PrevPixelId = ClickedPixelData.Id.Value;
         _pixelChangeHistory = await ApiClient.GetHistoryAsync(ClickedPixelData.Id.Value, useCache: true);
@@ -198,81 +171,44 @@
         }
     }
 
-    private void SelectColor(ColorDto c)
-    {
-        _selectedColorId = c.Id;
-    }
+    private void SelectColor(ColorDto c) => _selectedColorId = c.Id;
 
     private (double h, double s, double v) ColorToHsv(string hex)
     {
         if (string.IsNullOrEmpty(hex)) return (0, 0, 0);
         hex = hex.TrimStart('#');
         if (hex.Length != 6) return (0, 0, 0);
-
         try
         {
             int r = int.Parse(hex.Substring(0, 2), System.Globalization.NumberStyles.HexNumber);
             int g = int.Parse(hex.Substring(2, 2), System.Globalization.NumberStyles.HexNumber);
             int b = int.Parse(hex.Substring(4, 2), System.Globalization.NumberStyles.HexNumber);
-
-            double doubleR = r / 255.0;
-            double doubleG = g / 255.0;
-            double doubleB = b / 255.0;
-
-            double max = Math.Max(doubleR, Math.Max(doubleG, doubleB));
-            double min = Math.Min(doubleR, Math.Min(doubleG, doubleB));
+            double dr = r / 255.0, dg = g / 255.0, db = b / 255.0;
+            double max = Math.Max(dr, Math.Max(dg, db));
+            double min = Math.Min(dr, Math.Min(dg, db));
             double delta = max - min;
-
             double h = 0;
             if (delta > 0)
             {
-                if (Math.Abs(max - doubleR) < 0.0001) h = 60 * (((doubleG - doubleB) / delta) % 6);
-                else if (Math.Abs(max - doubleG) < 0.0001) h = 60 * (((doubleB - doubleR) / delta) + 2);
-                else if (Math.Abs(max - doubleB) < 0.0001) h = 60 * (((doubleR - doubleG) / delta) + 4);
+                if (Math.Abs(max - dr) < 0.0001) h = 60 * (((dg - db) / delta) % 6);
+                else if (Math.Abs(max - dg) < 0.0001) h = 60 * (((db - dr) / delta) + 2);
+                else if (Math.Abs(max - db) < 0.0001) h = 60 * (((dr - dg) / delta) + 4);
             }
             if (h < 0) h += 360;
-
-            double s = max == 0 ? 0 : delta / max;
-            double v = max;
-
-            return (h, s, v);
+            return (h, max == 0 ? 0 : delta / max, max);
         }
-        catch
-        {
-            return (0, 0, 0);
-        }
+        catch { return (0, 0, 0); }
     }
 
     private async Task PaintClick()
     {
-        if (Canvas == null)
-        {
-            await NotifyAsync( new CustomNotification
-            {
-                Message = "No canvas loaded.",
-                Type = NotificationType.Info,
-            });
-            return;
-        }
-
-        if(SelectedColor == null || !ClickedPixel.HasValue)
-        {
-            await NotifyAsync( new CustomNotification
-            {
-                Message = "No color selected or pixel clicked.",
-                Type = NotificationType.Info,
-            });
-            return;
-        }
-
+        if (Canvas == null) { await NotifyAsync(new CustomNotification { Message = "No canvas loaded.", Type = NotificationType.Info }); return; }
+        if (SelectedColor == null || !ClickedPixel.HasValue) { await NotifyAsync(new CustomNotification { Message = "No color selected or pixel clicked.", Type = NotificationType.Info }); return; }
         try
         {
-            var newPixel = await ApiClient.Paint(ClickedPixel.Value, Canvas, SelectedColor.Id);
+            var newPixel = await ApiClient.Paint(ClickedPixel.Value, Canvas, SelectedColor.Id, ClickedPixelData?.Price ?? 0);
             if (CanvasRenderer != null)
-            {
                 CanvasRenderer.EnqueuePixel(newPixel.X, newPixel.Y, SelectedColor.HexValue);
-            }
-
             await NotifyAsync(new CustomNotification
             {
                 Message = $"Painted pixel at ({newPixel.X}, {newPixel.Y}) with color {SelectedColor.Name ?? SelectedColor.HexValue}.",
@@ -287,24 +223,15 @@
         }
         catch (Exception ex)
         {
-            _nlog.Error(ex, "Error painting pixel");
-            await NotifyAsync( new CustomNotification
-            {
-                Message = $"Error painting pixel: {ex.Message}",
-                Type = NotificationType.Error,
-            });
+            Logger.LogError(ex, "Error painting pixel");
+            await NotifyAsync(new CustomNotification { Message = $"Error painting pixel: {ex.Message}", Type = NotificationType.Error });
         }
     }
 
     private async Task NotifyAsync(CustomNotification note)
     {
-        try
-        {
-            await NotificationService.Writer.WriteAsync(note);
-        }
-        catch (Exception ex)
-        {
-            _nlog.Warn(ex, "NotificationService.Writer.WriteAsync failed in PixelManager");
-        }
+        try { await NotificationService.Writer.WriteAsync(note); }
+        catch (Exception ex) { Logger.LogWarning(ex, "NotificationService.Writer.WriteAsync failed in PixelManager"); }
     }
 }
+

@@ -1,12 +1,1 @@
-namespace Linteum.BlazorApp;
-
-public enum LocalStorageKey
-{
-    SessionId,
-    SessionCreatedAt,
-    UserName,
-    Email,
-    LoginMethod,
-    Gold,
-    SidebarCollapsed,
-}
+// Moved to Linteum.BlazorApp.Client project.

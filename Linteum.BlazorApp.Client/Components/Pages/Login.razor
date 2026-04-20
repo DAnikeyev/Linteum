@@ -3,8 +3,6 @@
 @layout EmptyLayout
 @rendermode InteractiveServer
 @implements IDisposable
-@using Linteum.BlazorApp.Components.Layout
-@using Linteum.Shared
 @inject NavigationManager Navigation
 @inject MyApiClient ApiClient
 @inject Config Config
@@ -61,7 +59,8 @@
             </button>
         </div>
         <p class="auth-switch">
-            Don&#39;t have an account? <a href="/signup">Sign up</a>
+            Don&#39;t have an account?
+            <a href="/signup" @onclick="NavigateToSignup" @onclick:preventDefault="true">Sign up</a>
         </p>
     </div>
 </div>
@@ -114,6 +113,11 @@
             Logger.LogWarning("Login failed for {Email}", _email);
             _error = "Invalid login credentials.";
         }
+    }
+
+    private void NavigateToSignup()
+    {
+        Navigation.NavigateTo("/signup");
     }
 
     private async Task GoogleLoginAsync()
@@ -207,7 +211,7 @@
     {
         if (firstRender)
         {
-            Logger.LogInformation("Hello, login page!");
+            Logger.LogInformation("Login page first render, mode={Mode}", OperatingSystem.IsBrowser() ? "WASM" : "Server");
             try
             {
                 var sessionIdString = await LocalStorageService.GetItemAsync<string>(LocalStorageKey.SessionId);
@@ -249,3 +253,4 @@
         _googleLoginReference?.Dispose();
     }
 }
+

@@ -19,9 +19,13 @@
 
     <ItemGroup>
       <PackageReference Include="DotNetEnv" Version="3.1.1" />
-      <PackageReference Include="Microsoft.AspNetCore.SignalR.Client" Version="10.0.5" />
+      <PackageReference Include="Microsoft.AspNetCore.Components.WebAssembly.Server" Version="10.0.5" />
       <PackageReference Include="NLog" Version="6.1.1" />
       <PackageReference Include="NLog.Web.AspNetCore" Version="6.1.2" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\Linteum.BlazorApp.Client\Linteum.BlazorApp.Client.csproj" />
     </ItemGroup>
 
     <ItemGroup>

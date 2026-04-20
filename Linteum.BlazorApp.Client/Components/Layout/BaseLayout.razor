@@ -3,39 +3,34 @@
 @inject ILogger<BaseLayout> Logger
 @inject MyApiClient ApiClient
 @inject IConfiguration Configuration
-@using Linteum.BlazorApp.Components.Notification
+@inject SidebarStateService SidebarState
 @inherits LayoutComponentBase
+@implements IDisposable
 
+<CanvasSidebar />
 
-<CascadingValue Value="Sidebar">
-    <CascadingValue Value="_notificationManagerRef">
-        <CanvasSidebar @ref="Sidebar" CollapseToggled="OnSidebarCollapseChanged" />
+<main class="main-content" style="margin-left:@_sidebarMargin;">
+    <CascadingValue Value="_sidebarMargin" Name="SidebarMargin">
+        @Body
     </CascadingValue>
+    @if (!string.IsNullOrWhiteSpace(HubLink))
+    {
+        <a class="btn btn-outline-primary hub-back-btn"
+           href="@HubLink"
+           style="left: calc(@_sidebarMargin + 12px);">
+            <i class="bi bi-arrow-left me-1"></i>
+            Back to hub
+        </a>
+    }
+    <div class="version-label">
+        @($"v{Version}")
+    </div>
+</main>
 
-    <main class="main-content" style="margin-left:@_sidebarMargin;">
-        <CascadingValue Value="_sidebarMargin" Name="SidebarMargin">
-            @Body
-        </CascadingValue>
-        @if (!string.IsNullOrWhiteSpace(HubLink))
-        {
-            <a class="btn btn-outline-primary hub-back-btn"
-               href="@HubLink"
-               style="left: calc(@_sidebarMargin + 12px);">
-                <i class="bi bi-arrow-left me-1"></i>
-                Back to hub
-            </a>
-        }
-        <div class="version-label">
-            @($"v{Version}")
-        </div>
-    </main>
+<NotificationManager />
 
-    <NotificationManager @ref="_notificationManagerRef" />
-</CascadingValue>
 @code {
-    public CanvasSidebar? Sidebar { get; set; }
     private string _sidebarMargin = "300px";
-    private NotificationManager? _notificationManagerRef;
     private string Version => Configuration["VERSION"] ?? Environment.GetEnvironmentVariable("VERSION") ?? "dev";
     private string HubLink
     {
@@ -47,10 +42,16 @@
         }
     }
 
-    private void OnSidebarCollapseChanged(bool isCollapsed)
+    protected override void OnInitialized()
     {
-        _sidebarMargin = isCollapsed ? "0px" : "300px";
-        StateHasChanged();
+        _sidebarMargin = SidebarState.CurrentMargin;
+        SidebarState.MarginChanged += OnSidebarMarginChanged;
+    }
+
+    private void OnSidebarMarginChanged(string margin)
+    {
+        _sidebarMargin = margin;
+        _ = InvokeAsync(StateHasChanged);
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -85,18 +86,19 @@
                 ApiClient.ClearSession();
                 Navigation.NavigateTo("/login");
             }
-            else
-            {
-                Logger.LogInformation("Session validated successfully.");
-            }
         }
-        catch(Exception ex)
+        catch (Exception ex)
         {
-            Logger.LogError($"Error {ex} validating session, redirecting to login.");
+            Logger.LogError(ex, "Error validating session, redirecting to login.");
             await LocalStorageService.ClearAsync();
             ApiClient.ClearSession();
             Navigation.NavigateTo("/login");
         }
     }
 
+    public void Dispose()
+    {
+        SidebarState.MarginChanged -= OnSidebarMarginChanged;
+    }
 }
+

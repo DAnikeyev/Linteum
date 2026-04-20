@@ -1,13 +1,13 @@
 @page "/settings"
-@using Linteum.BlazorApp.Components.Layout
-@using Linteum.BlazorApp.Components.Notification
+@rendermode InteractiveAuto
 @using Linteum.Shared
-@layout Layout.BaseLayout
+@layout BaseLayout
 @inject LocalStorageService LocalStorageService
 @inject NavigationManager Navigation
 @inject MyApiClient ApiClient
 @inject ILogger<SettingsPage> Logger
 @inject NotificationService NotificationService
+@inject SidebarStateService SidebarState
 
 <div class="settings-container">
     <div class="settings-header">
@@ -68,8 +68,6 @@
 </div>
 
 @code {
-    [CascadingParameter]
-    private CanvasSidebar? Sidebar { get; set; }
     private string? _email;
     private string? _userName;
     private string? _originalUserName;
@@ -104,10 +102,7 @@
                     Message = $"Username updated successfully to {_userName}.",
                     Type = NotificationType.Success
                 });
-                if(Sidebar != null)
-                {
-                    await Sidebar.RefreshCanvases();
-                }
+                await SidebarState.NotifyCanvasListChangedAsync();
             }
             catch (Exception ex)
             {
@@ -228,6 +223,7 @@
     private async Task Logout()
     {
         await LocalStorageService.ClearAsync();
-        Navigation.NavigateTo("/login", true);
+        ApiClient.ClearSession();
+        Navigation.NavigateTo("/login");
     }
 }

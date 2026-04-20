@@ -10,14 +10,14 @@
     <base href="/"/>
     <link rel="stylesheet" href="@Assets["lib/bootstrap/dist/css/bootstrap.min.css"]"/>
     <link rel="stylesheet" href="@Assets["app.css"]"/>
-    <link rel="stylesheet" href="@Assets["Linteum.BlazorApp.styles.css"]"/>
+    <link rel="stylesheet" href="@Assets["Linteum.BlazorApp.Client.styles.css"]"/>
     <ImportMap/>
     <link rel="icon" type="image/png" href="images/starry-night.png"/>
     <HeadOutlet/>
 </head>
 
 <body>
-<Routes @rendermode="RenderMode.InteractiveServer" />
+<Routes />
 <script src="_framework/blazor.web.js"></script>
 <script src="https://accounts.google.com/gsi/client" async defer></script>
 <script src="js/google-auth.js"></script>

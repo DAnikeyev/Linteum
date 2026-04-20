@@ -1,6 +1,6 @@
 @page "/signup"
-@using Linteum.BlazorApp.Components.Layout
 @layout EmptyLayout
+@rendermode InteractiveServer
 @inject NavigationManager Navigation
 @inject MyApiClient ApiClient
 
@@ -51,7 +51,8 @@
             <button class="btn btn-primary flex-fill" @onclick="HandleSignup">Sign Up</button>
         </div>
         <p class="auth-switch">
-            Already have an account? <a href="/login">Login</a>
+            Already have an account?
+            <a href="/login" @onclick="NavigateToLogin" @onclick:preventDefault="true">Login</a>
         </p>
     </div>
 </div>
@@ -107,6 +108,11 @@
         }
     }
 
+    private void NavigateToLogin()
+    {
+        Navigation.NavigateTo("/login");
+    }
+
     public class SignupModel
     {
         public string Email { get; set; } = string.Empty;
@@ -114,3 +120,4 @@
         public string UserName { get; set; } = string.Empty;
     }
 }
+

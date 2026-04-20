@@ -1,11 +1,10 @@
 @page "/canvas_subscribe"
-@using Linteum.BlazorApp.Components.Layout
-@using Linteum.BlazorApp.Components.Notification
-@using Linteum.Shared.DTO
+@rendermode InteractiveAuto
 @using System.Threading
-@layout Layout.BaseLayout
+@layout BaseLayout
 @inject MyApiClient ApiClient
 @inject NotificationService NotificationService
+@inject SidebarStateService SidebarState
 @implements IDisposable
 
 <div class="settings-container">
@@ -76,9 +75,6 @@
 </div>
 
 @code {
-    
-    [CascadingParameter]
-    private CanvasSidebar? Sidebar { get; set; }
     private string? _canvasName;
     private string? _canvasPassword;
 
@@ -178,13 +174,12 @@
                 Message = $"Subscribed to canvas '{_canvasName}' successfully.",
                 Type = NotificationType.Success
             });
-            
+
             _canvasName = null;
             _canvasPassword = null;
             _searchResults.Clear();
             _showNoResults = false;
-            if (Sidebar != null)
-                await Sidebar.RefreshCanvases();
+            await SidebarState.NotifyCanvasListChangedAsync();
         }
         catch (Exception ex)
         {

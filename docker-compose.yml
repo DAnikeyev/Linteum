@@ -36,6 +36,7 @@ services:
       - ASPNETCORE_URLS=http://*:${API_CONTAINER_PORT}
       - CorsOrigins__0=http://localhost:${BLAZOR_HOST_PORT}
       - CorsOrigins__1=http://${BLAZOR_CONTAINER_NAME}:${BLAZOR_CONTAINER_PORT}
+      - CorsOrigins__2=${PUBLIC_BLAZOR_URL}
     depends_on:
       linteum-db:
         condition: service_healthy
@@ -57,6 +58,7 @@ services:
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - ASPNETCORE_URLS=http://*:${BLAZOR_CONTAINER_PORT}
       - ApiBaseUrl=http://${API_CONTAINER_NAME}:${API_CONTAINER_PORT}
+      - PUBLIC_API_URL=${PUBLIC_API_URL}
     ports:
       - "${BLAZOR_HOST_PORT}:${BLAZOR_CONTAINER_PORT}"
     depends_on:

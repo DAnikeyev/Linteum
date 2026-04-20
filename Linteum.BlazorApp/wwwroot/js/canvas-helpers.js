@@ -76,3 +76,10 @@ window.canvasHelpers = {
         window.removeEventListener('resize', listener);
     }
 };
+
+window.sidebarHelpers = {
+    setSidebarMargin: function (margin) {
+        document.documentElement.style.setProperty('--sidebar-margin', margin);
+    }
+};
+

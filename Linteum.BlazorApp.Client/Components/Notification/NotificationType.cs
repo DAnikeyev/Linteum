@@ -1,4 +1,4 @@
-namespace Linteum.BlazorApp.Components;
+namespace Linteum.BlazorApp.Client.Components.Notification;
 
 public enum NotificationType
 {
@@ -6,3 +6,4 @@ public enum NotificationType
     Error,
     Info
 }
+

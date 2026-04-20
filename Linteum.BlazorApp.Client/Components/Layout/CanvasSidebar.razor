@@ -1,0 +1,303 @@
+@rendermode InteractiveWebAssembly
+@using System.Net
+@inject Config DefaultConfig
+@inject MyApiClient ApiClient
+@inject LocalStorageService LocalStorageService
+@inject NavigationManager Navigation
+@inject NotificationService NotificationService
+@inject SidebarStateService SidebarState
+@inject IJSRuntime JSRuntime
+@inject ILogger<CanvasSidebar> Logger
+@implements IDisposable
+
+<div class="sidebar @(_isCollapsed ? "collapsed" : "")"
+     style="@($"position:fixed; left:0; top:0; height:100vh; width:300px; z-index:1000; transition:transform .2s ease; transform:{(_isCollapsed ? "translateX(-100%)" : "translateX(0)")};")">
+    <div class="sidebar-header">
+        <button class="btn btn-outline-primary sidebar-faq-btn" title="FAQ" @onclick="GoToFaq">FAQ</button>
+        <span class="sidebar-username text-truncate" title="@_userName">@(_userName ?? "Guest")</span>
+        <button class="btn btn-link p-0 sidebar-cog-btn" title="Settings" @onclick="GoToSettings">
+            <img src="images/cog-2.svg" alt="Settings" class="sidebar-cog-img" />
+        </button>
+    </div>
+    <h6 class="sidebar-section-title mb-2 mt-3">Canvases</h6>
+    <div class="sidebar-content" style="display:@(_isCollapsed ? "none" : "block");">
+        @if (_isLoading)
+        {
+            <div class="loading-spinner-wrap compact"><div class="loading-spinner"></div></div>
+        }
+        else if (_canvases == null || _canvases.Count == 0)
+        {
+            <div class="p-3 text-muted">No canvases</div>
+        }
+        else
+        {
+            <ul class="list-group list-group-flush sidebar-canvas-list">
+                @foreach (var canvas in _canvases)
+                {
+                    var isHome = IsHome(canvas.Name);
+                    <li class="list-group-item sidebar-canvas-item d-flex justify-content-between align-items-center">
+                        <div class="d-flex align-items-center canvas-name-container" @onclick="@(() => NavigateToCanvas(canvas.Name))" style="cursor: pointer;">
+                            <span class="me-2 fs-5">@(isHome ? "🏠" : "🎨") </span>
+                            <span class="canvas-name-text">@canvas.Name</span>
+                        </div>
+                        <div class="d-flex align-items-center unsubscribe-container">
+                            @if (!isHome)
+                            {
+                                <button class="btn btn-danger btn-unsubscribe" title="Unsubscribe"
+                                        @onclick="async () => await OnUnsubscribeClicked(canvas.Name)"
+                                        @onclick:stopPropagation="true">
+                                    Unsubscribe
+                                </button>
+                            }
+                        </div>
+                    </li>
+                }
+            </ul>
+        }
+    </div>
+    <div class="sidebar-bottom-actions">
+        <button class="btn btn-primary w-100 mb-2" @onclick="GoToAddCanvas">Add new canvas</button>
+        <button class="btn btn-outline-primary w-100" @onclick="GoToSubscribeCanvas">Subscribe to canvas</button>
+    </div>
+</div>
+<button class="btn sidebar-collapse-btn @(_isCollapsed ? "collapsed" : "")"
+        @onclick="ToggleCollapse"
+        title="Toggle sidebar"
+        style="@($"position:fixed; top:50%; left:{(_isCollapsed ? "8px" : "308px")}; transform:translateY(-50%); z-index:1001;")">
+    <span>@(_isCollapsed ? ">" : "<")</span>
+</button>
+
+@code {
+    // EventCallback<bool> CollapseToggled and CascadingParameter NotificationManager removed:
+    // they are delegate/component-ref types that cannot cross the SSR→Interactive render boundary.
+    // Margin changes are communicated via SidebarStateService + CSS variable set by JS.
+    // Canvas list refresh is also communicated via SidebarStateService.
+
+    private bool _isCollapsed = false;
+    private bool _isLoading = true;
+    private List<CanvasDto>? _canvases;
+    private bool _hasRendered = false;
+    private string? _userName = string.Empty;
+    private string _renderMode = "SSR";
+
+    private string? _pendingCanvasName;
+    private CancellationTokenSource? _pendingCts;
+
+    protected override void OnInitialized()
+    {
+        Logger.LogInformation("CanvasSidebar.OnInitialized (SSR/pre-render phase).");
+        SidebarState.CanvasListChanged += OnCanvasListChangedAsync;
+    }
+
+    public void Dispose()
+    {
+        SidebarState.CanvasListChanged -= OnCanvasListChangedAsync;
+        try { _pendingCts?.Cancel(); _pendingCts?.Dispose(); } catch { }
+    }
+
+    private async Task OnCanvasListChangedAsync()
+    {
+        await RefreshCanvases();
+    }
+
+    public async Task RefreshCanvases()
+    {
+        _userName = await LocalStorageService.GetItemAsync<string>(LocalStorageKey.UserName);
+        await LoadCanvases();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !_hasRendered)
+        {
+            _hasRendered = true;
+            _renderMode = OperatingSystem.IsBrowser() ? "WASM" : "Server";
+            Logger.LogInformation("CanvasSidebar.OnAfterRenderAsync firstRender, mode={Mode}.", _renderMode);
+            _userName = await LocalStorageService.GetItemAsync<string>(LocalStorageKey.UserName);
+            var savedState = await LocalStorageService.GetItemAsync<bool?>(LocalStorageKey.SidebarCollapsed);
+            if (savedState.HasValue)
+                _isCollapsed = savedState.Value;
+
+            // Sync CSS variable with persisted collapse state
+            var margin = _isCollapsed ? "0px" : "300px";
+            await JSRuntime.InvokeVoidAsync("sidebarHelpers.setSidebarMargin", margin);
+            SidebarState.NotifyMarginChanged(margin);
+
+            await LoadCanvases();
+            StateHasChanged();
+        }
+    }
+
+    private async Task LoadCanvases()
+    {
+        _isLoading = true;
+        Logger.LogInformation("LoadCanvases: starting API call, mode={Mode}.", _renderMode);
+        try
+        {
+            _canvases = await ApiClient.GetSubscribedCanvasesAsync();
+            Logger.LogInformation("LoadCanvases: loaded {Count} canvases.", _canvases?.Count ?? 0);
+        }
+        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
+        {
+            Logger.LogWarning("LoadCanvases: 401 Unauthorized, redirecting to login.");
+            await LocalStorageService.ClearAsync();
+            Navigation.NavigateTo("/login");
+            _canvases = new List<CanvasDto>();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "LoadCanvases failed ({Mode}): {Type}: {Msg} | inner: {Inner}",
+                _renderMode, ex.GetType().Name, ex.Message, ex.InnerException?.Message);
+            _canvases = new List<CanvasDto>();
+        }
+        finally
+        {
+            _isLoading = false;
+        }
+    }
+
+    private async Task ToggleCollapse()
+    {
+        _isCollapsed = !_isCollapsed;
+        await LocalStorageService.SetItemAsync(LocalStorageKey.SidebarCollapsed, _isCollapsed);
+        var margin = _isCollapsed ? "0px" : "300px";
+        await JSRuntime.InvokeVoidAsync("sidebarHelpers.setSidebarMargin", margin);
+        SidebarState.NotifyMarginChanged(margin);
+    }
+
+    private async Task AutoCollapseOnMobile()
+    {
+        try
+        {
+            var isMobile = await JSRuntime.InvokeAsync<bool>("eval", "window.innerWidth <= 768");
+            if (isMobile && !_isCollapsed)
+            {
+                _isCollapsed = true;
+                var margin = "0px";
+                await JSRuntime.InvokeVoidAsync("sidebarHelpers.setSidebarMargin", margin);
+                SidebarState.NotifyMarginChanged(margin);
+                StateHasChanged();
+            }
+        }
+        catch { }
+    }
+
+    private async Task NavigateToCanvas(string canvasName)
+    {
+        Navigation.NavigateTo($"/canvas/{canvasName}");
+        await AutoCollapseOnMobile();
+    }
+
+    private async Task GoToAddCanvas()
+    {
+        Navigation.NavigateTo("/canvas_add");
+        await AutoCollapseOnMobile();
+    }
+
+    private async Task GoToSubscribeCanvas()
+    {
+        Navigation.NavigateTo("/canvas_subscribe");
+        await AutoCollapseOnMobile();
+    }
+
+    private async Task GoToSettings()
+    {
+        Navigation.NavigateTo("/settings");
+        await AutoCollapseOnMobile();
+    }
+
+    private async Task GoToFaq()
+    {
+        Navigation.NavigateTo("/faq");
+        await AutoCollapseOnMobile();
+    }
+
+    private async Task NotifyAsync(CustomNotification note)
+    {
+        try { await NotificationService.Writer.WriteAsync(note); }
+        catch (Exception ex) { Logger.LogWarning(ex, "NotificationService.Writer.WriteAsync failed"); }
+    }
+
+    private static Exception Unwrap(Exception ex)
+    {
+        while (ex is AggregateException ae && ae.InnerException != null) ex = ae.InnerException;
+        while (ex.InnerException != null) ex = ex.InnerException;
+        return ex;
+    }
+
+    private static string ParseExceptionMessage(Exception ex, string? canvasName = null)
+    {
+        ex = Unwrap(ex);
+        if (ex is HttpRequestException httpEx && httpEx.StatusCode.HasValue)
+        {
+            return httpEx.StatusCode.Value switch
+            {
+                HttpStatusCode.ServiceUnavailable => "Service is currently unavailable. Please try again later.",
+                HttpStatusCode.BadRequest => canvasName is null ? "Bad request." : $"Cannot unsubscribe from {canvasName}.",
+                HttpStatusCode.NotFound => "Canvas is not found.",
+                HttpStatusCode.Unauthorized => "You are not authorized. Please log in again.",
+                _ => httpEx.Message ?? "Network error occurred."
+            };
+        }
+        if (ex is TaskCanceledException) return "Request timed out or was canceled.";
+        return !string.IsNullOrEmpty(ex.Message) ? ex.Message : "An unexpected error occurred.";
+    }
+
+    private async Task OnUnsubscribeClicked(string canvasName)
+    {
+        if (_pendingCanvasName != canvasName)
+        {
+            try { _pendingCts?.Cancel(); _pendingCts?.Dispose(); } catch { }
+            _pendingCanvasName = canvasName;
+            try { await NotifyAsync(new CustomNotification { Message = $"Press again to unsubscribe from {canvasName}", Type = NotificationType.Info }); }
+            catch { }
+            _pendingCts = new CancellationTokenSource();
+            var ct = _pendingCts.Token;
+            _ = Task.Run(async () =>
+            {
+                try
+                {
+                    await Task.Delay(3000, ct);
+                    await InvokeAsync(() => { _pendingCanvasName = null; StateHasChanged(); });
+                }
+                catch (TaskCanceledException) { }
+                catch (Exception ex) { Logger.LogWarning(ex, "Error in pending timeout task"); }
+            });
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        try
+        {
+            var success = await ApiClient.UnsubscribeAsync(canvasName);
+            if (success)
+            {
+                ApiClient.ClearCanvasCache(canvasName);
+                var item = _canvases?.FirstOrDefault(c => c.Name == canvasName);
+                if (item != null) _canvases?.Remove(item);
+                Logger.LogInformation("Successfully unsubscribed from {CanvasName}", canvasName);
+                try { await NotifyAsync(new CustomNotification { Message = $"Unsubscribed from {canvasName}", Type = NotificationType.Success }); } catch { }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Unsubscribe failed for {CanvasName}", canvasName);
+            var friendly = ParseExceptionMessage(ex, canvasName);
+            try { await NotifyAsync(new CustomNotification { Message = friendly, Type = NotificationType.Error }); } catch { }
+        }
+        finally
+        {
+            try { _pendingCts?.Cancel(); _pendingCts?.Dispose(); } catch { }
+            _pendingCts = null;
+            _pendingCanvasName = null;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private bool IsPending(string canvasName) => _pendingCanvasName == canvasName;
+
+    private bool IsHome(string? name) =>
+        !string.IsNullOrEmpty(name) && string.Equals(name, DefaultConfig.DefaultCanvasName, StringComparison.OrdinalIgnoreCase);
+}
+
