@@ -41,20 +41,10 @@ docker compose --profile bots run --rm linteum-bots vangogh
 docker compose --profile bots run --rm linteum-bots munch
 
 docker compose --profile bots run --rm linteum-bots xerox canvas-name image-file
-```
 
-`docker compose run` does **not** support `--no-build` in this Docker Compose version.
-With the current `docker-compose.yml`, `linteum-bots` also has `pull_policy: build`, so `docker compose run ... linteum-bots ...` will trigger a rebuild.
-
-If you already built the bots image and want to reuse it without rebuilding, run the image directly:
-
-```bash
 # Reuse the already-built bots image without rebuild
 docker run --rm --network linteum_prod1 -e BOT_API_URL=http://linteum-api:8080 -e BOT_TIMEOUT_MINUTES=10 linteum-linteum-bots xerox canvas-name image-file
 ```
-
-The image name is the Compose-built image for this repo (`linteum-linteum-bots`).
-If your Compose project name changes, the image name changes too.
 
 ## Compose — Build
 
