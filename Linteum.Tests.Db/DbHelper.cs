@@ -1,12 +1,12 @@
 using Linteum.Infrastructure;
 using AutoMapper;
-using Linteum.Domain;
 using Linteum.Shared;
 using Linteum.Shared.DTO;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using NLog.Extensions.Logging;
 
-namespace Linteum.Tests
+namespace Linteum.Tests.Db
 {
     public class DbHelper
     {
@@ -21,7 +21,7 @@ namespace Linteum.Tests
                 builder.AddNLog("nlog.config");
             });
 
-            RepositoryManager = new RepositoryManager(dbContext, Mapper, new Config(), LoggerFactoryInterface, new SimplePixelNotifier());
+            RepositoryManager = new RepositoryManager(dbContext, Mapper, new Config(), LoggerFactoryInterface, new SimplePixelNotifier(), new MemoryCache(new MemoryCacheOptions()));
         }
 
         public static IMapper Mapper => TestMapper.Instance;

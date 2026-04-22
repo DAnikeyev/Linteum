@@ -35,7 +35,12 @@ public class UsersController : ControllerBase
     {
         var user = await _repoManager.UserRepository.GetByEmailAsync(email);
         if (user == null)
+        {
+            _logger.LogInformation("User lookup by email {Email} returned no result.", email);
             return NotFound();
+        }
+
+        _logger.LogInformation("User lookup by email {Email} succeeded.", email);
         return Ok(user);
     }
 
@@ -44,7 +49,12 @@ public class UsersController : ControllerBase
     {
         var user = await _repoManager.UserRepository.GetByUserNameAsync(userName);
         if (user == null)
+        {
+            _logger.LogInformation("User lookup by username {UserName} returned no result.", userName);
             return NotFound();
+        }
+
+        _logger.LogInformation("User lookup by username {UserName} succeeded.", userName);
         return Ok(user);
     }
 
@@ -53,17 +63,27 @@ public class UsersController : ControllerBase
     {
         var user = await _repoManager.UserRepository.GetByIdAsync(id);
         if (user == null)
+        {
+            _logger.LogInformation("User lookup by id {UserId} returned no result.", id);
             return NotFound();
+        }
+
+        _logger.LogInformation("User lookup by id {UserId} succeeded.", id);
         return Ok(user);
     }
 
     [HttpPost("add-or-update")]
     public async Task<IActionResult> AddOrUpdateUser([FromBody] UserDto userDto, [FromQuery] string? passwordHashOrKey, [FromQuery] int loginMethod = 0)
     {
-        var passwordDto = new UserPaswordDto { PasswordHashOrKey = passwordHashOrKey, LoginMethod = (Linteum.Shared.LoginMethod)loginMethod };
+        var passwordDto = new UserPaswordDto { PasswordHashOrKey = passwordHashOrKey, LoginMethod = (LoginMethod)loginMethod };
         var result = await _repoManager.UserRepository.AddOrUpdateUserAsync(userDto, passwordDto);
         if (result == null)
+        {
+            _logger.LogWarning("AddOrUpdateUser failed for {Email}.", userDto.Email);
             return BadRequest("Could not add or update user.");
+        }
+
+        _logger.LogInformation("User {Email} was added or updated successfully.", result.Email);
         return Ok(result);
     }
 
@@ -72,15 +92,18 @@ public class UsersController : ControllerBase
     {
         var result = await _repoManager.UserRepository.DeleteUserAsync(userDto);
         if (result == null)
+        {
+            _logger.LogWarning("DeleteUser failed: user {UserId} was not found.", userDto.Id);
             return NotFound();
+        }
+
+        _logger.LogInformation("User {UserId} was deleted successfully.", result.Id);
         return Ok(result);
     }
 
     [HttpPost("login")]
     public async Task<IActionResult> Login([FromBody] UserDto userDto, [FromQuery] string? passwordHashOrKey)
     {
-        _logger.LogInformation("Login attempt for user: {Email}", userDto.Email);
-
         var passwordDto = new UserPaswordDto { PasswordHashOrKey = passwordHashOrKey, LoginMethod = userDto.LoginMethod };
         var result = await _repoManager.UserRepository.TryLogin(userDto, passwordDto);
 
@@ -97,8 +120,9 @@ public class UsersController : ControllerBase
         }
 
         var sessionId = _sessionService.CreateSession(result.Id.Value);
-        _logger.LogInformation("Login successful for user: {Email} with ID: {UserId}, session created: {SessionId}", userDto.Email, result.Id.Value, sessionId);
         await TryAddLoginEventAsync(result.Id.Value, userDto.LoginMethod);
+
+        _logger.LogInformation("Login succeeded for user {Email}. UserId={UserId}, SessionId={SessionId}", userDto.Email, result.Id.Value, sessionId);
 
         return Ok(new LoginResponse { User = result, SessionId = sessionId });
     }
@@ -172,19 +196,10 @@ public class UsersController : ControllerBase
     [HttpPost("validate")]
     public async Task<IActionResult> Validate([FromBody] Guid sessionId)
     {
-        _logger.LogInformation("Login attempt for user by sessionId: {sessionId}", sessionId);
-        var isValid = _sessionService.ValidateSession(sessionId);
-
-        if (!isValid)
-        {
-            _logger.LogWarning("Invalid or expired session: {SessionId}", sessionId);
-            return Unauthorized();
-        }
-
         var userId = _sessionService.GetUserIdAndUpdateTimeLimit(sessionId);
         if (!userId.HasValue)
         {
-            _logger.LogWarning("Could not retrieve user ID for session: {SessionId}", sessionId);
+            _logger.LogWarning("Invalid or expired session: {SessionId}", sessionId);
             return Unauthorized();
         }
 
@@ -195,15 +210,13 @@ public class UsersController : ControllerBase
             return NotFound("User not found.");
         }
 
-        _logger.LogInformation("Session validated successfully for user: {Email} with ID: {UserId}", user.Email, userId.Value);
+        _logger.LogInformation("Session {SessionId} validated successfully for user {Email} ({UserId}).", sessionId, user.Email, userId.Value);
         return Ok(new LoginResponse { User = user, SessionId = sessionId });
     }
     
     [HttpPost("add")]
     public async Task<IActionResult> Add([FromBody] UserDto userDto, [FromQuery] string? passwordHashOrKey)
     {
-        _logger.LogInformation("Signup attempt for user: {Email}", userDto.Email);
-
         var passwordDto = new UserPaswordDto { PasswordHashOrKey = passwordHashOrKey, LoginMethod = userDto.LoginMethod };
         var userWithEmail = await _repoManager.UserRepository.GetByEmailAsync(userDto.Email);
         
@@ -235,7 +248,7 @@ public class UsersController : ControllerBase
         }
         
         var sessionId = _sessionService.CreateSession(result.Id!.Value);
-        _logger.LogInformation("SignUp successful for user: {Email} with ID: {UserId}, session created: {SessionId}", result.Email, result.Id.Value, sessionId);
+        _logger.LogInformation("Sign up succeeded for user {Email}. UserId={UserId}, SessionId={SessionId}", result.Email, result.Id.Value, sessionId);
 
         return Ok(new LoginResponse { User = result, SessionId = sessionId });
     }
@@ -243,8 +256,6 @@ public class UsersController : ControllerBase
     [HttpPost("changeName")]
     public async Task<IActionResult> ChangeUsername([FromBody] UserDto userDto)
     {
-        _logger.LogInformation("Username change requested for user with username: {Username}", userDto.UserName);
-        
         var userId = _sessionService.ProcessHeader(HttpContext.Request.Headers);
         if (!userId.HasValue)
         {
@@ -269,22 +280,19 @@ public class UsersController : ControllerBase
             return BadRequest("Could not update username.");
         }
 
-        _logger.LogInformation("Username updated successfully for user ID: {UserId}", userId.Value);
+        _logger.LogInformation("Username updated successfully for user {UserId}. NewUserName={UserName}", userId.Value, result.UserName);
         return Ok(result);
     }
 
     [HttpPost("changePassword")]
     public async Task<IActionResult> ChangePassword([FromQuery] string passwordHashOrKey, [FromQuery] int loginMethod = (int)LoginMethod.Password)
     {
-        _logger.LogInformation("Password change requested for user with login method: {LoginMethod}", (Linteum.Shared.LoginMethod)loginMethod);
         var userId = _sessionService.ProcessHeader(HttpContext.Request.Headers);
         if (!userId.HasValue)
         {
             _logger.LogWarning("Unauthorized username change attempt");
             return Unauthorized();
         }
-
-        _logger.LogInformation("Password change requested for user ID: {UserId}", userId.Value);
 
         var user = await _repoManager.UserRepository.GetByIdAsync(userId.Value);
         if (user == null)
@@ -293,7 +301,7 @@ public class UsersController : ControllerBase
             return NotFound();
         }
 
-        var parsedLoginMethod = (Linteum.Shared.LoginMethod)loginMethod;
+        var parsedLoginMethod = (LoginMethod)loginMethod;
         if (user.LoginMethod != LoginMethod.Password || parsedLoginMethod != LoginMethod.Password)
         {
             _logger.LogWarning("Password change blocked for user {UserId} with login method {LoginMethod}.", userId.Value, user.LoginMethod);
@@ -313,7 +321,7 @@ public class UsersController : ControllerBase
             return BadRequest("Could not update password.");
         }
 
-        _logger.LogInformation("Password updated successfully for user ID: {UserId}", userId.Value);
+        _logger.LogInformation("Password updated successfully for user {UserId}.", userId.Value);
         return Ok();
     }
 
@@ -405,7 +413,7 @@ public class UsersController : ControllerBase
 
         var sessionId = _sessionService.CreateSession(result.Id.Value);
         await TryAddLoginEventAsync(result.Id.Value, LoginMethod.Google);
-        _logger.LogInformation("Google login successful for user {Email} with ID {UserId}.", email, result.Id.Value);
+        _logger.LogInformation("Google login succeeded for user {Email}. UserId={UserId}, SessionId={SessionId}", email, result.Id.Value, sessionId);
         return Ok(new LoginResponse { User = result, SessionId = sessionId });
     }
 
@@ -423,7 +431,7 @@ public class UsersController : ControllerBase
         }
         catch (Exception ex)
         {
-            _logger.LogWarning(ex, "Failed to store login event for user {UserId}.", userId);
+            _logger.LogDebug(ex, "Failed to store login event for user {UserId}.", userId);
         }
     }
 

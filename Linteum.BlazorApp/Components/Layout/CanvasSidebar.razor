@@ -11,8 +11,6 @@
 @inject IJSRuntime JSRuntime
 
 @code {
-    [Parameter]
-    public EventCallback<bool> CollapseToggled { get; set; }
     [CascadingParameter]
     public NotificationManager? NotificationManager { get; set; }
     private bool _isCollapsed = false;
@@ -39,11 +37,13 @@
         {
             _hasRendered = true;
             _userName = await LocalStorageService.GetItemAsync<string>(LocalStorageKey.UserName);
-            var savedState = await LocalStorageService.GetItemAsync<bool?>(LocalStorageKey.SidebarCollapsed);
-            if (savedState.HasValue)
+            if (await IsMobileAsync())
             {
-                _isCollapsed = savedState.Value;
-                await CollapseToggled.InvokeAsync(_isCollapsed);
+                var savedState = await LocalStorageService.GetItemAsync<bool?>(LocalStorageKey.SidebarCollapsed);
+                if (savedState.HasValue)
+                {
+                    _isCollapsed = savedState.Value;
+                }
             }
             await LoadCanvases();
             StateHasChanged();
@@ -55,7 +55,18 @@
         _isLoading = true;
         try
         {
-            _canvases = await ApiClient.GetSubscribedCanvasesAsync();
+            var rawCanvases = await ApiClient.GetSubscribedCanvasesAsync();
+            if (rawCanvases != null)
+            {
+                _canvases = rawCanvases
+                    .OrderByDescending(c => IsHome(c.Name))
+                    .ThenBy(c => c.Name)
+                    .ToList();
+            }
+            else
+            {
+                _canvases = new List<CanvasDto>();
+            }
         }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
         {
@@ -78,22 +89,28 @@
     {
         _isCollapsed = !_isCollapsed;
         await LocalStorageService.SetItemAsync(LocalStorageKey.SidebarCollapsed, _isCollapsed);
-        await CollapseToggled.InvokeAsync(_isCollapsed);
+    }
+
+    private async Task<bool> IsMobileAsync()
+    {
+        try
+        {
+            return await JSRuntime.InvokeAsync<bool>("eval", "window.innerWidth <= 768");
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private async Task AutoCollapseOnMobile()
     {
-        try
+        if (await IsMobileAsync() && !_isCollapsed)
         {
-            var isMobile = await JSRuntime.InvokeAsync<bool>("eval", "window.innerWidth <= 768");
-            if (isMobile && !_isCollapsed)
-            {
-                _isCollapsed = true;
-                await CollapseToggled.InvokeAsync(true);
-                StateHasChanged();
-            }
+            _isCollapsed = true;
+            await LocalStorageService.SetItemAsync(LocalStorageKey.SidebarCollapsed, true);
+            StateHasChanged();
         }
-        catch { }
     }
 
     private async Task NavigateToCanvas(string canvasName)

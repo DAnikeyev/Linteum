@@ -21,14 +21,6 @@
     transition: transform 0.24s ease, width 0.24s ease, min-width 0.24s ease, visibility 0.24s ease;
 }
 
-.sidebar.collapsed {
-    transform: translateX(-100%);
-    width: 0;
-    min-width: 0;
-    visibility: hidden;
-    pointer-events: none;
-}
-
 /* Backdrop (visible on mobile only) */
 .sidebar-backdrop {
     display: none;
@@ -130,11 +122,6 @@
     padding: 0.2rem 0 1rem;
     opacity: 1;
     transition: opacity 0.18s ease;
-}
-
-.sidebar.collapsed .sidebar-content {
-    opacity: 0;
-    pointer-events: none;
 }
 
 .sidebar-content::-webkit-scrollbar {
@@ -262,6 +249,7 @@
 }
 
 .sidebar-collapse-btn {
+    display: none;
     position: fixed;
     top: 50%;
     left: 308px;
@@ -270,7 +258,6 @@
 
     width: 28px;
     height: 96px;
-    display: flex;
     align-items: center;
     justify-content: center;
 
@@ -293,35 +280,25 @@
     background: rgba(255, 249, 244, 0.98);
 }
 
-.sidebar-collapse-btn.collapsed {
-    left: 8px;
-}
-
-/* Desktop: show arrow icon, hide hamburger */
-.sidebar-toggle-icon {
-    display: inline;
-}
-.sidebar-toggle-hamburger {
-    display: none;
-}
-
-@media (max-width: 980px) {
-    .sidebar {
-        width: 280px;
-        min-width: 280px;
-    }
-
-    .sidebar-collapse-btn:not(.collapsed) {
-        left: 288px;
-    }
-}
-
 /* ── Mobile: overlay sidebar + hamburger toggle ── */
 @media (max-width: 768px) {
     .sidebar {
         width: 280px;
         min-width: 280px;
         box-shadow: 20px 0 40px rgba(0, 0, 0, 0.25);
+    }
+
+    .sidebar.collapsed {
+        transform: translateX(-100%);
+        width: 0;
+        min-width: 0;
+        visibility: hidden;
+        pointer-events: none;
+    }
+
+    .sidebar.collapsed .sidebar-content {
+        opacity: 0;
+        pointer-events: none;
     }
 
     .sidebar-backdrop {
@@ -340,6 +317,7 @@
     }
 
     .sidebar-collapse-btn {
+        display: flex;
         top: 10px;
         left: 10px;
         transform: none;
@@ -353,18 +331,6 @@
 
     .sidebar-collapse-btn:not(.collapsed) {
         left: 248px;
-    }
-
-    .sidebar-collapse-btn:hover {
-        width: 40px;
-    }
-
-    /* Mobile: show hamburger icon, hide arrow */
-    .sidebar-toggle-icon {
-        display: none;
-    }
-    .sidebar-toggle-hamburger {
-        display: inline;
     }
 
     .sidebar-bottom-actions {

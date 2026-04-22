@@ -19,8 +19,8 @@ namespace Linteum.Api.Controllers
         [HttpGet]
         public async Task<IActionResult> GetColors()
         {
-            _logger.LogInformation("Fetching all colors from the repository.");
-            var colors = await _repoManager.ColorRepository.GetAllAsync();
+            var colors = (await _repoManager.ColorRepository.GetAllAsync()).ToList();
+            _logger.LogInformation("Colors returned successfully. Count={Count}", colors.Count);
             return Ok(colors);
         }
     }

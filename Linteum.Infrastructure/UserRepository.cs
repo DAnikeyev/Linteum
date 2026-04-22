@@ -130,12 +130,12 @@ public class UserRepository : IUserRepository
                         }
                         catch (Exception ex)
                         {
-                            _logger.LogWarning(ex, "Could not auto-subscribe new user {UserId} to secondary canvas '{CanvasName}'", newUser.Id, secondaryName);
+                            _logger.LogDebug(ex, "Could not auto-subscribe new user {UserId} to secondary canvas '{CanvasName}'", newUser.Id, secondaryName);
                         }
                     }
                     else
                     {
-                        _logger.LogWarning("Secondary canvas '{CanvasName}' not found, skipping auto-subscription for user {UserId}", secondaryName, newUser.Id);
+                        _logger.LogDebug("Secondary canvas '{CanvasName}' not found, skipping auto-subscription for user {UserId}", secondaryName, newUser.Id);
                     }
                 }
             }

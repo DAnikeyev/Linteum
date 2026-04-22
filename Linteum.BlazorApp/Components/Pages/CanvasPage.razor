@@ -52,7 +52,7 @@
                 </div>
             </div>
 
-            <PixelManager @ref="_pixelManager" Canvas="@_canvas" ClickedPixel="@_clickedPixel" ClickedPixelData="@_clickedPixelData" CanvasRenderer="@_renderer" OnlineUsers="@_onlineUsers" />
+            <PixelManager @ref="_pixelManager" Canvas="@_canvas" ClickedPixel="@_clickedPixel" ClickedPixelData="@_clickedPixelData" CanvasRenderer="@_renderer" OnlineUsers="@_onlineUsers" IsMobileLayout="@_isMobileLayout" />
         </div>
 
         <div @ref="_coordsDisplayRef" class="canvas-coordinates"
@@ -98,6 +98,7 @@
     private bool _hasRendered = false;
     private bool _canvasReady = false;
     private string _lastSidebarMargin = "300px";
+    private bool _isMobileLayout;
     private List<ColorDto>? _colors;
     private DotNetObjectReference<CanvasPage>? _objRef;
     private IJSObjectReference? _resizeListener;
@@ -297,6 +298,9 @@
     {
         try
         {
+            var m = await JSRuntime.InvokeAsync<LayoutMetrics>("canvasHelpers.getLayoutMetrics");
+            _isMobileLayout = m.WindowWidth <= 768;
+
             var hostSize = await JSRuntime.InvokeAsync<ElementSize>("canvasHelpers.getElementSize", _viewportHostRef);
             if (hostSize.Width > 0 && hostSize.Height > 0)
             {
@@ -305,12 +309,8 @@
                 return;
             }
 
-            var m = await JSRuntime.InvokeAsync<LayoutMetrics>("canvasHelpers.getLayoutMetrics");
-
             const double safetyPadding = 2;
-            var isMobile = m.WindowWidth <= 768;
-
-            if (isMobile)
+            if (_isMobileLayout)
             {
                 const double mobileBottomSheetHeader = 56;
                 ViewportWidth = Math.Max(100, m.WindowWidth - m.MainHPad - safetyPadding);

@@ -23,16 +23,16 @@ public class SessionService
         {
             if (session.CreatedOrUpdatedAt + _expiredSessionTimeout > DateTime.UtcNow)
             {
-                _logger.LogInformation($"Session {sessionId} is valid for user {session.UserId}");
+                _logger.LogDebug("Session {SessionId} is valid for user {UserId}", sessionId, session.UserId);
                 return true;
             }
 
             RemoveSession(sessionId);
-            _logger.LogWarning($"Session {sessionId} has expired for user {session.UserId}");
+            _logger.LogDebug("Session {SessionId} has expired for user {UserId}", sessionId, session.UserId);
         }
         else
         {
-            _logger.LogWarning($"Session {sessionId} not found");
+            _logger.LogDebug("Session {SessionId} not found", sessionId);
         }
         return false;
     }
@@ -55,7 +55,7 @@ public class SessionService
 
         _sessionToUser[sessionId] = session;
         _userToSession[userId] = sessionId;
-        _logger.LogInformation($"Created new session for user {userId} with session ID {sessionId} at {session.CreatedOrUpdatedAt}");
+        _logger.LogDebug("Created new session for user {UserId} with session ID {SessionId} at {CreatedOrUpdatedAt}", userId, sessionId, session.CreatedOrUpdatedAt);
         return sessionId;
     }
 
@@ -66,16 +66,16 @@ public class SessionService
             if (session.CreatedOrUpdatedAt + _expiredSessionTimeout > DateTime.UtcNow)
             {
                 session.CreatedOrUpdatedAt = DateTime.UtcNow;
-                _logger.LogInformation($"Session {sessionId} is valid for user {session.UserId}");
+                _logger.LogDebug("Session {SessionId} is valid for user {UserId}", sessionId, session.UserId);
                 return session.UserId;
             }
 
             RemoveSession(sessionId);
-            _logger.LogWarning($"Session {sessionId} has expired for user {session.UserId}");
+            _logger.LogDebug("Session {SessionId} has expired for user {UserId}", sessionId, session.UserId);
         }
         else
         {
-            _logger.LogWarning($"Session {sessionId} not found");
+            _logger.LogDebug("Session {SessionId} not found", sessionId);
         }
         return null;
     }
@@ -85,7 +85,7 @@ public class SessionService
         var sessionIdString = header[CustomHeaders.SessionId];
         if (string.IsNullOrEmpty(sessionIdString) || !Guid.TryParse(sessionIdString, out var sessionId))
         {
-            _logger.LogWarning("Session-Id header missing or invalid.");
+            _logger.LogDebug("Session-Id header missing or invalid.");
             return null;
         }
         return GetUserIdAndUpdateTimeLimit(sessionId);

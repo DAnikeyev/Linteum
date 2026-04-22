@@ -58,17 +58,17 @@ public class SubscriptionRepository : ISubscriptionRepository
                 .FirstOrDefaultAsync(c => c.Id == canvasId);
             if (canvas == null)
             {
-                _logger.LogWarning("Canvas not found. userId={UserId}, canvasId={CanvasId}", userId, canvasId);
+                _logger.LogDebug("Canvas not found. userId={UserId}, canvasId={CanvasId}", userId, canvasId);
                 throw new CanvasNotFoundException(canvasId);
             }
             if (canvas.PasswordHash != passwordHash)
             {
-                _logger.LogWarning("Invalid password for the canvas. userId={UserId}, canvasId={CanvasId}", userId, canvasId);
+                _logger.LogDebug("Invalid password for the canvas. userId={UserId}, canvasId={CanvasId}", userId, canvasId);
                 throw new InvalidCanvasPasswordException(canvasId);
             }
             if (existing != null)
             {
-                _logger.LogInformation("User already subscribed. userId={UserId}, canvasId={CanvasId}", userId, canvasId);
+                _logger.LogDebug("User already subscribed. userId={UserId}, canvasId={CanvasId}", userId, canvasId);
                 throw new UserAlreadySubscribedException(userId, canvasId);
             }
 
@@ -82,7 +82,7 @@ public class SubscriptionRepository : ISubscriptionRepository
             await _context.SaveChangesAsync();
             await transaction.CommitAsync();
             await _balanceChangedEventRepository.TryChangeBalanceAsync(userId, canvasId, 1, BalanceChangedReason.Subscription);
-            _logger.LogInformation("User subscribed successfully. userId={UserId}, canvasId={CanvasId}", userId, canvasId);
+            _logger.LogDebug("User subscribed successfully. userId={UserId}, canvasId={CanvasId}", userId, canvasId);
             return _mapper.Map<SubscriptionDto>(subscription);
         }
         catch (Exception ex)
@@ -99,7 +99,7 @@ public class SubscriptionRepository : ISubscriptionRepository
 
         if (sub is null)
         {
-            _logger.LogWarning("Subscription not found for unsubscription. userId={UserId}, canvasId={CanvasId}", userId, canvasId);
+            _logger.LogDebug("Subscription not found for unsubscription. userId={UserId}, canvasId={CanvasId}", userId, canvasId);
             throw new CanvasNotFoundException(canvasId);
         }
 
@@ -112,7 +112,7 @@ public class SubscriptionRepository : ISubscriptionRepository
             var balanceChangedEventDto = await _balanceChangedEventRepository.TryChangeBalanceAsync(userId, canvasId, delta, BalanceChangedReason.Unsubscription);
             if (balanceChangedEventDto is null)
             {
-                _logger.LogError("Failed to adjust balance during unsubscription. userId={UserId}, canvasId={CanvasId}", userId, canvasId);
+                _logger.LogDebug("Failed to adjust balance during unsubscription. userId={UserId}, canvasId={CanvasId}", userId, canvasId);
                 throw new BalanceUpdateException(canvasId, userId);
             }
         }

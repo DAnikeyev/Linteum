@@ -24,10 +24,15 @@ namespace Linteum.Api.Services
             
             logger.Debug("Configuring DbContext with connection string: {ConnectionString}", connectionString);
             
+            services.AddMemoryCache();
             services.AddSingleton(Channel.CreateUnbounded<PixelDto>());
-            services.AddDbContext<AppDbContext>(options =>
+            services.AddSingleton<PixelChangeCounterService>();
+            services.AddSingleton<IPixelChangeCounter>(sp => sp.GetRequiredService<PixelChangeCounterService>());
+            services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<PixelChangeCounterService>());
+            services.AddDbContextPool<AppDbContext>(options =>
                 options.UseNpgsql(connectionString,
-                    b => b.MigrationsAssembly("Linteum.Api")));
+                    b => b.MigrationsAssembly("Linteum.Api")),
+                poolSize: 64);
             services.AddSingleton(new Config());
             services.AddSingleton<SessionService>();
             

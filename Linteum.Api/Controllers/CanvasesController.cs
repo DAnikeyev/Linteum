@@ -32,21 +32,22 @@ namespace Linteum.Api.Controllers
         [HttpGet]
         public async Task<IActionResult> GetAll([FromQuery] bool includePrivate = true)
         {
-            var canvases = await _repoManager.CanvasRepository.GetAllAsync(includePrivate);
+            var canvases = (await _repoManager.CanvasRepository.GetAllAsync(includePrivate)).ToList();
+            _logger.LogInformation("Canvases returned successfully. IncludePrivate={IncludePrivate}, Count={Count}", includePrivate, canvases.Count);
             return Ok(canvases);
         }
 
         [HttpGet("user/{userId}")]
         public async Task<IActionResult> GetByUserId(Guid userId)
         {
-            var canvases = await _repoManager.CanvasRepository.GetByUserIdAsync(userId);
+            var canvases = (await _repoManager.CanvasRepository.GetByUserIdAsync(userId)).ToList();
+            _logger.LogInformation("Canvases for user {UserId} returned successfully. Count={Count}", userId, canvases.Count);
             return Ok(canvases);
         }
 
         [HttpGet("name/{name}")]
         public async Task<IActionResult> GetByName(string name)
-        {            
-            _logger.LogInformation($"Getting info of canvas {name}");
+        {
             var userId = _sessionService.ProcessHeader(HttpContext.Request.Headers);
             if (userId == null)
             {
@@ -55,7 +56,12 @@ namespace Linteum.Api.Controllers
             }
             var canvas = await _repoManager.CanvasRepository.GetByNameAsync(name);
             if (canvas == null)
+            {
+                _logger.LogInformation("Canvas lookup for {CanvasName} returned no result for user {UserId}.", name, userId.Value);
                 return NotFound();
+            }
+
+            _logger.LogInformation("Canvas {CanvasName} returned successfully for user {UserId}.", name, userId.Value);
             return Ok(canvas);
         }
 
@@ -64,9 +70,11 @@ namespace Linteum.Api.Controllers
         {
             if (string.IsNullOrWhiteSpace(name))
             {
+                _logger.LogInformation("Canvas search completed with an empty query. IncludePrivate={IncludePrivate}", includePrivate);
                 return Ok(new List<CanvasDto>());
             }
-            var canvases = await _repoManager.CanvasRepository.SearchByNameAsync(name, includePrivate);
+            var canvases = (await _repoManager.CanvasRepository.SearchByNameAsync(name, includePrivate)).ToList();
+            _logger.LogInformation("Canvas search for '{Query}' completed successfully. IncludePrivate={IncludePrivate}, Count={Count}", name, includePrivate, canvases.Count);
             return Ok(canvases);
         }
 
@@ -81,7 +89,6 @@ namespace Linteum.Api.Controllers
         [HttpPost("Add")]
         public async Task<IActionResult> AddCanvas([FromBody] CanvasDto canvas, [FromQuery] string? passwordHash)
         {
-            _logger.LogInformation("Adding canvas with name: {CanvasName}", canvas.Name);
             var userId = _sessionService.ProcessHeader(HttpContext.Request.Headers);
             if (userId == null)
             {
@@ -91,6 +98,7 @@ namespace Linteum.Api.Controllers
 
             if (!IsCanvasSizeValid(canvas))
             {
+                _logger.LogWarning("Canvas creation failed for user {UserId}: invalid canvas size {Width}x{Height} for {CanvasName}.", userId.Value, canvas.Width, canvas.Height, canvas.Name);
                 return BadRequest($"Canvas size must be between {_canvasSizeOptions.MinWidth}x{_canvasSizeOptions.MinHeight} and {_canvasSizeOptions.MaxWidth}x{_canvasSizeOptions.MaxHeight}.");
             }
 
@@ -107,13 +115,13 @@ namespace Linteum.Api.Controllers
                 _logger.LogError("Subscription failed for user {UserId} on canvas {CanvasName}", userId, canvas.Name);
                 return BadRequest("Canvas could not be subscribed to.");
             }
+            _logger.LogInformation("Canvas {CanvasName} was created and subscribed successfully for user {UserId}.", canvas.Name, userId.Value);
             return Ok(result);
         }
 
         [HttpPost("subscribe")]
         public async Task<IActionResult> SubscribeToCanvas([FromBody] SubscribeCanvasRequestDto subscribeCanvasRequestDto)
         {
-            _logger.LogInformation("Subscribing to canvas with name: {CanvasName}", subscribeCanvasRequestDto.Canvas.Name);
             var userId = _sessionService.ProcessHeader(HttpContext.Request.Headers);
             if (userId == null)
             {
@@ -130,6 +138,7 @@ namespace Linteum.Api.Controllers
             try
             {
                 var subscription = await _repoManager.SubscriptionRepository.Subscribe(userId.Value, canvas.Id, subscribeCanvasRequestDto.Password.PasswordHash);
+                _logger.LogInformation("User {UserId} subscribed successfully to canvas {CanvasName}.", userId.Value, subscribeCanvasRequestDto.Canvas.Name);
                 return Ok(subscription);
             }
             catch (CanvasNotFoundException ex)
@@ -144,7 +153,7 @@ namespace Linteum.Api.Controllers
             }
             catch (UserAlreadySubscribedException ex)
             {
-                _logger.LogInformation(ex, "User {UserId} is already subscribed to canvas with name {CanvasName}.", userId, subscribeCanvasRequestDto.Canvas.Name);
+                _logger.LogWarning(ex, "User {UserId} is already subscribed to canvas with name {CanvasName}.", userId, subscribeCanvasRequestDto.Canvas.Name);
                 return BadRequest("User is already subscribed to this canvas.");
             }
             catch (Exception ex)
@@ -157,9 +166,11 @@ namespace Linteum.Api.Controllers
         [HttpPost("unsubscribe")]
         public async Task<IActionResult> UnsubscribeFromCanvas([FromBody] CanvasDto canvasDto)
         {
-            _logger.LogInformation("Unsubscribing from canvas with name: {CanvasName}", canvasDto.Name);
             if(canvasDto.Name == new Config().DefaultCanvasName)
+            {
+                _logger.LogWarning("Cannot unsubscribe from default canvas {CanvasName}.", canvasDto.Name);
                 return BadRequest("Cannot unsubscribe from the default canvas.");
+            }
             var userId = _sessionService.ProcessHeader(HttpContext.Request.Headers);
             if (userId == null)
             {
@@ -176,6 +187,7 @@ namespace Linteum.Api.Controllers
             try
             {
                 var unsubscription = await _repoManager.SubscriptionRepository.Unsubscribe(userId.Value, canvas.Id);
+                _logger.LogInformation("User {UserId} unsubscribed successfully from canvas {CanvasName}.", userId.Value, canvasDto.Name);
                 return Ok(unsubscription);
             }
             catch (CanvasNotFoundException ex)
@@ -201,8 +213,6 @@ namespace Linteum.Api.Controllers
         [HttpDelete("delete/{name}")]
         private async Task<IActionResult> DeleteCanvas(string name, [FromQuery] string passwordHash)
         {
-            
-            _logger.LogInformation("Trying to delete canvas with name: {CanvasName}", name);
             var userId = _sessionService.ProcessHeader(HttpContext.Request.Headers);
             if (userId == null)
             {
@@ -231,7 +241,11 @@ namespace Linteum.Api.Controllers
 
             var result = await _repoManager.CanvasRepository.TryDeleteCanvasByName(name);
             if (!result)
+            {
+                _logger.LogWarning("Canvas deletion failed for {CanvasName} by user {UserId}.", name, userId.Value);
                 return BadRequest("Canvas could not be deleted.");
+            }
+            _logger.LogInformation("Canvas {CanvasName} deleted successfully by user {UserId}.", name, userId.Value);
             return Ok();
         }
 
@@ -239,6 +253,7 @@ namespace Linteum.Api.Controllers
         public async Task<IActionResult> CheckPassword([FromBody] CanvasDto canvas, [FromQuery] string? passwordHash)
         {
             var result = await _repoManager.CanvasRepository.CheckPassword(canvas, passwordHash);
+            _logger.LogInformation("Canvas password check completed for canvas {CanvasId}. Result={Result}", canvas.Id, result);
             return Ok(result);
         }
 
@@ -246,15 +261,24 @@ namespace Linteum.Api.Controllers
         public async Task<IActionResult> GetImage(string name)
         {
             if (!Request.Headers.TryGetValue(CustomHeaders.SessionId, out var sessionIdStr) || !Guid.TryParse(sessionIdStr, out var sessionId))
+            {
+                _logger.LogWarning("Canvas image request failed for {CanvasName}: Session-Id header missing or invalid.", name);
                 return Unauthorized("Session-Id header missing or invalid.");
+            }
 
             var userId = _sessionService.GetUserIdAndUpdateTimeLimit(sessionId);
             if (userId == null)
+            {
+                _logger.LogWarning("Canvas image request failed for {CanvasName}: invalid session {SessionId}.", name, sessionId);
                 return Unauthorized("Invalid session.");
+            }
 
             var canvas = await _repoManager.CanvasRepository.GetByNameAsync(name);
             if (canvas == null)
+            {
+                _logger.LogWarning("Canvas image request failed: canvas {CanvasName} not found for user {UserId}.", name, userId.Value);
                 return NotFound("Canvas not found.");
+            }
 
             var pixels = await _repoManager.PixelRepository.GetByCanvasIdAsync(canvas.Id);
             var colors = await _repoManager.ColorRepository.GetAllAsync();
@@ -276,6 +300,7 @@ namespace Linteum.Api.Controllers
 
             using var ms = new MemoryStream();
             await image.SaveAsPngAsync(ms);
+            _logger.LogInformation("Canvas image for {CanvasName} generated successfully for user {UserId}.", name, userId.Value);
             return File(ms.ToArray(), "image/png");
         }
 
@@ -284,13 +309,20 @@ namespace Linteum.Api.Controllers
         public async Task<IActionResult> GetImage()
         {
             if (!Request.Headers.TryGetValue(CustomHeaders.SessionId, out var sessionIdStr) || !Guid.TryParse(sessionIdStr, out var sessionId))
+            {
+                _logger.LogWarning("Subscribed canvases request failed: Session-Id header missing or invalid.");
                 return Unauthorized("Session-Id header missing or invalid.");
+            }
 
             var userId = _sessionService.GetUserIdAndUpdateTimeLimit(sessionId);
             if (userId == null)
+            {
+                _logger.LogWarning("Subscribed canvases request failed: invalid session {SessionId}.", sessionId);
                 return Unauthorized("Invalid session.");
+            }
 
-            var canvases = await _repoManager.CanvasRepository.GetByUserIdAsync(userId.Value);
+            var canvases = (await _repoManager.CanvasRepository.GetByUserIdAsync(userId.Value)).ToList();
+            _logger.LogInformation("Subscribed canvases returned successfully for user {UserId}. Count={Count}", userId.Value, canvases.Count);
             return Ok(canvases);
         }
     }

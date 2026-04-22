@@ -15,10 +15,13 @@
         {
             <span class="pm-title">@Canvas.Name : (@Canvas.Width x @Canvas.Height)</span>
         }
-        <button class="pm-mobile-toggle" @onclick="ToggleMobilePanel" @onclick:stopPropagation="true"
-                title="@(_isMobileExpanded ? "Collapse panel" : "Expand panel")">
-            @(_isMobileExpanded ? "▾" : "▴")
-        </button>
+        @if (IsMobileLayout)
+        {
+            <button class="pm-mobile-toggle" @onclick="ToggleMobilePanel" @onclick:stopPropagation="true"
+                    title="@(_isMobileExpanded ? "Collapse panel" : "Expand panel")">
+                @(_isMobileExpanded ? "▾" : "▴")
+            </button>
+        }
     </div>
 
     <div class="pm-content @(_isMobileExpanded ? "" : "pm-content-collapsed")">
@@ -129,6 +132,9 @@
     [Parameter]
     public List<string> OnlineUsers { get; set; } = new();
 
+    [Parameter]
+    public bool IsMobileLayout { get; set; }
+
     private bool _isMobileExpanded = true;
     private void ToggleMobilePanel() => _isMobileExpanded = !_isMobileExpanded;
 
@@ -137,6 +143,7 @@
     private List<HistoryResponseItem>? _pixelChangeHistory;
     private Guid? PrevPixelId;
     private (int X, int Y)? _prevClickedPixel;
+    private Guid? _skipNextHistoryRefreshPixelId;
     private int? _selectedColorId;
     private ColorDto? SelectedColor => _colors?.FirstOrDefault(c => c.Id == _selectedColorId);
 
@@ -159,6 +166,7 @@
     {
         if (ClickedPixelData == null || !ClickedPixel.HasValue)
         {
+            _skipNextHistoryRefreshPixelId = null;
             PrevPixelId = null;
             _prevClickedPixel = null;
             _pixelChangeHistory = null;
@@ -168,10 +176,16 @@
         if (ClickedPixelData.Id == null)
         {
             // Pixel has never been changed before - clear stale history from previously selected pixels.
+            _skipNextHistoryRefreshPixelId = null;
             PrevPixelId = null;
             _prevClickedPixel = ClickedPixel;
             _pixelChangeHistory = null;
             return;
+        }
+
+        if (_skipNextHistoryRefreshPixelId.HasValue && _skipNextHistoryRefreshPixelId.Value != ClickedPixelData.Id.Value)
+        {
+            _skipNextHistoryRefreshPixelId = null;
         }
 
         var samePixel =
@@ -193,6 +207,12 @@
     {
         if (ClickedPixelData?.Id != null)
         {
+            if (_skipNextHistoryRefreshPixelId.HasValue && _skipNextHistoryRefreshPixelId.Value == ClickedPixelData.Id.Value)
+            {
+                _skipNextHistoryRefreshPixelId = null;
+                return;
+            }
+
             _pixelChangeHistory = await ApiClient.GetHistoryAsync(ClickedPixelData.Id.Value, useCache: false);
             StateHasChanged();
         }
@@ -282,6 +302,7 @@
             {
                 PrevPixelId = newPixel.Id.Value;
                 _prevClickedPixel = ClickedPixel;
+                _skipNextHistoryRefreshPixelId = newPixel.Id.Value;
                 _pixelChangeHistory = await ApiClient.GetHistoryAsync(newPixel.Id.Value, useCache: false);
             }
         }

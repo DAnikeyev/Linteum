@@ -2,6 +2,14 @@ services:
   linteum-db:
     image: postgres:16
     container_name: ${DB_CONTAINER_NAME}
+    command: >
+      postgres
+      -c shared_buffers=256MB
+      -c work_mem=4MB
+      -c effective_cache_size=512MB
+      -c wal_buffers=16MB
+      -c checkpoint_completion_target=0.9
+      -c max_connections=100
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -26,13 +34,14 @@ services:
     ports:
       - "${API_HOST_PORT}:${API_CONTAINER_PORT}"
     environment:
-      - ConnectionStrings__DefaultConnection=Host=${DB_CONTAINER_NAME};Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD}
+      - ConnectionStrings__DefaultConnection=Host=${DB_CONTAINER_NAME};Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};Maximum Pool Size=40;Minimum Pool Size=4;Timeout=30;Command Timeout=30
       - MASTER_PASSWORD=${MASTER_PASSWORD}
       - MASTER_USER=${MASTER_USER}
       - MASTER_EMAIL=${MASTER_EMAIL}
       - PASSWORD_SALT=${PASSWORD_SALT}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
+      - NLOG_CONSOLE_MIN_LEVEL=${NLOG_CONSOLE_MIN_LEVEL}
       - ASPNETCORE_URLS=http://*:${API_CONTAINER_PORT}
       - CorsOrigins__0=http://localhost:${BLAZOR_HOST_PORT}
       - CorsOrigins__1=http://${BLAZOR_CONTAINER_NAME}:${BLAZOR_CONTAINER_PORT}
@@ -85,6 +94,7 @@ services:
 
 networks:
   linteum_prod1:
+    name: linteum_prod1
     driver: bridge
 
 volumes:
