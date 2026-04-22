@@ -11,6 +11,9 @@
 @inject IJSRuntime JSRuntime
 
 @code {
+    [Parameter]
+    public EventCallback<bool> CollapsedChanged { get; set; }
+
     [CascadingParameter]
     public NotificationManager? NotificationManager { get; set; }
     private bool _isCollapsed = false;
@@ -37,14 +40,18 @@
         {
             _hasRendered = true;
             _userName = await LocalStorageService.GetItemAsync<string>(LocalStorageKey.UserName);
-            if (await IsMobileAsync())
+
+            var savedState = await LocalStorageService.GetItemAsync<bool?>(LocalStorageKey.SidebarCollapsed);
+            if (savedState.HasValue)
             {
-                var savedState = await LocalStorageService.GetItemAsync<bool?>(LocalStorageKey.SidebarCollapsed);
-                if (savedState.HasValue)
-                {
-                    _isCollapsed = savedState.Value;
-                }
+                _isCollapsed = savedState.Value;
             }
+
+            if (CollapsedChanged.HasDelegate)
+            {
+                await CollapsedChanged.InvokeAsync(_isCollapsed);
+            }
+
             await LoadCanvases();
             StateHasChanged();
         }
@@ -89,6 +96,11 @@
     {
         _isCollapsed = !_isCollapsed;
         await LocalStorageService.SetItemAsync(LocalStorageKey.SidebarCollapsed, _isCollapsed);
+
+        if (CollapsedChanged.HasDelegate)
+        {
+            await CollapsedChanged.InvokeAsync(_isCollapsed);
+        }
     }
 
     private async Task<bool> IsMobileAsync()
@@ -109,6 +121,12 @@
         {
             _isCollapsed = true;
             await LocalStorageService.SetItemAsync(LocalStorageKey.SidebarCollapsed, true);
+
+            if (CollapsedChanged.HasDelegate)
+            {
+                await CollapsedChanged.InvokeAsync(_isCollapsed);
+            }
+
             StateHasChanged();
         }
     }
@@ -304,8 +322,17 @@
     private bool IsHome(string? name) =>
         !string.IsNullOrEmpty(name) && string.Equals(name, DefaultConfig.DefaultCanvasName, StringComparison.OrdinalIgnoreCase);
 }
+@if (!_isCollapsed)
+{
+    <button type="button"
+            class="sidebar-backdrop"
+            aria-label="Close sidebar"
+            @onclick="ToggleCollapse">
+    </button>
+}
+
 <div class="sidebar @(_isCollapsed ? "collapsed" : "")"
-     style=@($"position:fixed; left:0; top:0; height:100vh; width:300px; z-index:1000; transition:transform .2s ease; transform:{(_isCollapsed ? "translateX(-100%)" : "translateX(0)")};")>
+     aria-hidden="@_isCollapsed">
     <div class="sidebar-header">
         <button class="btn btn-outline-primary sidebar-faq-btn" title="FAQ" @onclick="GoToFaq">
             FAQ
@@ -360,6 +387,6 @@
 <button class="btn sidebar-collapse-btn @(_isCollapsed ? "collapsed" : "")"
         @onclick="ToggleCollapse"
         title="Toggle sidebar"
-        style=@($"position:fixed; top:50%; left:{(_isCollapsed ? "8px" : "308px")}; transform:translateY(-50%); z-index:1001;")>
+        aria-expanded="@(!_isCollapsed)">
     <span>@(_isCollapsed ? ">" : "<")</span>
 </button>

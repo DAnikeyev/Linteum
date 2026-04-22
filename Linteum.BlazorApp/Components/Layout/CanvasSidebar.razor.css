@@ -21,6 +21,20 @@
     transition: transform 0.24s ease, width 0.24s ease, min-width 0.24s ease, visibility 0.24s ease;
 }
 
+.sidebar.collapsed {
+    transform: translateX(-100%);
+    width: 0;
+    min-width: 0;
+    visibility: hidden;
+    pointer-events: none;
+}
+
+.sidebar.collapsed .sidebar-content,
+.sidebar.collapsed .sidebar-bottom-actions {
+    opacity: 0;
+    pointer-events: none;
+}
+
 /* Backdrop (visible on mobile only) */
 .sidebar-backdrop {
     display: none;
@@ -249,10 +263,10 @@
 }
 
 .sidebar-collapse-btn {
-    display: none;
+    display: flex;
     position: fixed;
     top: 50%;
-    left: 308px;
+    left: 300px;
     transform: translateY(-50%);
     z-index: 1101;
 
@@ -274,6 +288,10 @@
     transition: left 0.24s ease, width 0.2s ease, box-shadow 0.2s ease;
 }
 
+.sidebar-collapse-btn.collapsed {
+    left: 8px;
+}
+
 .sidebar-collapse-btn:hover {
     width: 30px;
     color: #8f3d11;
@@ -286,19 +304,6 @@
         width: 280px;
         min-width: 280px;
         box-shadow: 20px 0 40px rgba(0, 0, 0, 0.25);
-    }
-
-    .sidebar.collapsed {
-        transform: translateX(-100%);
-        width: 0;
-        min-width: 0;
-        visibility: hidden;
-        pointer-events: none;
-    }
-
-    .sidebar.collapsed .sidebar-content {
-        opacity: 0;
-        pointer-events: none;
     }
 
     .sidebar-backdrop {
@@ -317,7 +322,6 @@
     }
 
     .sidebar-collapse-btn {
-        display: flex;
         top: 10px;
         left: 10px;
         transform: none;

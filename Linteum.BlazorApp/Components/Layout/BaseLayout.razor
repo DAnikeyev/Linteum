@@ -9,18 +9,18 @@
 
 <CascadingValue Value="Sidebar">
     <CascadingValue Value="_notificationManagerRef">
-        <CanvasSidebar @ref="Sidebar" />
+        <CanvasSidebar @ref="Sidebar" CollapsedChanged="OnSidebarCollapsedChanged" />
     </CascadingValue>
 
-    <main class="main-content" style="margin-left:@SidebarWidth;">
-        <CascadingValue Value="SidebarWidth" Name="SidebarMargin">
+    <main class="main-content" style="margin-left:@SidebarMargin;">
+        <CascadingValue Value="SidebarMargin" Name="SidebarMargin">
             @Body
         </CascadingValue>
         @if (!string.IsNullOrWhiteSpace(HubLink))
         {
             <a class="btn btn-outline-primary hub-back-btn"
                href="@HubLink"
-               style="left: calc(@SidebarWidth + 12px);">
+               style="left: calc(@SidebarMargin + 12px);">
                 <i class="bi bi-arrow-left me-1"></i>
                 Back to hub
             </a>
@@ -36,7 +36,9 @@
     private const string SidebarWidth = "300px";
     public CanvasSidebar? Sidebar { get; set; }
     private NotificationManager? _notificationManagerRef;
+    private bool _isSidebarCollapsed;
     private string Version => Configuration["VERSION"] ?? Environment.GetEnvironmentVariable("VERSION") ?? "dev";
+    private string SidebarMargin => _isSidebarCollapsed ? "0px" : SidebarWidth;
     private string HubLink
     {
         get
@@ -91,6 +93,17 @@
             ApiClient.ClearSession();
             Navigation.NavigateTo("/login");
         }
+    }
+
+    private void OnSidebarCollapsedChanged(bool isCollapsed)
+    {
+        if (_isSidebarCollapsed == isCollapsed)
+        {
+            return;
+        }
+
+        _isSidebarCollapsed = isCollapsed;
+        StateHasChanged();
     }
 
 }
