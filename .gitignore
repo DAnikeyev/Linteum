@@ -409,3 +409,4 @@ FodyWeavers.xsd
 /Linteum.BlazorApp/keys
 /.idea/
 /keys
+*plans/
