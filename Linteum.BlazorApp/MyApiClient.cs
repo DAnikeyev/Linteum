@@ -1,11 +1,7 @@
 using System.Net;
-using System.Security.Cryptography;
-using System.Text;
 using Linteum.BlazorApp.ExtensionMethods;
-using Linteum.BlazorApp.LocalDTO;
 using Linteum.Shared;
 using Linteum.Shared.DTO;
-using Microsoft.Extensions.Logging;
 
 namespace Linteum.BlazorApp;
 

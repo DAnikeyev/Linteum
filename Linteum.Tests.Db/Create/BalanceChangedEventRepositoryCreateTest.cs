@@ -1,5 +1,4 @@
 using Linteum.Shared;
-using Linteum.Shared.DTO;
 
 namespace Linteum.Tests.Db.Create;
 

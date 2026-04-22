@@ -1,5 +1,4 @@
 using Linteum.Infrastructure;
-using Linteum.Domain.Repository;
 using Linteum.Shared;
 using AutoMapper;
 using Microsoft.EntityFrameworkCore;

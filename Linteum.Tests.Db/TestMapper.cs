@@ -1,5 +1,4 @@
 using AutoMapper;
-using Linteum.Infrastructure;
 
 namespace Linteum.Infrastructure;
 

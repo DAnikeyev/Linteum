@@ -1,6 +1,5 @@
 using System.Net.Http.Json;
 using System.Threading.Channels;
-using Linteum.Shared;
 using Linteum.Shared.DTO;
 
 namespace Linteum.Bots;

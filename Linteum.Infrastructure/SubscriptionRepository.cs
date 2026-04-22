@@ -7,7 +7,6 @@ using Linteum.Shared.DTO;
 using Linteum.Shared.Exceptions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using NLog;
 
 namespace Linteum.Infrastructure;
 

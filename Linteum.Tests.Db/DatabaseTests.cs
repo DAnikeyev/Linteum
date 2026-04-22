@@ -1,4 +1,3 @@
-using NUnit.Framework;
 using Microsoft.EntityFrameworkCore;
 using Linteum.Infrastructure;
 

@@ -1,5 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations;
-using Linteum.Shared;
+﻿using Linteum.Shared;
 
 namespace Linteum.Domain;
 
