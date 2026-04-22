@@ -1,3 +1,32 @@
+# 0.1.2 - 2026/04/22
+
+## Performance and Reliability
+- Added `PixelChangeCounterService` to aggregate and log successful pixel updates per second by canvas.
+- Reworked pixel-history cleanup to batch processing (`CleanPixelHistoryBatchAsync`) for reduced database load.
+- Improved concurrent pixel updates in sandbox mode with conflict-aware retry handling for unique-key races.
+- Switched API DbContext registration to pooled contexts and added in-memory cache for improved runtime efficiency.
+
+## Configuration and Data Seeding
+- Increased default canvas size to `1024x1024` and added `Thailand` to secondary canvases.
+- Expanded the default color palette with additional shades (e.g., Neon Lime, Azure, Electric Violet, Hot Pink, Olive Drab, Lemon Lime).
+- Added color synchronization cleanup in DB seeding: colors removed from config are reassigned to default color before deletion.
+- Added default-canvas dimension synchronization with automatic cleanup of out-of-bounds pixels and related history.
+
+## API and Observability
+- Added more structured logging across controllers and repositories for pixel retrieval, update flow, and cleanup operations.
+- Added configurable console log minimum level via `NLOG_CONSOLE_MIN_LEVEL` (`.env`, `docker-compose`, and `nlog.config` integration).
+- Updated startup/runtime configuration with explicit `.env` loading and minimum thread pool settings.
+
+## UI and UX Improvements
+- Improved Login and Signup flows with session-check loading states, clearer busy messaging, and redirect-on-valid-session behavior.
+- Enhanced sidebar behavior with persisted collapsed state handling, mobile auto-collapse, backdrop close action, and canvas sorting.
+- Updated FAQ with additional public canvas references and source-code/contact details.
+
+## Bots and Deployment Tooling
+- Added bot image assets (`Levitan.jpg`, `M42.jpg`, `Thailand.jpg`, `home.jpg`) and ensured they are copied to output.
+- Updated Docker Compose with PostgreSQL tuning settings, API connection pool settings, and a fixed network name.
+- Expanded Docker bot usage docs with Xerox bot examples and guidance for running prebuilt images without rebuilds.
+
 # 0.1.1 - 2026/04/07
 
 ## Authentication and Security
