@@ -71,7 +71,7 @@ public class ImageConverter
                 closestMatch = colorDto;
             }
 
-            // Weight decreases with distance. Use an exponential falloff: e^-(sqrt(distanceSquared))/10
+            // Weight decreases with distance. Use an exponential falloff: e^-(sqrt(distanceSquared))/3
             var weight = System.Math.Exp(-System.Math.Sqrt(distanceSquared) / 3.0);
             weights[i] = weight;
             totalWeight += weight;
