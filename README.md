@@ -23,7 +23,7 @@ Check out the live website: [linteum.ash-twin.com](https://linteum.ash-twin.com)
 Linteum is built with modern .NET technologies and a clean, decoupled architecture:
 
 - **Frontend:** [Blazor](https://dotnet.microsoft.com/en-us/apps/aspnet/web-apps/blazor) (Interactive Server mode) for a rich, responsive UI.
-- **Backend:** [ASP.NET Core Web API](https://dotnet.microsoft.com/en-us/apps/aspnet/apis) providing a robust RESTful service.
+- **Backend:** [ASP.NET Core Web API](https://dotnet.microsoft.com/en-us/apps/aspnet/apis) providing a robust HTTP-based API.
 - **Real-time:** [SignalR](https://dotnet.microsoft.com/en-us/apps/aspnet/signalr) for ultra-low latency pixel updates.
 - **Database:** [PostgreSQL](https://www.postgresql.org/) managed with [Entity Framework Core](https://learn.microsoft.com/en-us/ef/core/).
 - **Containerization:** [Docker](https://www.docker.com/) & Docker Compose for seamless environment management.
@@ -51,12 +51,6 @@ Linteum is built with modern .NET technologies and a clean, decoupled architectu
 
 The easiest way to get Linteum up and running is using the provided script:
 
-```powershell
-./build-and-up.ps1
-```
-
-Or manually using Docker Compose:
-
 ```bash
 docker-compose up -d --build
 ```
@@ -76,7 +70,8 @@ Linteum isn't just for humans! We have several bots that can be activated:
 - **VanGoghBot**: Paints "Starry Night" onto the canvas pixel by pixel.
 - **CleanerBot**: Helps keep the canvas tidy.
 - **MunchBot**: Likes to add a little "Scream" to the mix.
-
+- **XeroxBot**: Draws an image on the canvas.
+- See DockerCheatSheet.md for more details on how to activate bots.
 ---
 
 ## 🤝 Contributing

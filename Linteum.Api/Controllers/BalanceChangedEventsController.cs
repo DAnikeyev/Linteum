@@ -20,14 +20,16 @@ namespace Linteum.Api.Controllers
         [HttpGet("user/{userId}")]
         public async Task<IActionResult> GetByUserId(Guid userId)
         {
-            var events = await _repoManager.BalanceChangedEventRepository.GetByUserIdAsync(userId);
+            var events = (await _repoManager.BalanceChangedEventRepository.GetByUserIdAsync(userId)).ToList();
+            _logger.LogInformation("Balance changed events for user {UserId} returned successfully. Count={Count}", userId, events.Count);
             return Ok(events);
         }
 
         [HttpGet("user/{userId}/canvas/{canvasId}")]
         public async Task<IActionResult> GetByUserAndCanvasId(Guid userId, Guid canvasId)
         {
-            var events = await _repoManager.BalanceChangedEventRepository.GetByUserAndCanvasIdAsync(userId, canvasId);
+            var events = (await _repoManager.BalanceChangedEventRepository.GetByUserAndCanvasIdAsync(userId, canvasId)).ToList();
+            _logger.LogInformation("Balance changed events for user {UserId} on canvas {CanvasId} returned successfully. Count={Count}", userId, canvasId, events.Count);
             return Ok(events);
         }
 
@@ -36,7 +38,12 @@ namespace Linteum.Api.Controllers
         {
             var result = await _repoManager.BalanceChangedEventRepository.TryChangeBalanceAsync(userId, canvasId, delta, reason);
             if (result == null)
+            {
+                _logger.LogWarning("Balance change failed for user {UserId} on canvas {CanvasId}. Delta={Delta}, Reason={Reason}", userId, canvasId, delta, reason);
                 return BadRequest("Insufficient balance or error occurred.");
+            }
+
+            _logger.LogInformation("Balance changed successfully for user {UserId} on canvas {CanvasId}. Delta={Delta}, Reason={Reason}, NewBalance={NewBalance}", userId, canvasId, delta, reason, result.NewBalance);
             return Ok(result);
         }
     }

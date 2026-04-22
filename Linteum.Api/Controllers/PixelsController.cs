@@ -14,20 +14,23 @@ public class PixelsController : ControllerBase
     private readonly RepositoryManager _repoManager;
     private readonly ILogger<PixelsController> _logger;
     private readonly Channel<PixelDto> _changedPixelsChannel;
+    private readonly IPixelChangeCounter _pixelChangeCounter;
     private readonly SessionService _sessionService;
 
-    public PixelsController(RepositoryManager repoManager, SessionService sessionService, ILogger<PixelsController> logger, Channel<PixelDto> changedPixelsChannel)
+    public PixelsController(RepositoryManager repoManager, SessionService sessionService, ILogger<PixelsController> logger, Channel<PixelDto> changedPixelsChannel, IPixelChangeCounter pixelChangeCounter)
     {
         _sessionService = sessionService;
         _repoManager = repoManager;
         _logger = logger;
         _changedPixelsChannel = changedPixelsChannel;
+        _pixelChangeCounter = pixelChangeCounter;
     }
 
     [HttpGet("canvases/{canvasId}")]
     public async Task<IActionResult> GetByCanvasId(Guid canvasId)
     {
-        var pixels = await _repoManager.PixelRepository.GetByCanvasIdAsync(canvasId);
+        var pixels = (await _repoManager.PixelRepository.GetByCanvasIdAsync(canvasId)).ToList();
+        _logger.LogInformation("Pixels for canvas {CanvasId} returned successfully. Count={Count}", canvasId, pixels.Count);
         return Ok(pixels);
     }
     
@@ -63,15 +66,23 @@ public class PixelsController : ControllerBase
         var pixelExtracted = await _repoManager.PixelRepository.GetByPixelDto(pixelDtoReq);
         if (pixelExtracted == null)
         {
-            _logger.LogInformation("Pixel not found at ({X}, {Y}) for canvas {CanvasName}, returning default pixel.", pixelDto.X, pixelDto.Y, canvasName);
             pixelExtracted = await GetDefaultPixel(pixelDtoReq);
+            _logger.LogInformation("Pixel lookup for canvas {CanvasName} at ({X}, {Y}) returned the default pixel for user {UserId}.", canvasName, pixelDto.X, pixelDto.Y, userId.Value);
+            return Ok(pixelExtracted);
         }
+
+        _logger.LogInformation("Pixel lookup for canvas {CanvasName} at ({X}, {Y}) succeeded for user {UserId}.", canvasName, pixelDto.X, pixelDto.Y, userId.Value);
         return Ok(pixelExtracted);
     }
 
     private async Task<PixelDto> GetDefaultPixel(PixelDto pixelDtoReq)
     {
         var defaultColor = await _repoManager.ColorRepository.GetDefautColor();
+        if (defaultColor == null)
+        {
+            throw new InvalidOperationException("Default color is not configured.");
+        }
+
         return new PixelDto
         {
             CanvasId = pixelDtoReq.CanvasId,
@@ -87,7 +98,8 @@ public class PixelsController : ControllerBase
     [HttpGet("owner/{ownerId}")]
     public async Task<IActionResult> GetByOwnerId(Guid ownerId)
     {
-        var pixels = await _repoManager.PixelRepository.GetByOwnerIdAsync(ownerId);
+        var pixels = (await _repoManager.PixelRepository.GetByOwnerIdAsync(ownerId)).ToList();
+        _logger.LogInformation("Pixels for owner {OwnerId} returned successfully. Count={Count}", ownerId, pixels.Count);
         return Ok(pixels);
     }
 
@@ -121,7 +133,7 @@ public class PixelsController : ControllerBase
             return BadRequest("Could not change pixel.");
         }
         _changedPixelsChannel.Writer.TryWrite(result);
-        _logger.LogInformation("Successfully changed pixel at ({X}, {Y}) on {CanvasName} by user {UserId}.", pixel.X, pixel.Y, canvasName, userId);
+        _pixelChangeCounter.RecordSuccess(canvasName);
         return Ok(result);
     }
 }

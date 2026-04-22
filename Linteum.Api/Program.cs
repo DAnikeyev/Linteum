@@ -5,7 +5,14 @@ using Linteum.Infrastructure;
 using NLog;
 using NLog.Web;
 
+ThreadPool.SetMinThreads(25, 25);
+
+DotNetEnv.Env.Load("../.env");
+
 var logger = LogManager.Setup().LoadConfigurationFromAppSettings().GetCurrentClassLogger();
+var consoleMinLevel = Environment.GetEnvironmentVariable("NLOG_CONSOLE_MIN_LEVEL") ?? "Info";
+logger.Info("NLog console minimum level on startup: {MinLevel}", consoleMinLevel);
+logger.Debug("Debug startup logging is enabled.");
 
 try
 {

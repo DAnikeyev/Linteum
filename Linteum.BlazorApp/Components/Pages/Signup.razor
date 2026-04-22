@@ -1,59 +1,79 @@
 @page "/signup"
 @using Linteum.BlazorApp.Components.Layout
+@using Linteum.Shared
 @layout EmptyLayout
 @inject NavigationManager Navigation
 @inject MyApiClient ApiClient
+@inject Config Config
+@inject LocalStorageService LocalStorageService
+@inject ILogger<Signup> Logger
 
 <div class="background">
     <div class="brand-title">LINTEUM</div>
-    <div class="login-container auth-card">
-        <div class="auth-header">
-            <h3>Sign Up</h3>
-            <p>Create your account to start collaborating on canvases.</p>
+    @if (!_isAuthResolved || _isBusy)
+    {
+        <div class="login-container auth-card auth-loading-card">
+            <div class="auth-header">
+                <h3>@_busyTitle</h3>
+                <p>@_busyMessage</p>
+            </div>
+
+            <div class="loading-spinner-wrap compact">
+                <div class="loading-spinner"></div>
+            </div>
         </div>
+    }
+    else
+    {
+        <div class="login-container auth-card">
+            <div class="auth-header">
+                <h3>Sign Up</h3>
+                <p>Create your account to start collaborating on canvases.</p>
+            </div>
 
-        @if (!string.IsNullOrEmpty(_error))
-        {
-            <div class="alert alert-danger">@_error</div>
-        }
-
-        <!-- Email -->
-        <div class="mb-4">
-            <label for="emailInput" class="form-label">Email</label>
-            <input id="emailInput" class="form-control fixed-width" @bind="_signupModel.Email" @oninput="ClearError" />
-            @if (!string.IsNullOrEmpty(_emailError))
+            @if (!string.IsNullOrEmpty(_error))
             {
-                <div class="text-danger mt-1">@_emailError</div>
+                <div class="alert alert-danger">@_error</div>
             }
-        </div>
 
-        <!-- Password -->
-        <div class="mb-4">
-            <label for="passwordInput" class="form-label">Password</label>
-            <input id="passwordInput" type="password" class="form-control fixed-width" @bind="_signupModel.Password" @oninput="ClearError" />
-            @if (!string.IsNullOrEmpty(_passwordError))
-            {
-                <div class="text-danger mt-1">@_passwordError</div>
-            }
-        </div>
+            <!-- Email -->
+            <div class="mb-4">
+                <label for="emailInput" class="form-label">Email</label>
+                <input id="emailInput" class="form-control fixed-width" @bind="_signupModel.Email" @oninput="ClearError" />
+                @if (!string.IsNullOrEmpty(_emailError))
+                {
+                    <div class="text-danger mt-1">@_emailError</div>
+                }
+            </div>
 
-        <!-- Username -->
-        <div class="mb-4">
-            <label for="usernameInput" class="form-label">Username</label>
-            <input id="usernameInput" class="form-control fixed-width" @bind="_signupModel.UserName" @oninput="ClearError" />
-            @if (!string.IsNullOrEmpty(_usernameError))
-            {
-                <div class="text-danger mt-1">@_usernameError</div>
-            }
-        </div>
+            <!-- Password -->
+            <div class="mb-4">
+                <label for="passwordInput" class="form-label">Password</label>
+                <input id="passwordInput" type="password" class="form-control fixed-width" @bind="_signupModel.Password" @oninput="ClearError" />
+                @if (!string.IsNullOrEmpty(_passwordError))
+                {
+                    <div class="text-danger mt-1">@_passwordError</div>
+                }
+            </div>
 
-        <div class="d-flex gap-2">
-            <button class="btn btn-primary flex-fill" @onclick="HandleSignup">Sign Up</button>
+            <!-- Username -->
+            <div class="mb-4">
+                <label for="usernameInput" class="form-label">Username</label>
+                <input id="usernameInput" class="form-control fixed-width" @bind="_signupModel.UserName" @oninput="ClearError" />
+                @if (!string.IsNullOrEmpty(_usernameError))
+                {
+                    <div class="text-danger mt-1">@_usernameError</div>
+                }
+            </div>
+
+            <div class="d-flex gap-2">
+                <button class="btn btn-primary flex-fill" @onclick="HandleSignup">Sign Up</button>
+            </div>
+            <p class="auth-switch">
+                Already have an account? <a href="/login">Login</a>
+            </p>
         </div>
-        <p class="auth-switch">
-            Already have an account? <a href="/login">Login</a>
-        </p>
-    </div>
+    }
 </div>
 
 @code {
@@ -62,6 +82,10 @@
     private string? _emailError;
     private string? _passwordError;
     private string? _usernameError;
+    private bool _isAuthResolved;
+    private bool _isBusy = true;
+    private string _busyTitle = "Checking session";
+    private string _busyMessage = "Checking whether you are already signed in.";
 
     private void ClearError(ChangeEventArgs e)
     {
@@ -96,15 +120,64 @@
         if (_emailError != null || _passwordError != null || _usernameError != null)
             return;
 
+        SetBusyState("Creating account", "Setting up your account.");
         var result = await ApiClient.SignupAsync(_signupModel.Email, _signupModel.Password, _signupModel.UserName);
         if (result.SessionId is not null)
         {
-            Navigation.NavigateTo("/login");
+            Navigation.NavigateTo(Config.DefaultPage, replace: true);
         }
         else
         {
             _error = "Sign up failed. User may already exist.";
+            _isBusy = false;
         }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+            return;
+
+        var shouldRenderSignup = true;
+        try
+        {
+            var sessionIdString = await LocalStorageService.GetItemAsync<string>(LocalStorageKey.SessionId);
+            if (sessionIdString != null && Guid.TryParse(sessionIdString, out var sessionId))
+            {
+                Logger.LogInformation("Session ID found on signup page, validating with server.");
+                var (user, validatedSessionId) = await ApiClient.LoginAsync(sessionId);
+                if (user != null && validatedSessionId != null)
+                {
+                    shouldRenderSignup = false;
+                    Navigation.NavigateTo(Config.DefaultPage, replace: true);
+                }
+                else
+                {
+                    await LocalStorageService.ClearAsync();
+                    ApiClient.ClearSession();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Error checking session validity on signup page.");
+            await LocalStorageService.ClearAsync();
+            ApiClient.ClearSession();
+        }
+
+        if (shouldRenderSignup)
+        {
+            _isAuthResolved = true;
+            _isBusy = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private void SetBusyState(string title, string message)
+    {
+        _busyTitle = title;
+        _busyMessage = message;
+        _isBusy = true;
     }
 
     public class SignupModel

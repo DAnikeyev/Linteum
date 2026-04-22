@@ -14,56 +14,72 @@
 
 <div class="background">
     <div class="brand-title">LINTEUM</div>
-    <div class="login-container auth-card">
-        <div class="auth-header">
-            <h3>Login</h3>
-            <p>Continue to your canvases and live collaborations.</p>
+    @if (!_isAuthResolved || _isBusy)
+    {
+        <div class="login-container auth-card auth-loading-card">
+            <div class="auth-header">
+                <h3>@_busyTitle</h3>
+                <p>@_busyMessage</p>
+            </div>
+
+            <div class="loading-spinner-wrap compact">
+                <div class="loading-spinner"></div>
+            </div>
         </div>
+    }
+    else
+    {
+        <div class="login-container auth-card">
+            <div class="auth-header">
+                <h3>Login</h3>
+                <p>Continue to your canvases and live collaborations.</p>
+            </div>
 
-        @if (!string.IsNullOrEmpty(_error))
-        {
-            <div class="alert alert-danger">@_error</div>
-        }
-
-        <!-- Email -->
-        <div class="mb-4">
-            <label for="emailInput" class="form-label">Email</label>
-            <input id="emailInput" class="form-control fixed-width" @bind="_email" @oninput="ClearError" />
-            @if (!string.IsNullOrEmpty(_emailError))
+            @if (!string.IsNullOrEmpty(_error))
             {
-                <div class="text-danger mt-1">@_emailError</div>
+                <div class="alert alert-danger">@_error</div>
             }
-        </div>
 
-        <!-- Password -->
-        <div class="mb-4">
-            <label for="passwordInput" class="form-label">
-                Password
-                <span class="field-hint"
-                      title="We don't store unhashed passwords. We don't use your email for anything except login."
-                      aria-label="Security and privacy info">?</span>
-            </label>
-            <input id="passwordInput" type="password" class="form-control fixed-width" @bind="_password" @oninput="ClearError" />
-            @if (!string.IsNullOrEmpty(_passwordError))
-            {
-                <div class="text-danger mt-1">@_passwordError</div>
-            }
-        </div>
+            <!-- Email -->
+            <div class="mb-4">
+                <label for="emailInput" class="form-label">Email</label>
+                <input id="emailInput" class="form-control fixed-width" @bind="_email" @oninput="ClearError" />
+                @if (!string.IsNullOrEmpty(_emailError))
+                {
+                    <div class="text-danger mt-1">@_emailError</div>
+                }
+            </div>
 
-        <!-- Buttons -->
-        <div class="d-flex gap-2 login-actions">
-            <button class="btn btn-primary flex-fill" @onclick="HandleLogin">Login</button>
-            <button class="btn btn-outline-primary flex-fill"
-                    type="button"
-                    @onclick="GoogleLoginAsync"
-                    disabled="@(!_isGoogleEnabled)">
-                Google Login
-            </button>
+            <!-- Password -->
+            <div class="mb-4">
+                <label for="passwordInput" class="form-label">
+                    Password
+                    <span class="field-hint"
+                          title="We don't store unhashed passwords. We don't use your email for anything except login."
+                          aria-label="Security and privacy info">?</span>
+                </label>
+                <input id="passwordInput" type="password" class="form-control fixed-width" @bind="_password" @oninput="ClearError" />
+                @if (!string.IsNullOrEmpty(_passwordError))
+                {
+                    <div class="text-danger mt-1">@_passwordError</div>
+                }
+            </div>
+
+            <!-- Buttons -->
+            <div class="d-flex gap-2 login-actions">
+                <button class="btn btn-primary flex-fill" @onclick="HandleLogin">Login</button>
+                <button class="btn btn-outline-primary flex-fill"
+                        type="button"
+                        @onclick="GoogleLoginAsync"
+                        disabled="@(!_isGoogleEnabled)">
+                    Google Login
+                </button>
+            </div>
+            <p class="auth-switch">
+                Don&#39;t have an account? <a href="/signup">Sign up</a>
+            </p>
         </div>
-        <p class="auth-switch">
-            Don&#39;t have an account? <a href="/signup">Sign up</a>
-        </p>
-    </div>
+    }
 </div>
 
 @code {
@@ -74,6 +90,10 @@
     private string? _error;
     private DotNetObjectReference<Login>? _googleLoginReference;
     private bool _isGoogleInitialized;
+    private bool _isAuthResolved;
+    private bool _isBusy = true;
+    private string _busyTitle = "Checking session";
+    private string _busyMessage = "Checking whether you are already signed in.";
     private bool _isGoogleEnabled => !string.IsNullOrWhiteSpace(Config.GoogleClientId);
 
     private void ClearError(ChangeEventArgs e)
@@ -102,17 +122,19 @@
         if (_emailError != null || _passwordError != null)
             return;
 
+        SetBusyState("Signing in", "Verifying your credentials.");
         Logger.LogInformation("Login attempt for {Email}", _email);
         var (user, sessionId) = await ApiClient.LoginAsync(_email, _password);
         if (user != null)
         {
             Logger.LogInformation("Login successful for {Email}", _email);
-            Navigation.NavigateTo(Config.DefaultPage);
+            Navigation.NavigateTo(Config.DefaultPage, replace: true);
         }
         else
         {
             Logger.LogWarning("Login failed for {Email}", _email);
             _error = "Invalid login credentials.";
+            _isBusy = false;
         }
     }
 
@@ -158,15 +180,17 @@
             return;
         }
 
+        SetBusyState("Signing in", "Completing Google sign-in.");
         var (user, sessionId, error) = await ApiClient.LoginWithGoogleCodeAsync(authCode);
         if (user != null && sessionId != null)
         {
             Logger.LogInformation("Google login successful for {Email}", user.Email);
-            Navigation.NavigateTo(Config.DefaultPage);
+            Navigation.NavigateTo(Config.DefaultPage, replace: true);
             return;
         }
 
         _error = string.IsNullOrWhiteSpace(error) ? "Google login failed." : error;
+        _isBusy = false;
         await InvokeAsync(StateHasChanged);
     }
 
@@ -208,6 +232,7 @@
         if (firstRender)
         {
             Logger.LogInformation("Hello, login page!");
+            var shouldRenderLogin = true;
             try
             {
                 var sessionIdString = await LocalStorageService.GetItemAsync<string>(LocalStorageKey.SessionId);
@@ -219,7 +244,8 @@
                     if (user != null && validatedSessionId != null)
                     {
                         Logger.LogInformation("Session validated successfully, redirecting to home page.");
-                        Navigation.NavigateTo(Config.DefaultPage);
+                        shouldRenderLogin = false;
+                        Navigation.NavigateTo(Config.DefaultPage, replace: true);
                     }
                     else
                     {
@@ -240,8 +266,21 @@
                 ApiClient.ClearSession();
             }
 
-            await InitializeGoogleAsync();
+            if (shouldRenderLogin)
+            {
+                await InitializeGoogleAsync();
+                _isAuthResolved = true;
+                _isBusy = false;
+                await InvokeAsync(StateHasChanged);
+            }
         }
+    }
+
+    private void SetBusyState(string title, string message)
+    {
+        _busyTitle = title;
+        _busyMessage = message;
+        _isBusy = true;
     }
 
     public void Dispose()

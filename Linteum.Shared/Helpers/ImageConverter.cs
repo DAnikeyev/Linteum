@@ -39,24 +39,60 @@ public class ImageConverter
 
     private static ColorDto GetClosestColor(Rgba32 target, List<ColorDto> palette)
     {
-        ColorDto? closestMatch = null;
-        double minDistanceSquared = double.MaxValue;
+        if (palette == null || palette.Count == 0)
+            throw new ArgumentException("palette must contain at least one color", nameof(palette));
 
-        foreach (var colorDto in palette)
+        // Track a fallback nearest color in case of any numerical edge-cases
+        ColorDto? closestMatch = null;
+        var minDistanceSquared = double.MaxValue;
+
+        // Preallocate weights to avoid reallocation during selection
+        var weights = new double[palette.Count];
+        var totalWeight = 0.0;
+
+        for (var i = 0; i < palette.Count; i++)
         {
+            var colorDto = palette[i];
             var paletteColor = Rgba32.ParseHex(colorDto.HexValue.TrimStart('#'));
 
-            double distanceSquared = Math.Pow(target.R - paletteColor.R, 2) +
-                                     Math.Pow(target.G - paletteColor.G, 2) +
-                                     Math.Pow(target.B - paletteColor.B, 2);
+            var dr = (double)target.R - paletteColor.R;
+            var dg = (double)target.G - paletteColor.G;
+            var db = (double)target.B - paletteColor.B;
+
+            var distanceSquared = dr * dr + dg * dg + db * db;
+
+            // If there's an exact match, return immediately (deterministic)
+            if (distanceSquared == 0)
+                return colorDto;
 
             if (distanceSquared < minDistanceSquared)
             {
                 minDistanceSquared = distanceSquared;
                 closestMatch = colorDto;
             }
+
+            // Weight decreases with distance. Use an exponential falloff: e^-(sqrt(distanceSquared))/3
+            var weight = System.Math.Exp(-System.Math.Sqrt(distanceSquared) / 3.0);
+            weights[i] = weight;
+            totalWeight += weight;
         }
 
+        // Fallback: if total weight is zero for some reason, return the nearest match
+        if (totalWeight <= 0 || double.IsInfinity(totalWeight) || double.IsNaN(totalWeight))
+            return closestMatch ?? palette.First();
+
+        // Select a random value in [0, totalWeight)
+        var r = Random.Shared.NextDouble() * totalWeight;
+
+        var acc = 0.0;
+        for (var i = 0; i < palette.Count; i++)
+        {
+            acc += weights[i];
+            if (r < acc)
+                return palette[i];
+        }
+
+        // Shouldn't get here, but return the nearest color as a safe fallback
         return closestMatch ?? palette.First();
     }
 }

@@ -16,7 +16,7 @@ internal abstract class SyntheticDataTest
     
     //ToDo: Clear instead of delete.
     [SetUp]
-    public virtual void Init()
+    public virtual async Task Init()
     {
         Options = new DbContextOptionsBuilder<AppDbContext>()
             .UseNpgsql("Host=localhost;Port=5432;Database=efcore_test_db;Username=postgres;Password=password")
@@ -25,7 +25,7 @@ internal abstract class SyntheticDataTest
         DbHelper = new DbHelper(DbContext);
         DbContext.Database.EnsureDeleted();
         DbContext.Database.EnsureCreated();
-        DbSeeder.SeedDefaults(DbContext,new Config(), DbHelper.Mapper, RepoManager, DbHelper.LoggerFactoryInterface.CreateLogger<DbSeeder>());
+        await DbSeeder.SeedDefaults(DbContext, new Config(), DbHelper.Mapper, RepoManager, DbHelper.LoggerFactoryInterface.CreateLogger<DbSeeder>());
         SeedData();
     }
 

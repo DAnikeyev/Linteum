@@ -1,6 +1,7 @@
 using AutoMapper;
 using Linteum.Domain.Repository;
 using Linteum.Shared;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 
 namespace Linteum.Infrastructure;
@@ -17,12 +18,12 @@ public class RepositoryManager
     public IPixelRepository PixelRepository { get; }
     
     
-    public RepositoryManager(AppDbContext context, IMapper mapper, Config config, ILoggerFactory loggerFactory, IPixelNotifier pixelNotifier)
+    public RepositoryManager(AppDbContext context, IMapper mapper, Config config, ILoggerFactory loggerFactory, IPixelNotifier pixelNotifier, IMemoryCache cache)
     {
         LoginEventRepository = new LoginEventRepository(context, mapper, loggerFactory.CreateLogger<LoginEventRepository>());
         BalanceChangedEventRepository = new BalanceChangedEventRepository(context, mapper, loggerFactory.CreateLogger<BalanceChangedEventRepository>());
-        CanvasRepository = new CanvasRepository(context, mapper, loggerFactory.CreateLogger<CanvasRepository>(), config);
-        ColorRepository = new ColorRepository(context, mapper, loggerFactory.CreateLogger<ColorRepository>());
+        CanvasRepository = new CanvasRepository(context, mapper, loggerFactory.CreateLogger<CanvasRepository>(), config, cache);
+        ColorRepository = new ColorRepository(context, mapper, config, loggerFactory.CreateLogger<ColorRepository>());
         SubscriptionRepository = new SubscriptionRepository(context, mapper, BalanceChangedEventRepository, loggerFactory.CreateLogger<SubscriptionRepository>());
         UserRepository = new UserRepository(context, mapper, BalanceChangedEventRepository, SubscriptionRepository, config, loggerFactory.CreateLogger<UserRepository>());
         PixelChangedEventRepository = new PixelChangedEventRepository(context, mapper, loggerFactory.CreateLogger<PixelChangedEventRepository>());

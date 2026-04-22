@@ -8,6 +8,6 @@ public interface IPixelChangedEventRepository
     Task<IEnumerable<PixelChangedEventDto>> GetByPixelIdAsync(Guid pixelId);
     Task<IEnumerable<PixelChangedEventDto>> GetByCanvasIdAsync(Guid canvasId, DateTime? startDate);
     Task<bool> AddPixelChangedEvent(PixelChangedEventDto pixelChangedEventDto);
-    Task<bool> CleanPixelHistory(PixelDto pixelChangedEventDto, int maxHistoryEvents);
+    Task<int> CleanPixelHistoryBatchAsync(IReadOnlyCollection<Guid> pixelIds, int maxHistoryEvents);
 }
 

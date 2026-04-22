@@ -28,11 +28,17 @@ public class DailyCleanupService : BackgroundService
         {
             try
             {
-                _logger.LogInformation($"Next daily cleanup task will run at: {DateTime.UtcNow.Add(Interval)}.");
+                _logger.LogInformation("Next daily cleanup task will run at: {RunAtUtc}.", DateTime.UtcNow.Add(Interval));
                 await Task.Delay(Interval, stoppingToken);
             }
             catch (TaskCanceledException)
             {
+                break;
+            }
+
+            if (stoppingToken.IsCancellationRequested)
+            {
+                break;
             }
 
             _logger.LogInformation("Starting daily cleanup task.");

@@ -5,14 +5,13 @@ using Linteum.Shared;
 using Linteum.Shared.DTO;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
-using NLog;
-using ILogger = NLog.ILogger;
+using Npgsql;
 
 namespace Linteum.Infrastructure;
 
 public class PixelRepository : IPixelRepository
 {
-    private static int? DefaultColorId = null;
+    private static int? DefaultColorId;
     private readonly AppDbContext _context;
     private readonly IMapper _mapper;
     private readonly ILogger<PixelRepository> _logger;
@@ -74,27 +73,25 @@ public class PixelRepository : IPixelRepository
             .FirstOrDefaultAsync(c => c.Id == pixel.CanvasId);
         if (canvas == null)
         {
-            _logger.LogWarning($"Canvas with ID {pixel.CanvasId} not found.");
+            _logger.LogDebug("Canvas with ID {CanvasId} not found.", pixel.CanvasId);
             return null;
         }
         if (canvas.Height < pixel.Y || canvas.Width < pixel.X || pixel.X < 0 || pixel.Y < 0)
         {
-            _logger.LogWarning($"Pixel coordinates ({pixel.X}, {pixel.Y}) are out of bounds for canvas {canvas.Name} (Width: {canvas.Width}, Height: {canvas.Height}).");
+            _logger.LogDebug("Pixel coordinates ({X}, {Y}) are out of bounds for canvas {CanvasName} (Width: {Width}, Height: {Height}).", pixel.X, pixel.Y, canvas.Name, canvas.Width, canvas.Height);
             return null;
         }
 
-        PixelDto? result = null;
-
-        switch (canvas.CanvasMode)
+        var result = canvas.CanvasMode switch
         {
-            case CanvasMode.Sandbox:
-                result = await TryChangePixelSandbox(pixel, ownerId);
-                break;
-            case CanvasMode.Economy:
-                result = await TryChangePixelEconomy(pixel, ownerId);
-                break;
-            default:
-                _logger.LogWarning($"Unknown canvas mode: {canvas.CanvasMode}");
+            CanvasMode.Sandbox => await TryChangePixelSandbox(pixel, ownerId),
+            CanvasMode.Economy => await TryChangePixelEconomy(pixel, ownerId),
+            _ => null,
+        };
+
+        if (canvas.CanvasMode is not CanvasMode.Sandbox and not CanvasMode.Economy)
+        {
+                _logger.LogDebug("Unknown canvas mode: {CanvasMode}", canvas.CanvasMode);
                 return null;
         }
 
@@ -102,7 +99,7 @@ public class PixelRepository : IPixelRepository
         {
             try
             {
-                _logger.LogInformation("Signaling pixel change to clients. Canvas: {CanvasName}, Pixel: ({X}, {Y}), ColorId: {ColorId}", canvas.Name, result.X, result.Y, result.ColorId);
+                _logger.LogDebug("Signaling pixel change to clients. Canvas: {CanvasName}, Pixel: ({X}, {Y}), ColorId: {ColorId}", canvas.Name, result.X, result.Y, result.ColorId);
                 await _notifier.NotifyPixelChanged(canvas.Name, result);
             }
             catch (Exception ex)
@@ -116,55 +113,86 @@ public class PixelRepository : IPixelRepository
 
     private async Task<PixelDto?> TryChangePixelSandbox(PixelDto pixel, Guid ownerId)
     {
-        await using var transaction = await _context.Database.BeginTransactionAsync();
-        try
+        for (var attempt = 0; attempt < 2; attempt++)
         {
-            var existingPixel = await _context.Pixels
-                .FirstOrDefaultAsync(p => p.CanvasId == pixel.CanvasId && pixel.X == p.X && pixel.Y == p.Y);
-            if (existingPixel == null)
+            try
             {
-                //Add pixel
-                var addedPixel = new Pixel()
+                var existingPixel = await _context.Pixels
+                    .FirstOrDefaultAsync(p => p.CanvasId == pixel.CanvasId && p.X == pixel.X && p.Y == pixel.Y);
+
+                var oldOwnerId = existingPixel?.OwnerId;
+                int oldColorId;
+                Pixel result;
+
+                if (existingPixel == null)
                 {
-                    Id = new Guid(),
-                    CanvasId = pixel.CanvasId,
-                    OwnerId = null,
-                    ColorId = pixel.ColorId,
-                    X = pixel.X,
-                    Y = pixel.Y,
-                    Price = 0,
+                    var defaultColorId = await GetDefaultColorIdAsync();
+                    if (defaultColorId == null)
+                    {
+                        _logger.LogDebug("Default color not found for pixel ({X}, {Y}) on canvas {CanvasId}", pixel.X, pixel.Y, pixel.CanvasId);
+                        return null;
+                    }
+
+                    result = new Pixel
+                    {
+                        Id = Guid.NewGuid(),
+                        CanvasId = pixel.CanvasId,
+                        X = pixel.X,
+                        Y = pixel.Y,
+                        ColorId = pixel.ColorId,
+                        OwnerId = ownerId,
+                        Price = 0,
+                    };
+
+                    oldColorId = defaultColorId.Value;
+                    await _context.Pixels.AddAsync(result);
+                }
+                else
+                {
+                    oldColorId = existingPixel.ColorId;
+                    existingPixel.ColorId = pixel.ColorId;
+                    existingPixel.OwnerId = ownerId;
+                    result = existingPixel;
+                }
+
+                var pixelChangedEvent = new PixelChangedEvent
+                {
+                    Id = Guid.NewGuid(),
+                    PixelId = result.Id,
+                    OldOwnerUserId = oldOwnerId,
+                    OwnerUserId = ownerId,
+                    OldColorId = oldColorId,
+                    NewColorId = pixel.ColorId,
+                    NewPrice = 0,
+                    ChangedAt = DateTime.UtcNow,
                 };
-                _context.Pixels.Add(addedPixel);
+
+                await _context.PixelChangedEvents.AddAsync(pixelChangedEvent);
                 await _context.SaveChangesAsync();
-                existingPixel = addedPixel;
+
+                _logger.LogDebug("Pixel changed successfully. PixelId={PixelId}, OwnerId={OwnerId}, CanvasId={CanvasId}", result.Id, ownerId, pixel.CanvasId);
+                return _mapper.Map<PixelDto>(result);
             }
-            
-            var pixelChangedEvent = new PixelChangedEvent
+            catch (DbUpdateException ex) when (attempt == 0 && IsPixelConflict(ex))
             {
-                Id = Guid.NewGuid(),
-                PixelId = existingPixel.Id,
-                OldOwnerUserId = existingPixel.OwnerId, 
-                OwnerUserId= ownerId,
-                OldColorId = existingPixel.ColorId,
-                NewColorId = pixel.ColorId,
-                NewPrice = 0,
-                ChangedAt = DateTime.UtcNow,
-            };
-            existingPixel.OwnerId = ownerId;
-            existingPixel.ColorId = pixel.ColorId;
-            _context.Pixels.Update(existingPixel);
-            await _context.PixelChangedEvents.AddAsync(pixelChangedEvent);
-            await _context.SaveChangesAsync();
-            _logger.LogInformation($"Pixel changed successfully. PixelId={existingPixel.Id}, OwnerId={ownerId}, CanvasId={pixel.CanvasId}, Price={0}");
-            await transaction.CommitAsync();
-            return _mapper.Map<PixelDto>(existingPixel);
+                _context.ChangeTracker.Clear();
+            }
+            catch (Exception ex)
+            {
+                _context.ChangeTracker.Clear();
+                _logger.LogError(ex, "Error changing pixel. OwnerId={OwnerId}, Pixel=({X},{Y})", ownerId, pixel.X, pixel.Y);
+                return null;
+            }
         }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex.Message, "Error changing pixel. OwnerId={OwnerId}, Pixel={Pixel}", ownerId, pixel);
-            await transaction.RollbackAsync();
-            return null;
-        }
+
+        _logger.LogDebug("Pixel change conflicted repeatedly. OwnerId={OwnerId}, Pixel=({X},{Y}), CanvasId={CanvasId}", ownerId, pixel.X, pixel.Y, pixel.CanvasId);
+        return null;
+    }
+
+    private static bool IsPixelConflict(DbUpdateException exception)
+    {
+        return exception.InnerException is PostgresException postgresException
+               && postgresException.SqlState == PostgresErrorCodes.UniqueViolation;
     }
 
     private async Task<PixelDto?> TryChangePixelEconomy(PixelDto pixel, Guid ownerId)
@@ -233,7 +261,7 @@ public class PixelRepository : IPixelRepository
             _context.Pixels.Update(existingPixel);
             await _context.PixelChangedEvents.AddAsync(pixelChangedEvent);
             await _context.SaveChangesAsync();
-            _logger.LogInformation($"Pixel changed successfully. PixelId={existingPixel.Id}, OwnerId={ownerId}, CanvasId={pixel.CanvasId}, Price={paid}");
+            _logger.LogDebug("Pixel changed successfully. PixelId={PixelId}, OwnerId={OwnerId}, CanvasId={CanvasId}, Price={Price}", existingPixel.Id, ownerId, pixel.CanvasId, paid);
             await transaction.CommitAsync();
             return _mapper.Map<PixelDto>(existingPixel);
         }

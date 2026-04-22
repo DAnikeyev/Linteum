@@ -20,7 +20,8 @@ public class PixelChangedEventsController : ControllerBase
     [HttpGet("user/{userId}")]
     public async Task<IActionResult> GetByUserId(Guid userId)
     {
-        var events = await _repoManager.PixelChangedEventRepository.GetByUserIdAsync(userId);
+        var events = (await _repoManager.PixelChangedEventRepository.GetByUserIdAsync(userId)).ToList();
+        _logger.LogInformation("Pixel changed events for user {UserId} returned successfully. Count={Count}", userId, events.Count);
         return Ok(events);
     }
 
@@ -35,13 +36,15 @@ public class PixelChangedEventsController : ControllerBase
         {
             UserName = user, NewColorId = evt.NewColorId, OldColorId = evt.OldColorId, Timestamp = evt.ChangedAt,
         }).ToList();
+        _logger.LogInformation("Pixel history for pixel {PixelId} returned successfully. Count={Count}", pixelId, response.Count);
         return Ok(response);
     }
 
     [HttpGet("canvas/{canvasId}")]
     public async Task<IActionResult> GetByCanvasId(Guid canvasId, [FromQuery] DateTime? startDate)
     {
-        var events = await _repoManager.PixelChangedEventRepository.GetByCanvasIdAsync(canvasId, startDate);
+        var events = (await _repoManager.PixelChangedEventRepository.GetByCanvasIdAsync(canvasId, startDate)).ToList();
+        _logger.LogInformation("Pixel changed events for canvas {CanvasId} returned successfully. Count={Count}, StartDate={StartDate}", canvasId, events.Count, startDate);
         return Ok(events);
     }
 
@@ -50,7 +53,12 @@ public class PixelChangedEventsController : ControllerBase
     {
         var result = await _repoManager.PixelChangedEventRepository.AddPixelChangedEvent(pixelChangedEventDto);
         if (!result)
+        {
+            _logger.LogWarning("Pixel changed event could not be added for pixel {PixelId}.", pixelChangedEventDto.PixelId);
             return BadRequest("Could not add pixel changed event.");
+        }
+
+        _logger.LogInformation("Pixel changed event added successfully for pixel {PixelId}.", pixelChangedEventDto.PixelId);
         return Ok();
     }
 }

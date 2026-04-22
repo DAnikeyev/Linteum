@@ -86,6 +86,17 @@
     padding: 1.55rem;
 }
 
+.auth-loading-card {
+    align-items: center;
+    justify-content: center;
+    min-height: 220px;
+    text-align: center;
+}
+
+.auth-loading-card .auth-header {
+    align-items: center;
+}
+
 .auth-header {
     display: flex;
     flex-direction: column;

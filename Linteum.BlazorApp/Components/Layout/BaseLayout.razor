@@ -9,18 +9,18 @@
 
 <CascadingValue Value="Sidebar">
     <CascadingValue Value="_notificationManagerRef">
-        <CanvasSidebar @ref="Sidebar" CollapseToggled="OnSidebarCollapseChanged" />
+        <CanvasSidebar @ref="Sidebar" CollapsedChanged="OnSidebarCollapsedChanged" />
     </CascadingValue>
 
-    <main class="main-content" style="margin-left:@_sidebarMargin;">
-        <CascadingValue Value="_sidebarMargin" Name="SidebarMargin">
+    <main class="main-content" style="margin-left:@SidebarMargin;">
+        <CascadingValue Value="SidebarMargin" Name="SidebarMargin">
             @Body
         </CascadingValue>
         @if (!string.IsNullOrWhiteSpace(HubLink))
         {
             <a class="btn btn-outline-primary hub-back-btn"
                href="@HubLink"
-               style="left: calc(@_sidebarMargin + 12px);">
+               style="left: calc(@SidebarMargin + 12px);">
                 <i class="bi bi-arrow-left me-1"></i>
                 Back to hub
             </a>
@@ -33,10 +33,12 @@
     <NotificationManager @ref="_notificationManagerRef" />
 </CascadingValue>
 @code {
+    private const string SidebarWidth = "300px";
     public CanvasSidebar? Sidebar { get; set; }
-    private string _sidebarMargin = "300px";
     private NotificationManager? _notificationManagerRef;
+    private bool _isSidebarCollapsed;
     private string Version => Configuration["VERSION"] ?? Environment.GetEnvironmentVariable("VERSION") ?? "dev";
+    private string SidebarMargin => _isSidebarCollapsed ? "0px" : SidebarWidth;
     private string HubLink
     {
         get
@@ -45,12 +47,6 @@
             if (string.IsNullOrEmpty(link)) return string.Empty;
             return link.StartsWith("http") ? link : $"https://{link}";
         }
-    }
-
-    private void OnSidebarCollapseChanged(bool isCollapsed)
-    {
-        _sidebarMargin = isCollapsed ? "0px" : "300px";
-        StateHasChanged();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -97,6 +93,17 @@
             ApiClient.ClearSession();
             Navigation.NavigateTo("/login");
         }
+    }
+
+    private void OnSidebarCollapsedChanged(bool isCollapsed)
+    {
+        if (_isSidebarCollapsed == isCollapsed)
+        {
+            return;
+        }
+
+        _isSidebarCollapsed = isCollapsed;
+        StateHasChanged();
     }
 
 }

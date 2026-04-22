@@ -12,7 +12,8 @@
 
 @code {
     [Parameter]
-    public EventCallback<bool> CollapseToggled { get; set; }
+    public EventCallback<bool> CollapsedChanged { get; set; }
+
     [CascadingParameter]
     public NotificationManager? NotificationManager { get; set; }
     private bool _isCollapsed = false;
@@ -39,12 +40,18 @@
         {
             _hasRendered = true;
             _userName = await LocalStorageService.GetItemAsync<string>(LocalStorageKey.UserName);
+
             var savedState = await LocalStorageService.GetItemAsync<bool?>(LocalStorageKey.SidebarCollapsed);
             if (savedState.HasValue)
             {
                 _isCollapsed = savedState.Value;
-                await CollapseToggled.InvokeAsync(_isCollapsed);
             }
+
+            if (CollapsedChanged.HasDelegate)
+            {
+                await CollapsedChanged.InvokeAsync(_isCollapsed);
+            }
+
             await LoadCanvases();
             StateHasChanged();
         }
@@ -55,7 +62,18 @@
         _isLoading = true;
         try
         {
-            _canvases = await ApiClient.GetSubscribedCanvasesAsync();
+            var rawCanvases = await ApiClient.GetSubscribedCanvasesAsync();
+            if (rawCanvases != null)
+            {
+                _canvases = rawCanvases
+                    .OrderByDescending(c => IsHome(c.Name))
+                    .ThenBy(c => c.Name)
+                    .ToList();
+            }
+            else
+            {
+                _canvases = new List<CanvasDto>();
+            }
         }
         catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.Unauthorized)
         {
@@ -78,22 +96,39 @@
     {
         _isCollapsed = !_isCollapsed;
         await LocalStorageService.SetItemAsync(LocalStorageKey.SidebarCollapsed, _isCollapsed);
-        await CollapseToggled.InvokeAsync(_isCollapsed);
+
+        if (CollapsedChanged.HasDelegate)
+        {
+            await CollapsedChanged.InvokeAsync(_isCollapsed);
+        }
+    }
+
+    private async Task<bool> IsMobileAsync()
+    {
+        try
+        {
+            return await JSRuntime.InvokeAsync<bool>("eval", "window.innerWidth <= 768");
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private async Task AutoCollapseOnMobile()
     {
-        try
+        if (await IsMobileAsync() && !_isCollapsed)
         {
-            var isMobile = await JSRuntime.InvokeAsync<bool>("eval", "window.innerWidth <= 768");
-            if (isMobile && !_isCollapsed)
+            _isCollapsed = true;
+            await LocalStorageService.SetItemAsync(LocalStorageKey.SidebarCollapsed, true);
+
+            if (CollapsedChanged.HasDelegate)
             {
-                _isCollapsed = true;
-                await CollapseToggled.InvokeAsync(true);
-                StateHasChanged();
+                await CollapsedChanged.InvokeAsync(_isCollapsed);
             }
+
+            StateHasChanged();
         }
-        catch { }
     }
 
     private async Task NavigateToCanvas(string canvasName)
@@ -287,8 +322,17 @@
     private bool IsHome(string? name) =>
         !string.IsNullOrEmpty(name) && string.Equals(name, DefaultConfig.DefaultCanvasName, StringComparison.OrdinalIgnoreCase);
 }
+@if (!_isCollapsed)
+{
+    <button type="button"
+            class="sidebar-backdrop"
+            aria-label="Close sidebar"
+            @onclick="ToggleCollapse">
+    </button>
+}
+
 <div class="sidebar @(_isCollapsed ? "collapsed" : "")"
-     style=@($"position:fixed; left:0; top:0; height:100vh; width:300px; z-index:1000; transition:transform .2s ease; transform:{(_isCollapsed ? "translateX(-100%)" : "translateX(0)")};")>
+     aria-hidden="@_isCollapsed">
     <div class="sidebar-header">
         <button class="btn btn-outline-primary sidebar-faq-btn" title="FAQ" @onclick="GoToFaq">
             FAQ
@@ -343,6 +387,6 @@
 <button class="btn sidebar-collapse-btn @(_isCollapsed ? "collapsed" : "")"
         @onclick="ToggleCollapse"
         title="Toggle sidebar"
-        style=@($"position:fixed; top:50%; left:{(_isCollapsed ? "8px" : "308px")}; transform:translateY(-50%); z-index:1001;")>
+        aria-expanded="@(!_isCollapsed)">
     <span>@(_isCollapsed ? ">" : "<")</span>
 </button>

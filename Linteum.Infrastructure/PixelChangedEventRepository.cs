@@ -72,27 +72,43 @@ public class PixelChangedEventRepository : IPixelChangedEventRepository
 
     }
 
-    public async Task<bool> CleanPixelHistory(PixelDto pixelChangedEventDto, int maxHistoryEntries)
+    public async Task<int> CleanPixelHistoryBatchAsync(IReadOnlyCollection<Guid> pixelIds, int maxHistoryEntries)
     {
         try
         {
-            var eventsToDelete = await _context.PixelChangedEvents
-                .Where(e => e.PixelId == pixelChangedEventDto.Id)
-                .OrderByDescending(e => e.ChangedAt)
-                .Skip(maxHistoryEntries)
+            if (pixelIds.Count == 0)
+            {
+                return 0;
+            }
+
+            var candidateEvents = await _context.PixelChangedEvents
+                .AsNoTracking()
+                .Where(e => pixelIds.Contains(e.PixelId))
+                .Select(e => new { e.Id, e.PixelId, e.ChangedAt })
                 .ToListAsync();
 
-            if (eventsToDelete.Any())
+            var eventIdsToDelete = candidateEvents
+                .GroupBy(e => e.PixelId)
+                .SelectMany(g => g
+                    .OrderByDescending(e => e.ChangedAt)
+                    .ThenByDescending(e => e.Id)
+                    .Skip(maxHistoryEntries)
+                    .Select(e => e.Id))
+                .ToList();
+
+            if (eventIdsToDelete.Count == 0)
             {
-                _context.PixelChangedEvents.RemoveRange(eventsToDelete);
-                await _context.SaveChangesAsync();
+                return 0;
             }
-            return true;
+
+            return await _context.PixelChangedEvents
+                .Where(e => eventIdsToDelete.Contains(e.Id))
+                .ExecuteDeleteAsync();
         }
         catch (Exception ex)
         {
-            _logger.LogError($"Error cleaning pixel history: {ex.Message}");
-            return false;
+            _logger.LogError(ex, "Error cleaning pixel history batch for {PixelCount} pixels", pixelIds.Count);
+            return 0;
         }
     }
 }

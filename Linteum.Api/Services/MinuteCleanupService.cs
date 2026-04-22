@@ -33,63 +33,85 @@ public class MinuteCleanupService : BackgroundService
 
         try
         {
-            await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
-        }
-        catch (TaskCanceledException)
-        {
-            return;
-        }
-
-        while (!stoppingToken.IsCancellationRequested)
-        {
             try
             {
-                var expiredSessions = _sessionService.CleanupExpiredSessions();
-                
-                if (expiredSessions.Any())
+                await Task.Delay(TimeSpan.FromSeconds(10), stoppingToken);
+            }
+            catch (TaskCanceledException)
+            {
+                return;
+            }
+
+            while (!stoppingToken.IsCancellationRequested)
+            {
+                try
                 {
-                    _logger.LogInformation("Cleaning up {Count} expired sessions.", expiredSessions.Count);
+                    var expiredSessions = _sessionService.CleanupExpiredSessions();
                     
-                    using var scope = _serviceProvider.CreateScope();
-                    var repositoryManager = scope.ServiceProvider.GetRequiredService<RepositoryManager>();
-
-                    foreach (var session in expiredSessions)
+                    if (expiredSessions.Any())
                     {
-                        var user = await repositoryManager.UserRepository.GetByIdAsync(session.UserId);
-                        if (user?.UserName == null) continue;
+                        _logger.LogInformation("Cleaning up {Count} expired sessions.", expiredSessions.Count);
+                        
+                        using var scope = _serviceProvider.CreateScope();
+                        var repositoryManager = scope.ServiceProvider.GetRequiredService<RepositoryManager>();
 
-                        var connections = _tracker.GetUserConnections(user.UserName);
-                        foreach (var connectionId in connections)
+                        foreach (var session in expiredSessions)
                         {
-                            var groups = _tracker.GetConnectionGroups(connectionId).ToList();
-                            foreach (var group in groups)
+                            if (stoppingToken.IsCancellationRequested)
                             {
-                                _tracker.RemoveFromGroup(connectionId, group);
-                                await _hubContext.Groups.RemoveFromGroupAsync(connectionId, group, stoppingToken);
-                                _logger.LogInformation("Removed ConnectionId {ConnectionId} (User {UserName}) from group {GroupName} due to session expiration.", 
-                                    connectionId, user.UserName, group);
-                                
-                                await BroadcastUpdateOnlineUsers(group);
+                                break;
+                            }
+
+                            var user = await repositoryManager.UserRepository.GetByIdAsync(session.UserId);
+                            if (user?.UserName == null) continue;
+
+                            var connections = _tracker.GetUserConnections(user.UserName);
+                            foreach (var connectionId in connections)
+                            {
+                                if (stoppingToken.IsCancellationRequested)
+                                {
+                                    break;
+                                }
+
+                                var groups = _tracker.GetConnectionGroups(connectionId).ToList();
+                                foreach (var group in groups)
+                                {
+                                    stoppingToken.ThrowIfCancellationRequested();
+
+                                    _tracker.RemoveFromGroup(connectionId, group);
+                                    await _hubContext.Groups.RemoveFromGroupAsync(connectionId, group, stoppingToken);
+                                    _logger.LogInformation("Removed ConnectionId {ConnectionId} (User {UserName}) from group {GroupName} due to session expiration.", 
+                                        connectionId, user.UserName, group);
+                                    
+                                    await BroadcastUpdateOnlineUsers(group);
+                                }
                             }
                         }
                     }
                 }
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "An error occurred during the minute cleanup task.");
-            }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    break;
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogError(ex, "An error occurred during the minute cleanup task.");
+                }
 
-            try
-            {
-                await Task.Delay(Interval, stoppingToken);
-            }
-            catch (TaskCanceledException)
-            {
+                try
+                {
+                    await Task.Delay(Interval, stoppingToken);
+                }
+                catch (TaskCanceledException)
+                {
+                    break;
+                }
             }
         }
-
-        _logger.LogInformation("Minute Cleanup Service is stopping.");
+        finally
+        {
+            _logger.LogInformation("Minute Cleanup Service is stopping.");
+        }
     }
 
     private async Task BroadcastUpdateOnlineUsers(string groupName)

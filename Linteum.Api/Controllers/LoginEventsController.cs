@@ -20,7 +20,8 @@ public class LoginEventsController : ControllerBase
     [HttpGet("user/{userId}")]
     public async Task<IActionResult> GetByUserId(Guid userId)
     {
-        var events = await _repoManager.LoginEventRepository.GetByUserIdAsync(userId);
+        var events = (await _repoManager.LoginEventRepository.GetByUserIdAsync(userId)).ToList();
+        _logger.LogInformation("Login events for user {UserId} returned successfully. Count={Count}", userId, events.Count);
         return Ok(events);
     }
 
@@ -29,7 +30,12 @@ public class LoginEventsController : ControllerBase
     {
         var result = await _repoManager.LoginEventRepository.AddLoginEvent(loginEventDto);
         if (!result)
+        {
+            _logger.LogWarning("Login event could not be added for user {UserId}.", loginEventDto.UserId);
             return BadRequest("Could not add login event.");
+        }
+
+        _logger.LogInformation("Login event added successfully for user {UserId}.", loginEventDto.UserId);
         return Ok();
     }
 }

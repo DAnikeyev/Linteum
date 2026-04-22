@@ -4,6 +4,8 @@
     display: flex;
     flex: 1 1 auto;
     min-height: 0;
+    margin-left: calc(-1 * var(--sidebar-margin, 0px));
+    width: calc(100% + var(--sidebar-margin, 0px));
 }
 
 .canvas-loading-overlay {
@@ -88,6 +90,11 @@
 
 /* ── Mobile: canvas fills available space above fixed bottom-sheet ── */
 @media (max-width: 768px) {
+    .canvas-page-container {
+        margin-left: 0;
+        width: 100%;
+    }
+
     .canvas-shell {
         flex-direction: column;
         align-items: stretch;

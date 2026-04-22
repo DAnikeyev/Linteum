@@ -1,5 +1,4 @@
 using Linteum.Infrastructure;
-using Linteum.Shared.DTO;
 using Microsoft.AspNetCore.Mvc;
 
 namespace Linteum.Api.Controllers;
@@ -20,14 +19,16 @@ public class SubscriptionsController : ControllerBase
     [HttpGet("user/{userId}")]
     public async Task<IActionResult> GetByUserId(Guid userId)
     {
-        var subs = await _repoManager.SubscriptionRepository.GetByUserIdAsync(userId);
+        var subs = (await _repoManager.SubscriptionRepository.GetByUserIdAsync(userId)).ToList();
+        _logger.LogInformation("Subscriptions for user {UserId} returned successfully. Count={Count}", userId, subs.Count);
         return Ok(subs);
     }
 
     [HttpGet("canvas/{canvasId}")]
     public async Task<IActionResult> GetByCanvasId(Guid canvasId)
     {
-        var subs = await _repoManager.SubscriptionRepository.GetByCanvasIdAsync(canvasId);
+        var subs = (await _repoManager.SubscriptionRepository.GetByCanvasIdAsync(canvasId)).ToList();
+        _logger.LogInformation("Subscriptions for canvas {CanvasId} returned successfully. Count={Count}", canvasId, subs.Count);
         return Ok(subs);
     }
 }

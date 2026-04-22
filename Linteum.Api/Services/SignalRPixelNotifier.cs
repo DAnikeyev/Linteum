@@ -21,7 +21,7 @@ public class SignalRPixelNotifier : IPixelNotifier
     public async Task NotifyPixelChanged(string canvasName, PixelDto pixel)
     {
         var count = _tracker.GetGroupCount(canvasName);
-        _logger.LogInformation("Notifying {Count} clients in group {CanvasName} about pixel update at ({X}, {Y})", count, canvasName, pixel.X, pixel.Y);
+        _logger.LogDebug("Notifying {Count} clients in group {CanvasName} about pixel update at ({X}, {Y})", count, canvasName, pixel.X, pixel.Y);
         await _hubContext.Clients.Group(canvasName).SendAsync("ReceivePixelUpdate", pixel.X, pixel.Y, pixel.ColorId);
     }
 }
