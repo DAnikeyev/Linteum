@@ -123,6 +123,7 @@
             return;
 
         SetBusyState("Signing in", "Verifying your credentials.");
+        await InvokeAsync(StateHasChanged);
         Logger.LogInformation("Login attempt for {Email}", _email);
         var (user, sessionId) = await ApiClient.LoginAsync(_email, _password);
         if (user != null)
@@ -181,6 +182,7 @@
         }
 
         SetBusyState("Signing in", "Completing Google sign-in.");
+        await InvokeAsync(StateHasChanged);
         var (user, sessionId, error) = await ApiClient.LoginWithGoogleCodeAsync(authCode);
         if (user != null && sessionId != null)
         {

@@ -104,6 +104,7 @@
     private int _canvasLoadVersion;
     private bool _jsViewportInitialized;
     private bool _pendingViewportRefresh = true;
+    private int _rendererInitAttempts;
 
     // PixelManager reference
     private PixelManager? _pixelManager;
@@ -227,7 +228,24 @@
 
             // 2. Initialize the renderer and load the image (awaitable – no white flash)
             _renderer = new CanvasRenderer(JSRuntime);
-            await _renderer.InitializeAsync(_canvasRef, _overlayRef);
+            var initialized = await _renderer.InitializeAsync(_canvasRef, _overlayRef);
+            if (!initialized)
+            {
+                _renderer = null;
+                _rendererInitAttempts++;
+                if (_rendererInitAttempts <= 3)
+                {
+                    await Task.Delay(50);
+                    await InvokeAsync(StateHasChanged);
+                }
+                else
+                {
+                    _nlog.Warn("Canvas renderer initialization failed after {Attempts} attempts.", _rendererInitAttempts);
+                }
+                return;
+            }
+
+            _rendererInitAttempts = 0;
             await LoadCanvasImage();
 
             // 3. Initialize JS viewport (fit + center) now that dimensions are correct
