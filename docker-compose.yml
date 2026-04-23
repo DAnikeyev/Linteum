@@ -2,6 +2,7 @@ services:
   linteum-db:
     image: postgres:16
     container_name: ${DB_CONTAINER_NAME}
+    restart: unless-stopped
     command: >
       postgres
       -c shared_buffers=256MB
@@ -26,11 +27,50 @@ services:
       timeout: 5s
       retries: 10
 
+  # `daily.dump` (pg_dump -Fc): refreshed every time this loop runs (~24h). `weekly.dump`: copy of
+  # that day's `daily` on WEEKLY_BACKUP_WEEKDAY (date +%w, default 0=Sunday, TZ for calendar).
+  # Temp + mv for daily; copy to weekly.new + mv for weekly so a crash does not clobber a good weekly.
+  linteum-db-backup:
+    image: postgres:16
+    container_name: linteum-db-backup
+    restart: unless-stopped
+    environment:
+      PGPASSWORD: ${POSTGRES_PASSWORD}
+      PGUSER: ${POSTGRES_USER}
+      PGDATABASE: ${POSTGRES_DB}
+      PGHOST: ${DB_CONTAINER_NAME}
+      PGPORT: ${DB_CONTAINER_PORT}
+      TZ: ${TZ:-UTC}
+      WEEKLY_BACKUP_WEEKDAY: ${WEEKLY_BACKUP_WEEKDAY:-0}
+    depends_on:
+      linteum-db:
+        condition: service_healthy
+    networks:
+      - linteum_prod1
+    volumes:
+      - db_backups:/backups
+    entrypoint: [ "/bin/bash", "-c" ]
+    command:
+      - |
+        while true; do
+          if pg_dump -Fc -f /backups/backup_in_progress.dump 2>>/backups/pg_dump.log; then
+            mv -f /backups/backup_in_progress.dump /backups/daily.dump
+            if [ "$$(date +%w)" = "$$WEEKLY_BACKUP_WEEKDAY" ]; then
+              cp -a /backups/daily.dump /backups/weekly.new.dump
+              mv -f /backups/weekly.new.dump /backups/weekly.dump
+            fi
+          else
+            rm -f /backups/backup_in_progress.dump
+          fi
+          sleep 86400
+        done
+
   linteum-api:
     build:
       context: .
       dockerfile: Linteum.Api/Dockerfile
     container_name: ${API_CONTAINER_NAME}
+    restart: unless-stopped
     ports:
       - "${API_HOST_PORT}:${API_CONTAINER_PORT}"
     environment:
@@ -57,6 +97,7 @@ services:
       context: .
       dockerfile: Linteum.BlazorApp/Dockerfile
     container_name: ${BLAZOR_CONTAINER_NAME}
+    restart: unless-stopped
     environment:
       - PASSWORD_SALT=${PASSWORD_SALT}
       - API_CONTAINER_NAME=${API_CONTAINER_NAME}
@@ -81,6 +122,7 @@ services:
       context: .
       dockerfile: Linteum.Bots/Dockerfile
     container_name: linteum-bots
+    restart: unless-stopped
     environment:
       - BOT_API_URL=http://${API_CONTAINER_NAME}:${API_CONTAINER_PORT}
       - BOT_TIMEOUT_MINUTES=10
@@ -100,3 +142,4 @@ networks:
 volumes:
   db_data:
   blazor_keys:
+  db_backups:

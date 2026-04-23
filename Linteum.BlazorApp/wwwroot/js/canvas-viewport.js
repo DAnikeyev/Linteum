@@ -92,13 +92,13 @@ function CanvasViewportController(dotNetRef, viewportEl, rendererEl, coordsEl, c
     // Hover indicator
     self.hoverEl = document.createElement('div');
     self.hoverEl.style.cssText =
-        'position:absolute;box-shadow:inset 0 0 0 1px rgba(31,76,145,0.6);pointer-events:none;z-index:5;display:none;will-change:transform;';
+        'position:absolute;top:0;left:0;box-shadow:inset 0 0 0 1px rgba(31,76,145,0.6);pointer-events:none;z-index:5;display:none;will-change:transform;';
     viewportEl.appendChild(self.hoverEl);
 
     // Click indicator
     self.clickEl = document.createElement('div');
     self.clickEl.style.cssText =
-        'position:absolute;box-shadow:inset 0 0 0 2px var(--accent-3);pointer-events:none;z-index:6;display:none;will-change:transform;';
+        'position:absolute;top:0;left:0;box-shadow:inset 0 0 0 2px var(--accent-3);pointer-events:none;z-index:6;display:none;will-change:transform;';
     viewportEl.appendChild(self.clickEl);
 
     // Coords display (Blazor-owned element, passed in)
@@ -144,12 +144,7 @@ function CanvasViewportController(dotNetRef, viewportEl, rendererEl, coordsEl, c
     };
 
     self.showClick = function () {
-        if (!self.clickedPx) { self.clickEl.style.display = 'none'; return; }
-        self.clickEl.style.display = 'block';
-        self.clickEl.style.left = (self.ox + self.clickedPx.x * self.scale) + 'px';
-        self.clickEl.style.top = (self.oy + self.clickedPx.y * self.scale) + 'px';
-        self.clickEl.style.width = self.scale + 'px';
-        self.clickEl.style.height = self.scale + 'px';
+        self._updateOverlays();
     };
 
     self._onFrame = function () {
@@ -442,8 +437,9 @@ CanvasViewportController.prototype.fit = function (vpW, vpH) {
         this.ox = (vpW - this.cw * this.scale) / 2;
         this.oy = (vpH - this.ch * this.scale) / 2;
     }
+    this._invalidateRect();
     this.applyTransform();
-    this.showClick();
+    this._updateOverlays();
 };
 
 CanvasViewportController.prototype.destroy = function () {
