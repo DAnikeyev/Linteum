@@ -19,14 +19,20 @@ public class CanvasRenderer : IAsyncDisposable
         _js = js;
     }
 
-    public async Task InitializeAsync(ElementReference canvasElement, ElementReference overlayElement)
+    public async Task<bool> InitializeAsync(ElementReference canvasElement, ElementReference overlayElement)
     {
         _canvasElement = canvasElement;
         _overlayElement = overlayElement;
-        await _js.InvokeVoidAsync("canvasRenderer.init", _canvasElement, _overlayElement);
+        var initialized = await _js.InvokeAsync<bool>("canvasRenderer.init", _canvasElement, _overlayElement);
+        if (!initialized)
+        {
+            _initialized = false;
+            return false;
+        }
+
         _initialized = true;
-        
         _renderLoopTask = RenderLoop();
+        return true;
     }
 
     public async Task LoadImageAsync(byte[] imageBytes)

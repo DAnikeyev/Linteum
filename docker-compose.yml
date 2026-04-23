@@ -3,6 +3,10 @@ services:
     image: postgres:16
     container_name: ${DB_CONTAINER_NAME}
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
     command: >
       postgres
       -c shared_buffers=256MB
@@ -34,6 +38,10 @@ services:
     image: postgres:16
     container_name: linteum-db-backup
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
     environment:
       PGPASSWORD: ${POSTGRES_PASSWORD}
       PGUSER: ${POSTGRES_USER}
@@ -71,6 +79,10 @@ services:
       dockerfile: Linteum.Api/Dockerfile
     container_name: ${API_CONTAINER_NAME}
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
     ports:
       - "${API_HOST_PORT}:${API_CONTAINER_PORT}"
     environment:
@@ -96,8 +108,12 @@ services:
     build:
       context: .
       dockerfile: Linteum.BlazorApp/Dockerfile
-    container_name: ${BLAZOR_CONTAINER_NAME}
     restart: unless-stopped
+    deploy:
+      replicas: 3
+      resources:
+        limits:
+          memory: 256M
     environment:
       - PASSWORD_SALT=${PASSWORD_SALT}
       - API_CONTAINER_NAME=${API_CONTAINER_NAME}
@@ -108,7 +124,7 @@ services:
       - ASPNETCORE_URLS=http://*:${BLAZOR_CONTAINER_PORT}
       - ApiBaseUrl=http://${API_CONTAINER_NAME}:${API_CONTAINER_PORT}
     ports:
-      - "${BLAZOR_HOST_PORT}:${BLAZOR_CONTAINER_PORT}"
+      - "5010-5012:${BLAZOR_CONTAINER_PORT}"
     depends_on:
       - linteum-api
     networks:
@@ -123,6 +139,10 @@ services:
       dockerfile: Linteum.Bots/Dockerfile
     container_name: linteum-bots
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
     environment:
       - BOT_API_URL=http://${API_CONTAINER_NAME}:${API_CONTAINER_PORT}
       - BOT_TIMEOUT_MINUTES=10

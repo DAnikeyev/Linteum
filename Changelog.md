@@ -1,3 +1,9 @@
+# 0.1.3 - 2026/04/24
+
+- **Scaling & ops:** Horizontal Blazor scaling in Compose, memory limits on main containers, and API GC tuned for interactive workloads.
+- **Canvas:** More reliable startup when the page is still wiring up—JS-side guards and short retries before failing.
+- **UX:** Leaving via “Back to hub” no longer flashes the reconnect dialog; login shows busy state as soon as sign-in starts.
+
 # 0.1.2 - 2026/04/22
 
 ## Performance and Reliability

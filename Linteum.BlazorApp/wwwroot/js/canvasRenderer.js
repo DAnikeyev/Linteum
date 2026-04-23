@@ -7,6 +7,12 @@ window.canvasRenderer = {
     animationFrameId: null,
 
     init: function (canvasElement, overlayElement) {
+        if (!canvasElement || !overlayElement) {
+            this.ctx = null;
+            this.overlayCtx = null;
+            return false;
+        }
+
         this.ctx = canvasElement.getContext('2d');
         // Ensure pixels stay sharp when zooming in (pixel art style)
         this.ctx.imageSmoothingEnabled = false;
@@ -25,6 +31,8 @@ window.canvasRenderer = {
             cancelAnimationFrame(this.animationFrameId);
             this.animationFrameId = null;
         }
+
+        return true;
     },
 
     loadImage: function (imageBytes) {
@@ -77,6 +85,11 @@ window.canvasRenderer = {
     },
 
     animate: function () {
+        if (!this.overlayCtx) {
+            this.animationFrameId = null;
+            return;
+        }
+
         if (this.ripples.length === 0) {
             this.animationFrameId = null;
             if (this.overlayCtx) {
