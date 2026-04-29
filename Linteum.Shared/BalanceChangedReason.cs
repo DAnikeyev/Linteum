@@ -8,4 +8,5 @@ public enum BalanceChangedReason
     Other = 4,
     Subscription = 5,
     Unsubscription = 6,
+    HourlyIncome = 7,
 }

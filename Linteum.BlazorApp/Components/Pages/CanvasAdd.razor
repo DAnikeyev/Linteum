@@ -1,111 +1,306 @@
 @page "/canvas_add"
 @using Linteum.BlazorApp.Components.Layout
 @using Linteum.BlazorApp.Components.Notification
+@using Linteum.Shared
 @using Linteum.Shared.DTO
-@layout Layout.BaseLayout
+@using Microsoft.AspNetCore.Components.Forms
+@using SixLabors.ImageSharp
+@layout BaseLayout
 @inject MyApiClient ApiClient
 @inject NotificationService NotificationService
 
-<div class="settings-container">
+<div class="settings-container canvas-add-page">
     <div class="settings-header">
         <h2>Add Canvas</h2>
-        <p>Create a new collaborative canvas and set its dimensions.</p>
+        <p>Define a name, choose how the canvas starts, then set the drawing mode.</p>
     </div>
 
-    <section class="settings-section">
-        <h6 class="settings-section-title">Canvas Details</h6>
-
-        <div class="mb-4">
-            <label for="canvasNameInput" class="form-label">Canvas Name</label>
-            <div class="action-row">
-                <input id="canvasNameInput" class="form-control fixed-width me-2" @bind="_canvasName" autocomplete="off" />
+    <section class="settings-section canvas-add-zone">
+        <h6 class="settings-section-title">Name and access</h6>
+        <div class="canvas-add-stack">
+            <div class="canvas-add-field">
+                <label for="canvasNameInput" class="form-label">Canvas Name</label>
+                <input id="canvasNameInput" class="form-control fixed-width" @bind="_canvasName" @bind:event="oninput" autocomplete="off" />
             </div>
-        </div>
-
-        <div class="mb-4">
-            <label for="canvasPasswordInput" class="form-label">Optional Password</label>
-            <div class="action-row">
-                <input type="password" id="canvasPasswordInput" class="form-control fixed-width me-2" @bind="_canvasPassword" autocomplete="new-password" />
-            </div>
-            <small class="text-muted">Leave empty for no password.</small>
-        </div>
-
-        <div class="dimension-grid">
-            <div class="mb-4">
-                <label for="canvasWidthInput" class="form-label">Canvas Width (pixels)</label>
-                <div class="action-row">
-                    <input type="number" id="canvasWidthInput" class="form-control fixed-width me-2" @bind="_canvasWidth" />
-                </div>
-            </div>
-
-            <div class="mb-4">
-                <label for="canvasHeightInput" class="form-label">Canvas Height (pixels)</label>
-                <div class="action-row">
-                    <input type="number" id="canvasHeightInput" class="form-control fixed-width me-2" @bind="_canvasHeight" />
-                </div>
+            <div class="canvas-add-field">
+                <label for="canvasPasswordInput" class="form-label">Optional Password</label>
+                <input type="password" id="canvasPasswordInput" class="form-control fixed-width" @bind="_canvasPassword" @bind:event="oninput" autocomplete="new-password" />
+                <small class="text-muted">Leave empty for no password.</small>
             </div>
         </div>
     </section>
 
-    <section class="settings-section settings-section-actions">
-        <h6 class="settings-section-title">Publish</h6>
-        <div class="action-row">
-            <button class="btn btn-primary" @onclick="AddCanvas">Add Canvas</button>
+    <section class="settings-section canvas-add-zone">
+        <h6 class="settings-section-title">How should it start?</h6>
+        <p class="canvas-add-zone-lead">Pick one. You can always paint after the canvas exists.</p>
+        <div class="creation-type-grid" role="radiogroup" aria-label="Canvas starting option">
+            <label class="creation-option @(_creationType == CanvasCreationType.Blank ? "is-selected" : string.Empty)">
+                <input type="radio"
+                       class="creation-option-input"
+                       name="canvasCreationType"
+                       checked="@(_creationType == CanvasCreationType.Blank)"
+                       @onchange="@(() => SetCreationType(CanvasCreationType.Blank))" />
+                <span class="creation-option-body">
+                    <span class="creation-option-title">Blank canvas</span>
+                    <span class="creation-option-desc">Choose width and height yourself.</span>
+                </span>
+            </label>
+            <label class="creation-option @(_creationType == CanvasCreationType.Image ? "is-selected" : string.Empty)">
+                <input type="radio"
+                       class="creation-option-input"
+                       name="canvasCreationType"
+                       checked="@(_creationType == CanvasCreationType.Image)"
+                       @onchange="@(() => SetCreationType(CanvasCreationType.Image))" />
+                <span class="creation-option-body">
+                    <span class="creation-option-title">Start from JPG</span>
+                    <span class="creation-option-desc">Use image width and height. If the file cannot be applied on the server, an empty canvas of that size is still created.</span>
+                </span>
+            </label>
         </div>
+    </section>
+
+    @if (_creationType == CanvasCreationType.Blank)
+    {
+        <section class="settings-section canvas-add-zone canvas-add-zone-panel">
+            <h6 class="settings-section-title">Canvas size</h6>
+            <div class="dimension-grid">
+                <div class="canvas-add-field">
+                    <label for="canvasWidthInput" class="form-label">Width (px)</label>
+                    <input type="number" id="canvasWidthInput" class="form-control fixed-width" min="@MinCanvasWidth" max="@MaxCanvasWidth" @bind="_blankCanvasWidth" @bind:event="oninput" />
+                </div>
+                <div class="canvas-add-field">
+                    <label for="canvasHeightInput" class="form-label">Height (px)</label>
+                    <input type="number" id="canvasHeightInput" class="form-control fixed-width" min="@MinCanvasHeight" max="@MaxCanvasHeight" @bind="_blankCanvasHeight" @bind:event="oninput" />
+                </div>
+            </div>
+            <small class="text-muted">Allowed range: @MinCanvasWidth×@MinCanvasHeight to @MaxCanvasWidth×@MaxCanvasHeight.</small>
+        </section>
+    }
+    else
+    {
+        <section class="settings-section canvas-add-zone canvas-add-zone-panel">
+            <h6 class="settings-section-title">JPEG file</h6>
+            <div class="canvas-add-field">
+                <label for="canvasImageInput" class="form-label">Image (.jpg / .jpeg, max 20&nbsp;MB)</label>
+                <InputFile id="canvasImageInput"
+                           OnChange="HandleImageSelectedAsync"
+                           accept=".jpg,.jpeg,.JPG,.JPEG,image/jpeg"
+                           class="form-control fixed-width" />
+                <small class="text-muted">Dimensions must fall within the same range as a blank canvas. Extensions .jpg, .jpeg, .JPG, and .JPEG are accepted.</small>
+                @if (!string.IsNullOrWhiteSpace(_canvasImageFileName) && _uploadedImageWidth.HasValue && _uploadedImageHeight.HasValue)
+                {
+                    <div class="canvas-add-file-summary">@_canvasImageFileName — @_uploadedImageWidth×@_uploadedImageHeight, @FormatFileSize(_canvasImageSizeBytes)</div>
+                }
+            </div>
+        </section>
+    }
+
+    <section class="settings-section canvas-add-zone">
+        <h6 class="settings-section-title">Canvas mode</h6>
+        <div class="canvas-add-field">
+            <label for="canvasModeInput" class="form-label">Mode</label>
+            <select id="canvasModeInput" class="form-control fixed-width" @bind="_canvasMode">
+                <option value="@CanvasMode.Normal">Normal</option>
+                <option value="@CanvasMode.FreeDraw">FreeDraw</option>
+                <option value="@CanvasMode.Economy">Economy</option>
+            </select>
+            <small class="text-muted">Normal: single-pixel painting with a 100-pixel daily limit per user. FreeDraw: brush and text. Economy: gold bids per pixel; pixels filled from a starting image begin at price 1.</small>
+        </div>
+    </section>
+
+    <section class="settings-section settings-section-actions canvas-add-zone">
+        <h6 class="settings-section-title">Publish</h6>
+        <button type="button" class="btn btn-primary" @onclick="AddCanvas">Add Canvas</button>
     </section>
 </div>
 
 @code {
     [CascadingParameter]
     private CanvasSidebar? Sidebar { get; set; }
+
     private string? _canvasName;
     private string? _canvasPassword;
-    private int? _canvasWidth;
-    private int? _canvasHeight;
+    private byte[]? _canvasImageBytes;
+    private string? _canvasImageFileName;
+    private long _canvasImageSizeBytes;
+    private int? _uploadedImageWidth;
+    private int? _uploadedImageHeight;
+    private int? _blankCanvasWidth;
+    private int? _blankCanvasHeight;
+    private CanvasMode _canvasMode = CanvasMode.Normal;
+    private CanvasCreationType _creationType = CanvasCreationType.Blank;
+
+    private const long MaxCanvasImageSizeBytes = 20 * 1024 * 1024;
+    private const int MinCanvasWidth = 10;
+    private const int MaxCanvasWidth = 1920;
+    private const int MinCanvasHeight = 10;
+    private const int MaxCanvasHeight = 1080;
 
     private async Task AddCanvas()
     {
-        if (ValidateCanvasForm())
+        if (!await ValidateCanvasFormAsync())
         {
-            try
-            {
-                await ApiClient.AddCanvasAsync(new CanvasDto()
-                {
-                    Name = _canvasName!,
-                    Width = _canvasWidth!.Value,
-                    Height = _canvasHeight!.Value
-                }, _canvasPassword);
+            return;
+        }
 
+        var canvasDto = new CanvasDto
+        {
+            Name = _canvasName!,
+            Width = GetCurrentCanvasWidth(),
+            Height = GetCurrentCanvasHeight(),
+            CanvasMode = _canvasMode
+        };
+
+        var displayName = _canvasName!;
+        var dimensionsText = $"{canvasDto.Width}x{canvasDto.Height}";
+
+        try
+        {
+            if (_creationType == CanvasCreationType.Image)
+            {
+                try
+                {
+                    await ApiClient.AddCanvasFromImageAsync(canvasDto, _canvasPassword, _canvasImageBytes!, _canvasImageFileName!);
+                    await NotificationService.NotifyAsync(new CustomNotification
+                    {
+                        Message = $"Canvas '{displayName}' added from JPEG ({dimensionsText}).",
+                        Type = NotificationType.Success
+                    });
+                }
+                catch (Exception)
+                {
+                    await ApiClient.AddCanvasAsync(canvasDto, _canvasPassword);
+                    await NotificationService.NotifyAsync(new CustomNotification
+                    {
+                        Message = $"Canvas '{displayName}' was created as a blank {dimensionsText} canvas. The JPEG could not be used to fill pixels (server processing failed or was rejected).",
+                        Type = NotificationType.Info
+                    });
+                }
+            }
+            else
+            {
+                await ApiClient.AddCanvasAsync(canvasDto, _canvasPassword);
                 await NotificationService.NotifyAsync(new CustomNotification
                 {
-                    Message = $"Canvas '{_canvasName}' added successfully.",
+                    Message = $"Canvas '{displayName}' added successfully ({dimensionsText}).",
                     Type = NotificationType.Success
                 });
+            }
 
-                _canvasName = null;
-                _canvasPassword = null;
-                _canvasWidth = null;
-                _canvasHeight = null;
-                if (Sidebar != null)
-                    await Sidebar.RefreshCanvases();
-            }
-            catch (Exception ex)
+            ResetFormAfterSuccess();
+            if (Sidebar != null)
             {
-                var error = $"Error adding canvas: {ex?.Message ?? "No message"}";
-                await NotificationService.NotifyAsync(new CustomNotification
-                {
-                    Message = error,
-                    Type = NotificationType.Error
-                });
+                await Sidebar.RefreshCanvases();
             }
+        }
+        catch (Exception ex)
+        {
+            var isDuplicateCanvas = ex.Message.Contains("already exists", StringComparison.OrdinalIgnoreCase);
+            await NotificationService.NotifyAsync(new CustomNotification
+            {
+                Message = isDuplicateCanvas
+                    ? $"Canvas '{displayName}' already exists. Choose a different name."
+                    : $"Error adding canvas: {ex.Message}",
+                Type = NotificationType.Error
+            });
         }
     }
 
-    private bool ValidateCanvasForm()
+    private void ResetFormAfterSuccess()
+    {
+        _canvasName = null;
+        _canvasPassword = null;
+        _blankCanvasWidth = null;
+        _blankCanvasHeight = null;
+        ClearSelectedImage();
+        _canvasMode = CanvasMode.Normal;
+        _creationType = CanvasCreationType.Blank;
+    }
+
+    private async Task HandleImageSelectedAsync(InputFileChangeEventArgs args)
+    {
+        ClearSelectedImage();
+
+        var file = args.File;
+        var fileExtension = Path.GetExtension(file.Name);
+        var isJpgExtension = string.Equals(fileExtension, ".jpg", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(fileExtension, ".jpeg", StringComparison.OrdinalIgnoreCase);
+        var isJpegContentType = string.Equals(file.ContentType, "image/jpeg", StringComparison.OrdinalIgnoreCase)
+            || string.IsNullOrWhiteSpace(file.ContentType);
+        if (!isJpgExtension && !isJpegContentType)
+        {
+            await NotificationService.NotifyAsync(new CustomNotification
+            {
+                Message = "Only JPEG files (.jpg / .jpeg) are supported.",
+                Type = NotificationType.Error
+            });
+            return;
+        }
+
+        if (file.Size > MaxCanvasImageSizeBytes)
+        {
+            await NotificationService.NotifyAsync(new CustomNotification
+            {
+                Message = "Image size must be 20MB or less.",
+                Type = NotificationType.Error
+            });
+            return;
+        }
+
+        try
+        {
+            await using var fileStream = file.OpenReadStream(MaxCanvasImageSizeBytes);
+            using var memoryStream = new MemoryStream();
+            await fileStream.CopyToAsync(memoryStream);
+            var imageBytes = memoryStream.ToArray();
+
+            await using var imageStream = new MemoryStream(imageBytes, writable: false);
+            var imageInfo = await Image.IdentifyAsync(imageStream);
+            if (imageInfo == null)
+            {
+                throw new InvalidOperationException("Uploaded image could not be read.");
+            }
+
+            _uploadedImageWidth = imageInfo.Width;
+            _uploadedImageHeight = imageInfo.Height;
+            _canvasImageBytes = imageBytes;
+            _canvasImageFileName = file.Name;
+            _canvasImageSizeBytes = file.Size;
+
+            var currentDimensions = $"{_uploadedImageWidth}x{_uploadedImageHeight}";
+            if (_uploadedImageWidth < MinCanvasWidth || _uploadedImageWidth > MaxCanvasWidth || _uploadedImageHeight < MinCanvasHeight || _uploadedImageHeight > MaxCanvasHeight)
+            {
+                await NotificationService.NotifyAsync(new CustomNotification
+                {
+                    Message = $"Loaded image size: {currentDimensions}. Dimensions must be between {MinCanvasWidth}×{MinCanvasHeight} and {MaxCanvasWidth}×{MaxCanvasHeight}.",
+                    Type = NotificationType.Error
+                });
+                ClearSelectedImage();
+                return;
+            }
+
+            await NotificationService.NotifyAsync(new CustomNotification
+            {
+                Message = $"Loaded {_canvasImageFileName} ({currentDimensions}).",
+                Type = NotificationType.Success
+            });
+        }
+        catch (Exception ex)
+        {
+            ClearSelectedImage();
+            await NotificationService.NotifyAsync(new CustomNotification
+            {
+                Message = $"Error reading image: {ex.Message}",
+                Type = NotificationType.Error
+            });
+        }
+    }
+
+    private async Task<bool> ValidateCanvasFormAsync()
     {
         if (string.IsNullOrWhiteSpace(_canvasName))
         {
-            _ = NotificationService.NotifyAsync(new CustomNotification
+            await NotificationService.NotifyAsync(new CustomNotification
             {
                 Message = "Canvas name cannot be empty.",
                 Type = NotificationType.Error
@@ -113,9 +308,44 @@
             return false;
         }
 
-        if (_canvasWidth is null || _canvasWidth <= 0)
+        if (_creationType == CanvasCreationType.Image)
         {
-            _ = NotificationService.NotifyAsync(new CustomNotification
+            if (_canvasImageBytes == null || string.IsNullOrWhiteSpace(_canvasImageFileName))
+            {
+                await NotificationService.NotifyAsync(new CustomNotification
+                {
+                    Message = "Please upload a JPEG file for the canvas.",
+                    Type = NotificationType.Error
+                });
+                return false;
+            }
+
+            if (_uploadedImageWidth is null || _uploadedImageHeight is null)
+            {
+                await NotificationService.NotifyAsync(new CustomNotification
+                {
+                    Message = "Uploaded image dimensions could not be determined.",
+                    Type = NotificationType.Error
+                });
+                return false;
+            }
+
+            if (_uploadedImageWidth < MinCanvasWidth || _uploadedImageWidth > MaxCanvasWidth || _uploadedImageHeight < MinCanvasHeight || _uploadedImageHeight > MaxCanvasHeight)
+            {
+                await NotificationService.NotifyAsync(new CustomNotification
+                {
+                    Message = $"Loaded image size: {_uploadedImageWidth}×{_uploadedImageHeight}. Dimensions must be between {MinCanvasWidth}×{MinCanvasHeight} and {MaxCanvasWidth}×{MaxCanvasHeight}.",
+                    Type = NotificationType.Error
+                });
+                return false;
+            }
+
+            return true;
+        }
+
+        if (_blankCanvasWidth is null || _blankCanvasWidth <= 0)
+        {
+            await NotificationService.NotifyAsync(new CustomNotification
             {
                 Message = "Canvas width must be a positive number.",
                 Type = NotificationType.Error
@@ -123,9 +353,9 @@
             return false;
         }
 
-        if (_canvasHeight is null || _canvasHeight <= 0)
+        if (_blankCanvasHeight is null || _blankCanvasHeight <= 0)
         {
-            _ = NotificationService.NotifyAsync(new CustomNotification
+            await NotificationService.NotifyAsync(new CustomNotification
             {
                 Message = "Canvas height must be a positive number.",
                 Type = NotificationType.Error
@@ -133,6 +363,67 @@
             return false;
         }
 
+        if (_blankCanvasWidth < MinCanvasWidth || _blankCanvasWidth > MaxCanvasWidth || _blankCanvasHeight < MinCanvasHeight || _blankCanvasHeight > MaxCanvasHeight)
+        {
+            await NotificationService.NotifyAsync(new CustomNotification
+            {
+                Message = $"Canvas size must be between {MinCanvasWidth}×{MinCanvasHeight} and {MaxCanvasWidth}×{MaxCanvasHeight}.",
+                Type = NotificationType.Error
+            });
+            return false;
+        }
+
         return true;
+    }
+
+    private void SetCreationType(CanvasCreationType creationType)
+    {
+        _creationType = creationType;
+    }
+
+    private int GetCurrentCanvasWidth() => _creationType == CanvasCreationType.Image
+        ? _uploadedImageWidth!.Value
+        : _blankCanvasWidth!.Value;
+
+    private int GetCurrentCanvasHeight() => _creationType == CanvasCreationType.Image
+        ? _uploadedImageHeight!.Value
+        : _blankCanvasHeight!.Value;
+
+    private void ClearSelectedImage()
+    {
+        _canvasImageBytes = null;
+        _canvasImageFileName = null;
+        _canvasImageSizeBytes = 0;
+        _uploadedImageWidth = null;
+        _uploadedImageHeight = null;
+    }
+
+    private static string FormatFileSize(long bytes)
+    {
+        if (bytes <= 0)
+        {
+            return "0 B";
+        }
+
+        const long oneKilobyte = 1024;
+        const long oneMegabyte = oneKilobyte * 1024;
+
+        if (bytes >= oneMegabyte)
+        {
+            return $"{bytes / (double)oneMegabyte:0.##} MB";
+        }
+
+        if (bytes >= oneKilobyte)
+        {
+            return $"{bytes / (double)oneKilobyte:0.##} KB";
+        }
+
+        return $"{bytes} B";
+    }
+
+    private enum CanvasCreationType
+    {
+        Blank,
+        Image,
     }
 }

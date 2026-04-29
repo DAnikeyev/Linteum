@@ -1,4 +1,6 @@
+using System.Globalization;
 using System.Net;
+using System.Net.Http.Headers;
 using Linteum.BlazorApp.ExtensionMethods;
 using Linteum.Shared;
 using Linteum.Shared.DTO;
@@ -34,6 +36,7 @@ internal class MyApiClient
         else
         {
             await _localStorage.RemoveItemAsync(LocalStorageKey.SessionId);
+            await _localStorage.RemoveItemAsync(LocalStorageKey.UserId);
         }
     }
 
@@ -84,25 +87,90 @@ internal class MyApiClient
         }
     }
 
-    public void HandlePixelColorChanged(string canvasName, int x, int y, int colorId, Guid? pixelId = null)
+    public void HandlePixelColorChanged(string canvasName, int x, int y, int colorId, Guid? pixelId = null, Guid? ownerId = null)
     {
         var cacheKey = BuildPixelCacheKey(canvasName, x, y);
         lock (_cacheLock)
         {
             Guid? historyPixelId = pixelId;
-            if (_pixelCache.TryGetValue(cacheKey, out var cached))
-            {
-                var updatedPixel = ClonePixel(cached.Data);
-                updatedPixel.ColorId = colorId;
-                _pixelCache[cacheKey] = (updatedPixel, DateTime.UtcNow.Add(CacheDuration));
-                historyPixelId ??= updatedPixel.Id;
-            }
+            var updatedPixel = _pixelCache.TryGetValue(cacheKey, out var cached)
+                ? ClonePixel(cached.Data)
+                : new PixelDto
+                {
+                    X = x,
+                    Y = y,
+                };
+
+            updatedPixel.ColorId = colorId;
+            updatedPixel.OwnerId = ownerId;
+            updatedPixel.Id = pixelId ?? updatedPixel.Id;
+            _pixelCache[cacheKey] = (updatedPixel, DateTime.UtcNow.Add(CacheDuration));
+            historyPixelId ??= updatedPixel.Id;
 
             if (historyPixelId.HasValue)
             {
                 _historyCache.Remove(historyPixelId.Value);
             }
         }
+    }
+
+    public int? GetWhiteColorId()
+    {
+        lock (_cacheLock)
+        {
+            return ResolveWhiteColorId();
+        }
+    }
+
+    public bool IsPixelKnownWhite(string canvasName, int x, int y)
+    {
+        var cacheKey = BuildPixelCacheKey(canvasName, x, y);
+        lock (_cacheLock)
+        {
+            return _pixelCache.TryGetValue(cacheKey, out var cached)
+                && cached.Expiry > DateTime.UtcNow
+                && IsWhitePixel(cached.Data);
+        }
+    }
+
+    public void HandlePixelDeleted(string canvasName, int x, int y, Guid canvasId)
+    {
+        var cacheKey = BuildPixelCacheKey(canvasName, x, y);
+        lock (_cacheLock)
+        {
+            var whiteColorId = ResolveWhiteColorId();
+            if (!whiteColorId.HasValue)
+            {
+                if (_pixelCache.TryGetValue(cacheKey, out var cachedWithoutWhiteId) && cachedWithoutWhiteId.Data.Id.HasValue)
+                {
+                    _historyCache.Remove(cachedWithoutWhiteId.Data.Id.Value);
+                }
+
+                _pixelCache.Remove(cacheKey);
+                return;
+            }
+
+            if (_pixelCache.TryGetValue(cacheKey, out var cached) && cached.Data.Id.HasValue)
+            {
+                _historyCache.Remove(cached.Data.Id.Value);
+            }
+
+            _pixelCache[cacheKey] = (new PixelDto
+            {
+                X = x,
+                Y = y,
+                ColorId = whiteColorId.Value,
+                CanvasId = canvasId,
+                Id = null,
+                OwnerId = null,
+                Price = 0,
+            }, DateTime.UtcNow.Add(CacheDuration));
+        }
+    }
+
+    public async Task<Guid?> GetCurrentUserIdAsync()
+    {
+        return await _localStorage.GetItemAsync<Guid?>(LocalStorageKey.UserId);
     }
     
     public async Task<List<ColorDto>?> GetColorsAsync()
@@ -142,6 +210,91 @@ internal class MyApiClient
 
         _logger.LogInformation("Canvas {CanvasName} added successfully", canvasDto.Name);
         return await response.Content.ReadFromJsonAsync<CanvasDto>();
+    }
+
+    public async Task<CanvasDto?> AddCanvasFromImageAsync(CanvasDto canvasDto, string? password, byte[] imageBytes, string fileName)
+    {
+        _logger.LogInformation("AddCanvasFromImageAsync called with canvas name: {CanvasName}", canvasDto.Name);
+
+        var passwordHash = string.IsNullOrEmpty(password) ? null : SecurityHelper.HashPassword(password);
+        using var multipartContent = new MultipartFormDataContent();
+        multipartContent.Add(new StringContent(canvasDto.Name), nameof(canvasDto.Name));
+        multipartContent.Add(new StringContent(((int)canvasDto.CanvasMode).ToString(CultureInfo.InvariantCulture)), nameof(canvasDto.CanvasMode));
+
+        if (!string.IsNullOrEmpty(passwordHash))
+        {
+            multipartContent.Add(new StringContent(passwordHash), "PasswordHash");
+        }
+
+        var imageContent = new ByteArrayContent(imageBytes);
+        imageContent.Headers.ContentType = new MediaTypeHeaderValue("image/jpeg");
+        multipartContent.Add(imageContent, "Image", fileName);
+
+        var request = new HttpRequestMessage(HttpMethod.Post, "/canvases/add-with-image");
+        await request.AddSessionId(_localStorage);
+        request.Content = multipartContent;
+
+        var response = await _httpClient.SendAsync(request);
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorContent = await response.Content.ReadAsStringAsync() ?? "No additional error information.";
+            _logger.LogError("Failed to add canvas from image {CanvasName}. Status: {StatusCode}, Error: {Error}", canvasDto.Name, response.StatusCode, errorContent);
+            throw new Exception($"Failed to add canvas from image. {ParseErrorMessage(errorContent, "No additional error information.")}");
+        }
+
+        _logger.LogInformation("Canvas {CanvasName} added from image successfully", canvasDto.Name);
+        return await response.Content.ReadFromJsonAsync<CanvasDto>();
+    }
+
+    public async Task SendCanvasChatMessageAsync(string canvasName, string message)
+    {
+        if (string.IsNullOrWhiteSpace(canvasName))
+            throw new ArgumentException("Canvas name is required.", nameof(canvasName));
+
+        var normalizedMessage = message?.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedMessage))
+            throw new ArgumentException("Message is required.", nameof(message));
+
+        if (normalizedMessage.Length > SendCanvasChatMessageRequestDto.MaxMessageLength)
+            throw new ArgumentException($"Message must be {SendCanvasChatMessageRequestDto.MaxMessageLength} characters or less.", nameof(message));
+
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/canvaschat/{Uri.EscapeDataString(canvasName)}");
+        await request.AddSessionId(_localStorage);
+        request.SetJsonContent(new SendCanvasChatMessageRequestDto
+        {
+            Message = normalizedMessage,
+        });
+
+        var response = await _httpClient.SendAsync(request);
+        if (response.IsSuccessStatusCode)
+        {
+            return;
+        }
+
+        var errorContent = await response.Content.ReadAsStringAsync();
+        _logger.LogWarning(
+            "Failed to send canvas chat message to {CanvasName}. Status: {StatusCode}, Error: {Error}",
+            canvasName,
+            response.StatusCode,
+            errorContent);
+
+        if (response.StatusCode == HttpStatusCode.BadRequest)
+            throw new Exception(ParseErrorMessage(errorContent, "Cannot send chat message."));
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            throw new Exception("Canvas is not found.");
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+            throw new UnauthorizedAccessException("You are not authorized to send chat messages on this canvas.");
+
+        throw new Exception(ParseErrorMessage(errorContent, $"Failed to send a chat message to {canvasName}."));
+    }
+
+    public async Task<NormalModeQuotaDto?> GetNormalModeQuotaAsync(string canvasName)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Get, $"/pixels/quota/{Uri.EscapeDataString(canvasName)}");
+        await request.AddSessionId(_localStorage);
+        var response = await _httpClient.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<NormalModeQuotaDto>();
     }
 
     public async Task<List<HistoryResponseItem>> GetHistoryAsync(Guid pixelId, bool useCache = false)
@@ -186,11 +339,7 @@ internal class MyApiClient
         var loginResponse = await response.Content.ReadFromJsonAsync<LoginResponse>();
         if (loginResponse?.SessionId != null && loginResponse.User != null && loginResponse.User.UserName != null && loginResponse.User.Email != null)
         {
-            var loggedInUser = loginResponse.User;
-            await _localStorage.SetItemAsync(LocalStorageKey.UserName, loggedInUser.UserName);
-            await _localStorage.SetItemAsync(LocalStorageKey.Email, loggedInUser.Email);
-            await _localStorage.SetItemAsync(LocalStorageKey.LoginMethod, loggedInUser.LoginMethod);
-            await SetSessionAsync(loginResponse.SessionId);
+            await PersistAuthenticatedUserAsync(loginResponse.User, loginResponse.SessionId.Value);
             _logger.LogInformation("Login successful for email: {Email}", email);
         }
         else
@@ -219,10 +368,7 @@ internal class MyApiClient
         if (loginResponse?.SessionId != null && loginResponse.User != null && loginResponse.User.UserName != null && loginResponse.User.Email != null)
         {
             var googleUser = loginResponse.User;
-            await _localStorage.SetItemAsync(LocalStorageKey.UserName, googleUser.UserName);
-            await _localStorage.SetItemAsync(LocalStorageKey.Email, googleUser.Email);
-            await _localStorage.SetItemAsync(LocalStorageKey.LoginMethod, googleUser.LoginMethod);
-            await SetSessionAsync(loginResponse.SessionId);
+            await PersistAuthenticatedUserAsync(googleUser, loginResponse.SessionId.Value);
             _logger.LogInformation("Google login successful for email: {Email}", googleUser.Email);
             return (googleUser, loginResponse.SessionId, null);
         }
@@ -245,11 +391,7 @@ internal class MyApiClient
         var loginResponse = await response.Content.ReadFromJsonAsync<LoginResponse>();
         if (loginResponse?.SessionId != null && loginResponse.User != null && loginResponse.User.UserName != null && loginResponse.User.Email != null)
         {
-            var validatedUser = loginResponse.User;
-            await _localStorage.SetItemAsync(LocalStorageKey.UserName, validatedUser.UserName);
-            await _localStorage.SetItemAsync(LocalStorageKey.Email, validatedUser.Email);
-            await _localStorage.SetItemAsync(LocalStorageKey.LoginMethod, validatedUser.LoginMethod);
-            await SetSessionAsync(loginResponse.SessionId);
+            await PersistAuthenticatedUserAsync(loginResponse.User, loginResponse.SessionId.Value);
             _logger.LogInformation("Session validation successful for sessionId: {SessionId}", sessionId);
         }
         else
@@ -275,11 +417,7 @@ internal class MyApiClient
         var loginResponse = await response.Content.ReadFromJsonAsync<LoginResponse>();
         if (loginResponse?.SessionId != null && loginResponse.User != null && loginResponse.User.UserName != null && loginResponse.User.Email != null)
         {
-            var signedUpUser = loginResponse.User;
-            await _localStorage.SetItemAsync(LocalStorageKey.UserName, signedUpUser.UserName);
-            await _localStorage.SetItemAsync(LocalStorageKey.Email, signedUpUser.Email);
-            await _localStorage.SetItemAsync(LocalStorageKey.LoginMethod, signedUpUser.LoginMethod);
-            await SetSessionAsync(loginResponse.SessionId);
+            await PersistAuthenticatedUserAsync(loginResponse.User, loginResponse.SessionId.Value);
             _logger.LogInformation("Signup successful for email: {Email}", email);
         }
         else
@@ -410,6 +548,103 @@ internal class MyApiClient
         return canvases ?? new List<CanvasDto>();
     }
 
+    public async Task<CanvasOperationResponseDto> EraseCanvasAsync(string canvasName)
+    {
+        _logger.LogInformation("EraseCanvasAsync called with canvasName: {CanvasName}", canvasName);
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/canvases/erase/{Uri.EscapeDataString(canvasName)}");
+        await request.AddSessionId(_localStorage);
+        var response = await _httpClient.SendAsync(request);
+
+        if (response.IsSuccessStatusCode)
+        {
+            var result = await response.Content.ReadFromJsonAsync<CanvasOperationResponseDto>()
+                ?? new CanvasOperationResponseDto
+                {
+                    Completed = response.StatusCode == HttpStatusCode.OK,
+                    Queued = response.StatusCode == HttpStatusCode.Accepted,
+                    Message = response.StatusCode == HttpStatusCode.Accepted
+                        ? $"Canvas {canvasName} erase was queued."
+                        : $"Canvas {canvasName} was erased.",
+                };
+
+            if (result.Completed)
+            {
+                ClearCanvasCache(canvasName);
+            }
+
+            _logger.LogInformation(
+                "Canvas {CanvasName} erase request succeeded. Completed={Completed}, Queued={Queued}, StatusCode={StatusCode}, Message={Message}",
+                canvasName,
+                result.Completed,
+                result.Queued,
+                response.StatusCode,
+                result.Message);
+            return result;
+        }
+
+        var errorContent = await response.Content.ReadAsStringAsync();
+        _logger.LogWarning("Failed to erase canvas {CanvasName}, Status: {StatusCode}, Error: {Error}", canvasName, response.StatusCode, errorContent);
+        throw CreateCanvasManagementException(response.StatusCode, ParseErrorMessage(errorContent, $"Failed to erase canvas {canvasName}."), "erase");
+    }
+
+    public async Task<CanvasOperationResponseDto> DeleteCanvasAsync(string canvasName)
+    {
+        _logger.LogInformation("DeleteCanvasAsync called with canvasName: {CanvasName}", canvasName);
+        var request = new HttpRequestMessage(HttpMethod.Delete, $"/canvases/delete/{Uri.EscapeDataString(canvasName)}");
+        await request.AddSessionId(_localStorage);
+        var response = await _httpClient.SendAsync(request);
+
+        if (response.IsSuccessStatusCode)
+        {
+            var result = await response.Content.ReadFromJsonAsync<CanvasOperationResponseDto>()
+                ?? new CanvasOperationResponseDto
+                {
+                    Completed = response.StatusCode == HttpStatusCode.OK,
+                    Queued = response.StatusCode == HttpStatusCode.Accepted,
+                    Message = response.StatusCode == HttpStatusCode.Accepted
+                        ? $"Canvas {canvasName} deletion was queued."
+                        : $"Canvas {canvasName} was deleted.",
+                };
+
+            if (result.Completed)
+            {
+                ClearCanvasCache(canvasName);
+            }
+
+            _logger.LogInformation(
+                "Canvas {CanvasName} delete request succeeded. Completed={Completed}, Queued={Queued}, StatusCode={StatusCode}, Message={Message}",
+                canvasName,
+                result.Completed,
+                result.Queued,
+                response.StatusCode,
+                result.Message);
+            return result;
+        }
+
+        var errorContent = await response.Content.ReadAsStringAsync();
+        _logger.LogWarning("Failed to delete canvas {CanvasName}, Status: {StatusCode}, Error: {Error}", canvasName, response.StatusCode, errorContent);
+        throw CreateCanvasManagementException(response.StatusCode, ParseErrorMessage(errorContent, $"Failed to delete canvas {canvasName}."), "delete");
+    }
+
+    public async Task<long> GetCurrentGoldAsync(Guid canvasId)
+    {
+        _logger.LogInformation("GetCurrentGoldAsync called with canvasId: {CanvasId}", canvasId);
+        var request = new HttpRequestMessage(HttpMethod.Get, $"/balancechangedevents/current/canvas/{canvasId}");
+        await request.AddSessionId(_localStorage);
+        var response = await _httpClient.SendAsync(request);
+
+        if (response.IsSuccessStatusCode)
+        {
+            return await response.Content.ReadFromJsonAsync<long>();
+        }
+
+        var errorContent = await response.Content.ReadAsStringAsync();
+        _logger.LogWarning("Failed to get current gold for canvas {CanvasId}. Status: {StatusCode}, Error: {Error}", canvasId, response.StatusCode, errorContent);
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+            throw new Exception("You are not authorized to view gold for this canvas.");
+        throw new Exception("Failed to get current gold.");
+    }
+
     public async Task ChangeUsernameAsync(string userName)
     {
         _logger.LogInformation("ChangeUsernameAsync called with userName: {UserName}", userName);
@@ -526,14 +761,19 @@ internal class MyApiClient
     
     public async Task<PixelDto> Paint((int X, int Y) clickedPixel, CanvasDto canvasDto, int colorId)
     {
-        _logger.LogInformation("Paint called with canvasName: {CanvasName}, x: {X}, y: {Y}, colorId: {ColorId}", canvasDto.Name, clickedPixel.X, clickedPixel.Y, colorId);
+        return await Paint(clickedPixel, canvasDto, colorId, price: 0);
+    }
+
+    public async Task<PixelDto> Paint((int X, int Y) clickedPixel, CanvasDto canvasDto, int colorId, long price)
+    {
+        _logger.LogInformation("Paint called with canvasName: {CanvasName}, mode: {CanvasMode}, x: {X}, y: {Y}, colorId: {ColorId}, price: {Price}", canvasDto.Name, canvasDto.CanvasMode, clickedPixel.X, clickedPixel.Y, colorId, price);
 
         var pixelDto = new PixelDto
         {
             X = clickedPixel.X,
             Y = clickedPixel.Y,
             ColorId = colorId,
-            Price = 0,
+            Price = price,
             CanvasId = canvasDto.Id,
         };
         var request = new HttpRequestMessage(HttpMethod.Post, $"/pixels/change/{canvasDto.Name}");
@@ -566,15 +806,16 @@ internal class MyApiClient
                 }
             }
 
-            _logger.LogInformation("Successfully painted pixel at ({X}, {Y}) on {CanvasName}", clickedPixel.X, clickedPixel.Y, canvasDto.Name);
+            _logger.LogInformation("Successfully painted pixel at ({X}, {Y}) on {CanvasName} with price {Price}", clickedPixel.X, clickedPixel.Y, canvasDto.Name, paintedPixel.Price);
             return paintedPixel;
         }
 
-        _logger.LogWarning("Failed to paint pixel at ({X}, {Y}) on {CanvasName}, Status: {StatusCode}", clickedPixel.X, clickedPixel.Y, canvasDto.Name, response.StatusCode);
+        var errorContent = await response.Content.ReadAsStringAsync();
+        _logger.LogWarning("Failed to paint pixel at ({X}, {Y}) on {CanvasName}, Status: {StatusCode}, Error: {Error}", clickedPixel.X, clickedPixel.Y, canvasDto.Name, response.StatusCode, errorContent);
         if(response.StatusCode == HttpStatusCode.ServiceUnavailable)
             throw new Exception("Service is currently unavailable. Please try again later.");
         if(response.StatusCode == HttpStatusCode.BadRequest)
-            throw new Exception("Cannot paint pixel. Possibly insufficient funds.");
+            throw new Exception(ParseErrorMessage(errorContent, "Cannot paint pixel. Possibly insufficient funds."));
         if(response.StatusCode == HttpStatusCode.NotFound)
             throw new Exception("Canvas or color is not found.");
         if(response.StatusCode == HttpStatusCode.Unauthorized)
@@ -582,11 +823,222 @@ internal class MyApiClient
         throw new Exception($"Failed to paint pixel at ({pixelDto.X}, {pixelDto.Y}). This exception is unexpected.");
     }
 
+    public async Task<PixelBatchChangeResultDto> PaintBatch(CanvasDto canvasDto, IReadOnlyCollection<PixelDto> pixels, string? masterPassword = null)
+    {
+        _logger.LogInformation("PaintBatch called with canvasName: {CanvasName}, mode: {CanvasMode}, pixelCount: {PixelCount}", canvasDto.Name, canvasDto.CanvasMode, pixels.Count);
+
+        var requestDto = new PixelBatchChangeRequestDto
+        {
+            MasterPassword = masterPassword,
+            Pixels = pixels.Select(pixel => new PixelDto
+            {
+                Id = pixel.Id,
+                X = pixel.X,
+                Y = pixel.Y,
+                ColorId = pixel.ColorId,
+                OwnerId = pixel.OwnerId,
+                Price = pixel.Price,
+                CanvasId = canvasDto.Id,
+            }).ToList(),
+        };
+
+        return await SendPaintBatchAsync(canvasDto, requestDto, $"/pixels/change-batch/{canvasDto.Name}");
+    }
+
+    public async Task<PixelBatchChangeResultDto> PaintBatch(CanvasDto canvasDto, IReadOnlyCollection<CoordinateDto> coordinates, int colorId, long price = 0, string? masterPassword = null, StrokePlaybackMetadataDto? playback = null)
+    {
+        var coordinateList = coordinates.ToList();
+        _logger.LogInformation("PaintBatch called with canvasName: {CanvasName}, mode: {CanvasMode}, coordinateCount: {CoordinateCount}, colorId: {ColorId}", canvasDto.Name, canvasDto.CanvasMode, coordinateList.Count, colorId);
+
+        var requestDto = new PixelBatchDto
+        {
+            MasterPassword = masterPassword,
+            ColorId = colorId,
+            Price = price,
+            Coordinates = coordinateList,
+            Playback = playback,
+        };
+
+        return await SendPaintBatchAsync(
+            canvasDto,
+            requestDto,
+            $"/pixels/change-batch-coordinates/{canvasDto.Name}",
+            onNotFoundFallback: async () =>
+            {
+                _logger.LogWarning("Coordinate batch paint route was not found for {CanvasName}; falling back to the legacy pixel batch route.", canvasDto.Name);
+                return await PaintBatch(
+                    canvasDto,
+                    coordinateList.Select(coordinate => new PixelDto
+                    {
+                        X = coordinate.X,
+                        Y = coordinate.Y,
+                        ColorId = colorId,
+                        Price = price,
+                        CanvasId = canvasDto.Id,
+                    }).ToList(),
+                    masterPassword);
+            });
+    }
+
+    private async Task<PixelBatchChangeResultDto> SendPaintBatchAsync<TRequest>(CanvasDto canvasDto, TRequest requestDto, string requestUri, Func<Task<PixelBatchChangeResultDto>>? onNotFoundFallback = null)
+    {
+        var request = new HttpRequestMessage(HttpMethod.Post, requestUri);
+        await request.AddSessionId(_localStorage);
+        request.SetJsonContent(requestDto);
+        var response = await _httpClient.SendAsync(request);
+
+        if (response.IsSuccessStatusCode)
+        {
+            var result = await response.Content.ReadFromJsonAsync<PixelBatchChangeResultDto>();
+            if (result == null)
+            {
+                _logger.LogError("PaintBatch returned null result for {CanvasName}", canvasDto.Name);
+                throw new Exception("Batch paint result is null.");
+            }
+
+            ApplyBatchPaintCache(canvasDto.Name, result.ChangedPixels);
+            _logger.LogInformation("Successfully painted batch on {CanvasName}. Requested={RequestedCount}, Successful={SuccessfulCount}", canvasDto.Name, result.RequestedCount, result.ChangedPixels.Count);
+            return result;
+        }
+
+        var errorContent = await response.Content.ReadAsStringAsync();
+        _logger.LogWarning("Failed to paint batch on {CanvasName}, Status: {StatusCode}, Error: {Error}", canvasDto.Name, response.StatusCode, errorContent);
+        if (response.StatusCode == HttpStatusCode.ServiceUnavailable)
+            throw new Exception("Service is currently unavailable. Please try again later.");
+        if (response.StatusCode == HttpStatusCode.BadRequest)
+            throw new Exception(ParseErrorMessage(errorContent, "Cannot paint pixels. Possibly insufficient funds or quota."));
+        if (response.StatusCode == HttpStatusCode.NotFound)
+        {
+            if (onNotFoundFallback != null)
+            {
+                return await onNotFoundFallback();
+            }
+
+            throw new Exception("Canvas or color is not found.");
+        }
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+            throw new Exception("You are not authorized to paint on this canvas.");
+        throw new Exception($"Failed to paint a pixel batch on {canvasDto.Name}. This exception is unexpected.");
+    }
+
+    public async Task<PixelBatchDeleteResultDto> DeleteBatchAsync(CanvasDto canvasDto, IReadOnlyCollection<CoordinateDto> coordinates, string? masterPassword = null, StrokePlaybackMetadataDto? playback = null)
+    {
+        _logger.LogInformation("DeleteBatchAsync called with canvasName: {CanvasName}, coordinateCount: {CoordinateCount}", canvasDto.Name, coordinates.Count);
+
+        var requestDto = new PixelBatchDeleteRequestDto
+        {
+            MasterPassword = masterPassword,
+            Coordinates = coordinates.ToList(),
+            Playback = playback,
+        };
+
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/pixels/delete-batch/{canvasDto.Name}");
+        await request.AddSessionId(_localStorage);
+        request.SetJsonContent(requestDto);
+        var response = await _httpClient.SendAsync(request);
+
+        if (response.IsSuccessStatusCode)
+        {
+            var result = await response.Content.ReadFromJsonAsync<PixelBatchDeleteResultDto>();
+            if (result == null)
+            {
+                _logger.LogError("DeleteBatch returned null result for {CanvasName}", canvasDto.Name);
+                throw new Exception("Batch delete result is null.");
+            }
+
+            _logger.LogInformation("Successfully deleted batch on {CanvasName}. Requested={RequestedCount}, DeletedCount={DeletedCount}", canvasDto.Name, coordinates.Count, result.DeletedCount);
+
+            foreach (var coord in result.DeletedCoordinates)
+            {
+                HandlePixelDeleted(canvasDto.Name, coord.X, coord.Y, canvasDto.Id);
+            }
+
+            return result;
+        }
+
+        var errorContent = await response.Content.ReadAsStringAsync();
+        _logger.LogWarning("Failed to delete batch on {CanvasName}, Status: {StatusCode}, Error: {Error}", canvasDto.Name, response.StatusCode, errorContent);
+        if (response.StatusCode == HttpStatusCode.ServiceUnavailable)
+            throw new Exception("Service is currently unavailable. Please try again later.");
+        if (response.StatusCode == HttpStatusCode.BadRequest)
+            throw new Exception(ParseErrorMessage(errorContent, "Cannot delete pixels."));
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            throw new Exception("Canvas is not found.");
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+            throw new Exception("You are not authorized to delete pixels on this canvas.");
+        throw new Exception($"Failed to delete a pixel batch on {canvasDto.Name}. This exception is unexpected.");
+    }
+
+
+    public async Task PaintTextAsync((int X, int Y) clickedPixel, CanvasDto canvasDto, string text, int textColorId, int? backgroundColorId, int fontSize)
+    {
+        _logger.LogInformation(
+            "PaintTextAsync called with canvasName: {CanvasName}, x: {X}, y: {Y}, textColorId: {TextColorId}, backgroundColorId: {BackgroundColorId}, fontSize: {FontSize}, textLength: {TextLength}",
+            canvasDto.Name,
+            clickedPixel.X,
+            clickedPixel.Y,
+            textColorId,
+            backgroundColorId,
+            fontSize,
+            text.Length);
+
+        var requestDto = new TextDrawRequestDto
+        {
+            X = clickedPixel.X,
+            Y = clickedPixel.Y,
+            Text = text,
+            FontSize = fontSize.ToString(CultureInfo.InvariantCulture),
+            TextColorId = textColorId,
+            BackgroundColorId = backgroundColorId,
+        };
+
+        var request = new HttpRequestMessage(HttpMethod.Post, $"/pixels/text/{canvasDto.Name}");
+        await request.AddSessionId(_localStorage);
+        request.SetJsonContent(requestDto);
+        var response = await _httpClient.SendAsync(request);
+
+        if (response.IsSuccessStatusCode)
+        {
+            _logger.LogInformation("Successfully queued text drawing at ({X}, {Y}) on {CanvasName}", clickedPixel.X, clickedPixel.Y, canvasDto.Name);
+            return;
+        }
+
+        var errorContent = await response.Content.ReadAsStringAsync();
+        _logger.LogWarning(
+            "Failed to queue text drawing at ({X}, {Y}) on {CanvasName}, Status: {StatusCode}, Error: {Error}",
+            clickedPixel.X,
+            clickedPixel.Y,
+            canvasDto.Name,
+            response.StatusCode,
+            errorContent);
+
+        if (response.StatusCode == HttpStatusCode.ServiceUnavailable)
+            throw new Exception("Service is currently unavailable. Please try again later.");
+        if (response.StatusCode == HttpStatusCode.BadRequest)
+            throw new Exception(ParseErrorMessage(errorContent, "Cannot queue text drawing."));
+        if (response.StatusCode == HttpStatusCode.NotFound)
+            throw new Exception(ParseErrorMessage(errorContent, "Canvas or color is not found."));
+        if (response.StatusCode == HttpStatusCode.Unauthorized)
+            throw new Exception("You are not authorized to draw text on this canvas.");
+        throw new Exception($"Failed to queue text drawing at ({requestDto.X}, {requestDto.Y}). This exception is unexpected.");
+    }
+
     private static string NormalizeCanvasName(string? canvasName) =>
         (canvasName ?? string.Empty).Trim().ToUpperInvariant();
 
     private static (string CanvasName, int X, int Y) BuildPixelCacheKey(string canvasName, int x, int y) =>
         (NormalizeCanvasName(canvasName), x, y);
+
+    private int? ResolveWhiteColorId() =>
+        _colorsCache?.FirstOrDefault(color =>
+            string.Equals(color.HexValue, "#FFFFFF", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(color.Name, "White", StringComparison.OrdinalIgnoreCase))?.Id;
+
+    private bool IsWhitePixel(PixelDto pixel)
+    {
+        var whiteColorId = ResolveWhiteColorId();
+        return whiteColorId.HasValue && pixel.ColorId == whiteColorId.Value;
+    }
 
     private static PixelDto ClonePixel(PixelDto pixel) =>
         new()
@@ -609,12 +1061,66 @@ internal class MyApiClient
             Timestamp = item.Timestamp,
         }).ToList();
 
+    private void ApplyBatchPaintCache(string canvasName, IReadOnlyCollection<PixelDto> changedPixels)
+    {
+        lock (_cacheLock)
+        {
+            foreach (var changedPixel in changedPixels)
+            {
+                var cacheKey = BuildPixelCacheKey(canvasName, changedPixel.X, changedPixel.Y);
+                Guid? historyPixelId = changedPixel.Id;
+                if (_pixelCache.TryGetValue(cacheKey, out var cached) && cached.Data.Id.HasValue)
+                {
+                    historyPixelId ??= cached.Data.Id.Value;
+                }
+
+                _pixelCache[cacheKey] = (ClonePixel(changedPixel), DateTime.UtcNow.Add(CacheDuration));
+                if (historyPixelId.HasValue)
+                {
+                    _historyCache.Remove(historyPixelId.Value);
+                }
+            }
+        }
+    }
+
     private static string ParseErrorMessage(string? raw, string fallback)
     {
         if (string.IsNullOrWhiteSpace(raw))
             return fallback;
 
         return raw.Trim().Trim('"');
+    }
+
+    private async Task PersistAuthenticatedUserAsync(UserDto user, Guid sessionId)
+    {
+        await _localStorage.SetItemAsync(LocalStorageKey.UserName, user.UserName);
+        await _localStorage.SetItemAsync(LocalStorageKey.Email, user.Email);
+        await _localStorage.SetItemAsync(LocalStorageKey.LoginMethod, user.LoginMethod);
+        if (user.Id.HasValue)
+        {
+            await _localStorage.SetItemAsync(LocalStorageKey.UserId, user.Id.Value);
+        }
+        else
+        {
+            await _localStorage.RemoveItemAsync(LocalStorageKey.UserId);
+        }
+
+        await SetSessionAsync(sessionId);
+    }
+
+    private static Exception CreateCanvasManagementException(HttpStatusCode statusCode, string errorMessage, string action)
+    {
+        if (statusCode == HttpStatusCode.ServiceUnavailable)
+            return new Exception("Service is currently unavailable. Please try again later.");
+        if (statusCode == HttpStatusCode.NotFound)
+            return new Exception("Canvas is not found.");
+        if (statusCode == HttpStatusCode.Forbidden)
+            return new UnauthorizedAccessException($"Only the canvas creator can {action} this canvas.");
+        if (statusCode == HttpStatusCode.Unauthorized)
+            return new UnauthorizedAccessException("You are not authorized. Please log in again.");
+        if (statusCode == HttpStatusCode.BadRequest)
+            return new Exception(errorMessage);
+        return new Exception(errorMessage);
     }
 
     private void ClearAllCaches()

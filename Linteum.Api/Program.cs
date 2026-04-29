@@ -40,6 +40,7 @@ try
     builder.Services.AddHttpClient();
     
     builder.Services.AddSingleton<IConnectionTracker, ConnectionTracker>();
+    builder.Services.AddSingleton<ICanvasChatBroadcaster, CanvasChatBroadcaster>();
     builder.Services.AddScoped<IPixelNotifier, SignalRPixelNotifier>();
     builder.Services.Configure<CanvasSizeOptions>(builder.Configuration.GetSection("CanvasSize"));
     builder.Services.AddApplicationServices(builder.Configuration);

@@ -30,7 +30,7 @@
         <div class="mb-4">
             <label for="usernameInput" class="form-label">Username (4-32 characters)</label>
             <div class="action-row">
-                <input id="usernameInput" class="form-control fixed-width me-2" @bind="_userName" autocomplete="off" />
+                <input id="usernameInput" class="form-control fixed-width me-2" @bind="_userName" @bind:event="oninput" autocomplete="off" />
                 <button class="btn btn-primary" @onclick="SaveUsername">Update Username</button>
             </div>
         </div>
@@ -42,13 +42,13 @@
         {
             <div class="mb-3">
                 <label for="passwordInput" class="form-label">New Password (4-32 characters)</label>
-                <input type="password" id="passwordInput" class="form-control fixed-width" @bind="_password" autocomplete="new-password" />
+                <input type="password" id="passwordInput" class="form-control fixed-width" @bind="_password" @bind:event="oninput" autocomplete="new-password" />
             </div>
 
             <div class="mb-4">
                 <label for="confirmPasswordInput" class="form-label">Confirm New Password</label>
                 <div class="action-row">
-                    <input type="password" id="confirmPasswordInput" class="form-control fixed-width me-2" @bind="_confirmPassword" autocomplete="new-password" />
+                    <input type="password" id="confirmPasswordInput" class="form-control fixed-width me-2" @bind="_confirmPassword" @bind:event="oninput" autocomplete="new-password" />
                     <button class="btn btn-primary" @onclick="SavePassword" disabled="@(!CanSavePassword())">Update Password</button>
                 </div>
             </div>

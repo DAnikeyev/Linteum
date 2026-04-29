@@ -4,71 +4,95 @@
 <div class="faq-container">
     <div class="faq-header">
         <h2>FAQ</h2>
-        <p>Quick guidance for creating, finding, and editing canvases in Linteum.</p>
+        <p>Quick answers for creating, finding, and editing canvases in Linteum.</p>
     </div>
 
     <div class="faq-grid">
         <section class="faq-section">
             <h4>What is this project?</h4>
             <p>
-                Linteum is a collaborative pixel-canvas web app where users can create canvases, subscribe to existing canvases,
+                Linteum is a shared pixel canvas app. You can create canvases, subscribe to ones you already know about,
                 and place or update pixels together in real time.
             </p>
             <p>
-                Your subscribed canvases appear in the left sidebar, so the fastest way to jump between projects is to keep
-                your active canvases subscribed.
+                Subscribed canvases show up in the left sidebar, so keeping your active ones subscribed makes them easy to reach.
             </p>
         </section>
 
         <section class="faq-section">
             <h4>How do I create a Canvas?</h4>
             <p>
-                Open <strong>Add new canvas</strong> in the sidebar and provide a canvas name, width, and height.
-                You can also set an optional password if you want controlled access.
+                Open <strong>Add new canvas</strong> in the sidebar, then enter a name, width, and height.
+                You can add a password too if you want to lock it down.
             </p>
             <p>
-                After creation, the canvas is added to your subscriptions and appears in the sidebar list.
+                Once it’s created, it gets added to your subscriptions and shows up in the sidebar.
             </p>
         </section>
 
         <section class="faq-section">
             <h4>How do I subscribe to an existing Canvas?</h4>
             <p>
-                Use <strong>Subscribe to canvas</strong> in the sidebar, enter the canvas name, and provide a password only if it is protected.
+                Use <strong>Subscribe to canvas</strong> in the sidebar, enter the canvas name, and add a password only if it’s protected.
             </p>
             <p>
-                As an example, you can check out the <strong>VanGogh</strong> canvas.
+                As a quick test, you can try the <strong>VanGogh</strong> canvas.
             </p>
         </section>
 
         <section class="faq-section">
             <h4>How does pixel changing work?</h4>
             <p>
-                Open a subscribed canvas, choose a color, and place a pixel in the canvas grid.
-                Pixel updates are collaborative, so you can work together on images with other users.
+                Open a subscribed canvas, pick a color, and place a pixel on the grid.
+                <strong>Normal</strong> canvases only allow single-pixel changes, and each user gets up to
+                <strong>100 successful changes per day on each canvas</strong>. The pixel manager shows what you have left.
+            </p>
+        </section>
+
+        <section class="faq-section">
+            <h4>Normal mode</h4>
+            <p>
+                <strong>Normal</strong> is the standard pixel-by-pixel mode. It’s the one to use when you want a
+                per-canvas daily limit of <strong>100 successful pixel changes</strong>.
+            </p>
+            <p>
+                It works well for organized builds, careful fixes, and anything you want to keep controlled.
+            </p>
+        </section>
+
+        <section class="faq-section">
+            <h4>Economy mode</h4>
+            <p>
+                <strong>Economy</strong> turns each pixel into a bid. To change one, you need to bid at least one gold more than the current price.
+            </p>
+            <p>
+                If your bid wins, the gold is spent and you become the owner. Stay subscribed and you’ll also get hourly income on the hour.
+            </p>
+            <p>
+                The payout is <strong>floor(10 * (1 + log2(1 + ownedPixelsInCanvas)))</strong>, where
+                <strong>ownedPixelsInCanvas</strong> is how many pixels you own in that canvas.
+                Even with zero owned pixels, you still get 10 gold per hour as a subscriber.
+            </p>
+        </section>
+
+        <section class="faq-section">
+            <h4>FreeDraw mode</h4>
+            <p>
+                <strong>FreeDraw</strong> keeps things open. You can sketch together, plan something out, or just use it for a quick shared draw.
+            </p>
+            <p>
+                It also supports brush-style drawing and text placement from the selected pixel.
             </p>
         </section>
 
         <section class="faq-section faq-wide">
-            <h4>Common scenarios</h4>
-            <p>
-                <strong>Scenario 1:</strong> Create a private canvas with a password for a small team sketch session.
-            </p>
-            <p>
-                <strong>Scenario 2:</strong> Subscribe to a public canvas like <strong>VanGogh</strong> or <strong>Levitan</strong> or <strong>Thailand</strong> and contribute pixel-by-pixel details.
-            </p>
-            <p>
-                <strong>Scenario 3:</strong> Keep a few canvases subscribed and switch quickly through the sidebar while editing.
-            </p>
-        </section>
-        <section class="faq-section faq-wide">
             <h4>Source code &amp; Contact</h4>
             <p>
-                The project's source code is available on GitHub:
+                The source code is on GitHub:
                 <a href="https://github.com/DAnikeyev/Linteum" target="_blank" rel="noopener noreferrer">https://github.com/DAnikeyev/Linteum</a>
             </p>
             <p>
-                For questions or issues, contact the maintainer:
+                For questions or issues, reach out here:
                 <a href="mailto:dmitry.anikeyev@gmail.com">dmitry.anikeyev@gmail.com</a>
             </p>
         </section>

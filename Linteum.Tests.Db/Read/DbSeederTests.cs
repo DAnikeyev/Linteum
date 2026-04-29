@@ -1,6 +1,7 @@
 using Linteum.Domain;
 using Linteum.Infrastructure;
 using Linteum.Shared;
+using Linteum.Shared.DTO;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 
@@ -12,11 +13,14 @@ internal class DbSeederTests : SyntheticDataTest
     public async Task CanSeedDatabase()
     {
         var colors = await RepoManager.ColorRepository.GetAllAsync();
-        var canvases = await RepoManager.CanvasRepository.GetAllAsync();
+        var canvases = (await RepoManager.CanvasRepository.GetAllAsync()).ToList();
         Assert.IsNotNull(colors);
         Assert.IsNotNull(canvases);
         Assert.IsNotEmpty(colors);
-        Assert.That(canvases.Count(), Is.EqualTo(1));
+        Assert.That(canvases.Count(), Is.EqualTo(DefaultConfig.GetProtectedCanvasNames().Count));
+        Assert.That(canvases.Any(canvas => canvas.Name == DefaultConfig.DefaultCanvasName && canvas.CanvasMode == CanvasMode.Normal), Is.True);
+        Assert.That(canvases.Any(canvas => canvas.Name == "home_FreeDraw" && canvas.CanvasMode == CanvasMode.FreeDraw), Is.True);
+        Assert.That(canvases.Any(canvas => canvas.Name == "home_Economy" && canvas.CanvasMode == CanvasMode.Economy), Is.True);
         var pixels = await RepoManager.PixelRepository.GetByCanvasIdAsync(canvases.First().Id);
         Assert.IsNotNull(pixels);
         Assert.That(pixels.Count(), Is.EqualTo(0));
@@ -113,7 +117,7 @@ internal class DbSeederTests : SyntheticDataTest
             MasterPasswordHash = DefaultConfig.MasterPasswordHash,
             GoogleClientId = DefaultConfig.GoogleClientId,
             ExpiredSessionTimeoutMinutes = DefaultConfig.ExpiredSessionTimeoutMinutes,
-            SecondaryCanvasNames = [.. DefaultConfig.SecondaryCanvasNames],
+            SecondaryDefaultCanvasNames = [.. DefaultConfig.SecondaryDefaultCanvasNames],
             Colors = [.. DefaultConfig.Colors]
         };
 
@@ -197,5 +201,58 @@ internal class DbSeederTests : SyntheticDataTest
             ChangedAt = DateTime.UtcNow,
             NewPrice = 0
         };
+    }
+
+    [Test]
+    public async Task SeedDefaults_SubscribesAllUsersToNewSecondaryDefaultCanvas()
+    {
+        // 1. Setup existing state: a user and some initial canvases
+        var existingUser1 = await DbHelper.AddDefaultUser("User1");
+        var existingUser2 = await DbHelper.AddDefaultUser("User2");
+        
+        // At this point, they might be subscribed to default canvases if AddOrUpdateUserAsync does it, 
+        // but we want to test a NEW secondary default canvas.
+        
+        var newSecondaryCanvasName = "NewSecondaryCanvas";
+        var configWithNewSecondary = new Config
+        {
+            DefaultCanvasName = DefaultConfig.DefaultCanvasName,
+            SecondaryDefaultCanvasNames = new List<string>(DefaultConfig.SecondaryDefaultCanvasNames) { newSecondaryCanvasName },
+            SeedCanvases = new List<CanvasDto>(DefaultConfig.SeedCanvases) 
+            { 
+                new CanvasDto { Name = newSecondaryCanvasName, Width = 100, Height = 100, CanvasMode = CanvasMode.Normal } 
+            }
+        };
+
+        // 2. Run SeedDefaults with the new config
+        await DbSeeder.SeedDefaults(
+            DbContext,
+            configWithNewSecondary,
+            DbHelper.Mapper,
+            RepoManager,
+            DbHelper.LoggerFactoryInterface.CreateLogger<DbSeeder>());
+
+        DbContext.ChangeTracker.Clear();
+
+        // 3. Verify that the new canvas exists
+        var newCanvas = await RepoManager.CanvasRepository.GetByNameAsync(newSecondaryCanvasName);
+        Assert.That(newCanvas, Is.Not.Null);
+
+        // 4. Verify that ALL users are subscribed to the new canvas
+        var subscriptions = (await RepoManager.SubscriptionRepository.GetByCanvasIdAsync(newCanvas!.Id)).ToList();
+        
+        Assert.That(subscriptions.Any(s => s.UserId == existingUser1!.Id), Is.True, "User1 should be subscribed to the new secondary canvas");
+        Assert.That(subscriptions.Any(s => s.UserId == existingUser2!.Id), Is.True, "User2 should be subscribed to the new secondary canvas");
+
+        // 5. Run it again - it should NOT fail and NOT add duplicate subscriptions
+        await DbSeeder.SeedDefaults(
+            DbContext,
+            configWithNewSecondary,
+            DbHelper.Mapper,
+            RepoManager,
+            DbHelper.LoggerFactoryInterface.CreateLogger<DbSeeder>());
+
+        var subscriptionsAfterSecondRun = (await RepoManager.SubscriptionRepository.GetByCanvasIdAsync(newCanvas!.Id)).ToList();
+        Assert.That(subscriptionsAfterSecondRun.Count, Is.EqualTo(subscriptions.Count), "Subscription count should remain the same after second run");
     }
 }

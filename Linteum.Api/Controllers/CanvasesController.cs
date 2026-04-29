@@ -2,12 +2,16 @@ using Linteum.Api.Configuration;
 using Linteum.Shared.Exceptions;
 using Linteum.Infrastructure;
 using Linteum.Shared.DTO;
+using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Linteum.Api.Services;
+using Linteum.Api.Models;
 using Linteum.Shared;
 using SixLabors.ImageSharp;
 using SixLabors.ImageSharp.Drawing.Processing;
+using SixLabors.ImageSharp.Formats;
+using SixLabors.ImageSharp.Formats.Jpeg;
 using SixLabors.ImageSharp.Processing;
 
 namespace Linteum.Api.Controllers
@@ -20,13 +24,20 @@ namespace Linteum.Api.Controllers
         private readonly SessionService _sessionService;
         private readonly ILogger<CanvasesController> _logger;
         private readonly CanvasSizeOptions _canvasSizeOptions;
+        private readonly Config _config;
+        private readonly ICanvasSeedQueue _canvasSeedQueue;
+        private readonly ICanvasMaintenanceQueue _canvasMaintenanceQueue;
+        private const long MaxCanvasImageUploadBytes = 20 * 1024 * 1024;
 
-        public CanvasesController(RepositoryManager repoManager, SessionService sessionService, ILogger<CanvasesController> logger, IOptions<CanvasSizeOptions> canvasSizeOptions)
+        public CanvasesController(RepositoryManager repoManager, SessionService sessionService, ILogger<CanvasesController> logger, IOptions<CanvasSizeOptions> canvasSizeOptions, Config config, ICanvasSeedQueue canvasSeedQueue, ICanvasMaintenanceQueue canvasMaintenanceQueue)
         {
             _logger = logger;
             _canvasSizeOptions = canvasSizeOptions.Value;
             _repoManager = repoManager;
             _sessionService = sessionService;
+            _config = config;
+            _canvasSeedQueue = canvasSeedQueue;
+            _canvasMaintenanceQueue = canvasMaintenanceQueue;
         }
 
         [HttpGet]
@@ -102,6 +113,13 @@ namespace Linteum.Api.Controllers
                 return BadRequest($"Canvas size must be between {_canvasSizeOptions.MinWidth}x{_canvasSizeOptions.MinHeight} and {_canvasSizeOptions.MaxWidth}x{_canvasSizeOptions.MaxHeight}.");
             }
 
+            var existingCanvas = await _repoManager.CanvasRepository.GetByNameAsync(canvas.Name);
+            if (existingCanvas != null)
+            {
+                _logger.LogWarning("Canvas creation failed for user {UserId}: canvas {CanvasName} already exists.", userId.Value, canvas.Name);
+                return Conflict("A canvas with this name already exists.");
+            }
+
             canvas.CreatorId = userId.Value;
             var result = await _repoManager.CanvasRepository.TryAddCanvas(canvas, passwordHash);
             if (result == null)
@@ -116,6 +134,126 @@ namespace Linteum.Api.Controllers
                 return BadRequest("Canvas could not be subscribed to.");
             }
             _logger.LogInformation("Canvas {CanvasName} was created and subscribed successfully for user {UserId}.", canvas.Name, userId.Value);
+            return Ok(result);
+        }
+
+        [HttpPost("add-with-image")]
+        public async Task<IActionResult> AddCanvasWithImage([FromForm] CanvasImageUploadForm request)
+        {
+            var userId = _sessionService.ProcessHeader(HttpContext.Request.Headers);
+            if (userId == null)
+            {
+                _logger.LogWarning("Unauthorized access attempt: Session-Id header missing or invalid.");
+                return Unauthorized("Session-Id header missing or invalid.");
+            }
+
+            if (string.IsNullOrWhiteSpace(request.Name))
+            {
+                return BadRequest("Canvas name cannot be empty.");
+            }
+
+            if (request.Image == null || request.Image.Length == 0)
+            {
+                return BadRequest("A JPG image is required.");
+            }
+
+            if (request.Image.Length > MaxCanvasImageUploadBytes)
+            {
+                return BadRequest("Image size must be 20MB or less.");
+            }
+
+            byte[] imageBytes;
+            IImageFormat? imageFormat;
+            ImageInfo? imageInfo;
+
+            try
+            {
+                await using var uploadStream = request.Image.OpenReadStream();
+                using var memoryStream = new MemoryStream();
+                await uploadStream.CopyToAsync(memoryStream);
+                imageBytes = memoryStream.ToArray();
+
+                await using var imageStream = new MemoryStream(imageBytes, writable: false);
+                imageFormat = await Image.DetectFormatAsync(imageStream);
+                imageStream.Position = 0;
+                imageInfo = await Image.IdentifyAsync(imageStream);
+            }
+            catch (InvalidOperationException ex)
+            {
+                _logger.LogWarning(ex, "Canvas image upload exceeded the allowed size for user {UserId}.", userId.Value);
+                return BadRequest("Image size must be 20MB or less.");
+            }
+            catch (SixLabors.ImageSharp.UnknownImageFormatException ex)
+            {
+                _logger.LogWarning(ex, "Canvas image upload could not be decoded for user {UserId}.", userId.Value);
+                return BadRequest("Only JPG images are supported.");
+            }
+
+            if (imageFormat == null)
+            {
+                _logger.LogWarning("Canvas image upload format could not be detected for user {UserId}.", userId.Value);
+                return BadRequest("Only JPG images are supported.");
+            }
+
+            if (imageInfo == null)
+            {
+                _logger.LogWarning("Canvas image upload dimensions could not be determined for user {UserId}.", userId.Value);
+                return BadRequest("Uploaded image could not be read.");
+            }
+
+            if (!string.Equals(imageFormat.Name, JpegFormat.Instance.Name, StringComparison.OrdinalIgnoreCase))
+            {
+                return BadRequest("Only JPG images are supported.");
+            }
+
+            var canvas = new CanvasDto
+            {
+                Name = request.Name.Trim(),
+                Width = imageInfo.Width,
+                Height = imageInfo.Height,
+                CanvasMode = request.CanvasMode,
+                CreatorId = userId.Value,
+            };
+
+            if (!IsCanvasSizeValid(canvas))
+            {
+                _logger.LogWarning("Canvas image upload failed for user {UserId}: invalid canvas size {Width}x{Height} for {CanvasName}.", userId.Value, canvas.Width, canvas.Height, canvas.Name);
+                return BadRequest($"Canvas size must be between {_canvasSizeOptions.MinWidth}x{_canvasSizeOptions.MinHeight} and {_canvasSizeOptions.MaxWidth}x{_canvasSizeOptions.MaxHeight}.");
+            }
+
+            var existingCanvas = await _repoManager.CanvasRepository.GetByNameAsync(canvas.Name);
+            if (existingCanvas != null)
+            {
+                _logger.LogWarning("Canvas image upload failed for user {UserId}: canvas {CanvasName} already exists.", userId.Value, canvas.Name);
+                return Conflict("A canvas with this name already exists.");
+            }
+
+            var result = await _repoManager.CanvasRepository.TryAddCanvas(canvas, request.PasswordHash);
+            if (result == null)
+            {
+                _logger.LogError("Canvas creation from image failed for user {UserId} with name {CanvasName}", userId, canvas.Name);
+                return BadRequest("Canvas could not be created.");
+            }
+
+            var sub = await _repoManager.SubscriptionRepository.Subscribe(userId.Value, result.Id, request.PasswordHash);
+            if (sub == null)
+            {
+                _logger.LogError("Subscription failed for user {UserId} on canvas {CanvasName}", userId, canvas.Name);
+                return BadRequest("Canvas could not be subscribed to.");
+            }
+
+            var creator = await _repoManager.UserRepository.GetByIdAsync(userId.Value);
+            await _canvasSeedQueue.QueueAsync(new QueuedCanvasSeedRequest(
+                userId.Value,
+                creator?.UserName ?? string.Empty,
+                result.Id,
+                result.Name,
+                result.CanvasMode,
+                result.Width,
+                result.Height,
+                imageBytes));
+
+            _logger.LogInformation("Canvas {CanvasName} was created from image and queued for seeding successfully for user {UserId}.", canvas.Name, userId.Value);
             return Ok(result);
         }
 
@@ -166,10 +304,10 @@ namespace Linteum.Api.Controllers
         [HttpPost("unsubscribe")]
         public async Task<IActionResult> UnsubscribeFromCanvas([FromBody] CanvasDto canvasDto)
         {
-            if(canvasDto.Name == new Config().DefaultCanvasName)
+            if (_config.GetProtectedCanvasNames().Contains(canvasDto.Name, StringComparer.OrdinalIgnoreCase))
             {
-                _logger.LogWarning("Cannot unsubscribe from default canvas {CanvasName}.", canvasDto.Name);
-                return BadRequest("Cannot unsubscribe from the default canvas.");
+                _logger.LogWarning("Cannot unsubscribe from protected seeded canvas {CanvasName}.", canvasDto.Name);
+                return BadRequest("Cannot unsubscribe from a built-in canvas.");
             }
             var userId = _sessionService.ProcessHeader(HttpContext.Request.Headers);
             if (userId == null)
@@ -207,19 +345,17 @@ namespace Linteum.Api.Controllers
             }
         }
 
-        /// <summary>
-        /// Is not available now. Deleting Canvases is automatic on a startUp
-        /// </summary>
-        [HttpDelete("delete/{name}")]
-        private async Task<IActionResult> DeleteCanvas(string name, [FromQuery] string passwordHash)
+        [HttpPost("erase/{name}")]
+        public async Task<IActionResult> EraseCanvas(string name)
         {
+            _logger.LogInformation("EraseCanvas requested for {CanvasName}.", name);
             var userId = _sessionService.ProcessHeader(HttpContext.Request.Headers);
             if (userId == null)
             {
                 _logger.LogWarning("Unauthorized access attempt: Session-Id header missing or invalid.");
                 return Unauthorized("Session-Id header missing or invalid.");
             }
-            
+
             var canvas = await _repoManager.CanvasRepository.GetByNameAsync(name);
             if (canvas == null)
             {
@@ -227,26 +363,98 @@ namespace Linteum.Api.Controllers
                 return NotFound("Canvas not found.");
             }
 
-            if (canvas.CreatorId != userId)
+            if (_config.GetProtectedCanvasNames().Contains(canvas.Name, StringComparer.OrdinalIgnoreCase))
             {
-                _logger.LogWarning("Unauthorized deletion attempt for canvas with name {CanvasName} by user {UserId}.", name, userId);
-                return Unauthorized("You are not authorized to delete this canvas.");
+                _logger.LogWarning("User {UserId} attempted to erase protected canvas {CanvasName}.", userId.Value, name);
+                return BadRequest("Cannot erase a built-in canvas.");
             }
 
-            if (!await _repoManager.CanvasRepository.CheckPassword(canvas, passwordHash))
+            var canEraseCanvas = canvas.CreatorId == userId.Value || canvas.CanvasMode == CanvasMode.FreeDraw;
+            if (!canEraseCanvas)
             {
-                _logger.LogWarning("Password check failed for canvas with name {CanvasName}.", name);
-                return Unauthorized("Invalid password.");
+                _logger.LogWarning("Forbidden erase attempt for canvas {CanvasName} by user {UserId}. CreatorId={CreatorId}, CanvasMode={CanvasMode}", name, userId.Value, canvas.CreatorId, canvas.CanvasMode);
+                return StatusCode(StatusCodes.Status403Forbidden, "Only the canvas creator can erase this canvas unless it is FreeDraw.");
             }
 
-            var result = await _repoManager.CanvasRepository.TryDeleteCanvasByName(name);
-            if (!result)
+            var queueResult = await _canvasMaintenanceQueue.QueueEraseAsync(new QueuedCanvasMaintenanceRequest(
+                userId.Value,
+                canvas.Id,
+                canvas.Name,
+                userId.Value.ToString(),
+                DateTime.UtcNow));
+
+            _logger.LogInformation(
+                "Canvas erase queued for {CanvasName} by user {UserId}. CanvasId={CanvasId}, Mode={CanvasMode}, CreatorId={CreatorId}, AlreadyQueued={AlreadyQueued}",
+                canvas.Name,
+                userId.Value,
+                canvas.Id,
+                canvas.CanvasMode,
+                canvas.CreatorId,
+                queueResult.AlreadyQueued);
+
+            return Accepted(new CanvasOperationResponseDto
             {
-                _logger.LogWarning("Canvas deletion failed for {CanvasName} by user {UserId}.", name, userId.Value);
-                return BadRequest("Canvas could not be deleted.");
+                Completed = false,
+                Queued = true,
+                Message = queueResult.AlreadyQueued
+                    ? $"Canvas {canvas.Name} erase is already queued."
+                    : $"Canvas {canvas.Name} erase was queued and will finish in the background.",
+            });
+        }
+
+        [HttpDelete("delete/{name}")]
+        public async Task<IActionResult> DeleteCanvas(string name)
+        {
+            _logger.LogInformation("DeleteCanvas requested for {CanvasName}.", name);
+            var userId = _sessionService.ProcessHeader(HttpContext.Request.Headers);
+            if (userId == null)
+            {
+                _logger.LogWarning("Unauthorized access attempt: Session-Id header missing or invalid.");
+                return Unauthorized("Session-Id header missing or invalid.");
             }
-            _logger.LogInformation("Canvas {CanvasName} deleted successfully by user {UserId}.", name, userId.Value);
-            return Ok();
+
+            var canvas = await _repoManager.CanvasRepository.GetByNameAsync(name);
+            if (canvas == null)
+            {
+                _logger.LogWarning("Canvas with name {CanvasName} not found.", name);
+                return NotFound("Canvas not found.");
+            }
+
+            if (_config.GetProtectedCanvasNames().Contains(canvas.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                _logger.LogWarning("User {UserId} attempted to delete protected canvas {CanvasName}.", userId.Value, name);
+                return BadRequest("Cannot delete a built-in canvas.");
+            }
+
+            if (canvas.CreatorId != userId.Value)
+            {
+                _logger.LogWarning("Forbidden deletion attempt for canvas {CanvasName} by user {UserId}. CreatorId={CreatorId}", name, userId.Value, canvas.CreatorId);
+                return StatusCode(StatusCodes.Status403Forbidden, "Only the canvas creator can delete this canvas.");
+            }
+
+            var queueResult = await _canvasMaintenanceQueue.QueueDeleteAsync(new QueuedCanvasMaintenanceRequest(
+                userId.Value,
+                canvas.Id,
+                canvas.Name,
+                userId.Value.ToString(),
+                DateTime.UtcNow));
+
+            _logger.LogInformation(
+                "Canvas deletion queued for {CanvasName} by user {UserId}. CanvasId={CanvasId}, CreatorId={CreatorId}, AlreadyQueued={AlreadyQueued}",
+                canvas.Name,
+                userId.Value,
+                canvas.Id,
+                canvas.CreatorId,
+                queueResult.AlreadyQueued);
+
+            return Accepted(new CanvasOperationResponseDto
+            {
+                Completed = false,
+                Queued = true,
+                Message = queueResult.AlreadyQueued
+                    ? $"Canvas {canvas.Name} deletion is already queued."
+                    : $"Canvas {canvas.Name} deletion was queued and will finish in the background.",
+            });
         }
 
         [HttpPost("check-password")]
@@ -282,7 +490,7 @@ namespace Linteum.Api.Controllers
 
             var pixels = await _repoManager.PixelRepository.GetByCanvasIdAsync(canvas.Id);
             var colors = await _repoManager.ColorRepository.GetAllAsync();
-            var colorMap = colors.ToDictionary(c => c.Id, c => c.HexValue);
+            var colorMap = colors.ToDictionary(c => c.Id, c => Color.ParseHex(c.HexValue));
             
             using var image = new Image<SixLabors.ImageSharp.PixelFormats.Rgba32>(canvas.Width, canvas.Height);
             
@@ -290,15 +498,13 @@ namespace Linteum.Api.Controllers
 
             foreach (var pixel in pixels)
             {
-                if (colorMap.TryGetValue(pixel.ColorId, out var hexColor))
+                if (colorMap.TryGetValue(pixel.ColorId, out var color))
                 {
-                    // Parse hex string to Color
-                    var color = Color.ParseHex(hexColor);
                     image[pixel.X, pixel.Y] = color;
                 }
             }
 
-            using var ms = new MemoryStream();
+            await using var ms = new MemoryStream();
             await image.SaveAsPngAsync(ms);
             _logger.LogInformation("Canvas image for {CanvasName} generated successfully for user {UserId}.", name, userId.Value);
             return File(ms.ToArray(), "image/png");

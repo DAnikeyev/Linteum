@@ -1,6 +1,7 @@
 services:
   linteum-db:
     image: postgres:16
+    shm_size: 256M
     container_name: ${DB_CONTAINER_NAME}
     restart: unless-stopped
     deploy:
@@ -41,7 +42,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 128M
+          memory: 256M
     environment:
       PGPASSWORD: ${POSTGRES_PASSWORD}
       PGUSER: ${POSTGRES_USER}
@@ -50,6 +51,7 @@ services:
       PGPORT: ${DB_CONTAINER_PORT}
       TZ: ${TZ:-UTC}
       WEEKLY_BACKUP_WEEKDAY: ${WEEKLY_BACKUP_WEEKDAY:-0}
+      BACKUP_INITIAL_DELAY_SECONDS: ${BACKUP_INITIAL_DELAY_SECONDS:-120}
     depends_on:
       linteum-db:
         condition: service_healthy
@@ -60,6 +62,8 @@ services:
     entrypoint: [ "/bin/bash", "-c" ]
     command:
       - |
+        trap 'exit 0' SIGTERM
+        sleep "$${BACKUP_INITIAL_DELAY_SECONDS}"
         while true; do
           if pg_dump -Fc -f /backups/backup_in_progress.dump 2>>/backups/pg_dump.log; then
             mv -f /backups/backup_in_progress.dump /backups/daily.dump
@@ -70,7 +74,7 @@ services:
           else
             rm -f /backups/backup_in_progress.dump
           fi
-          sleep 86400
+          sleep 86400 & wait $!
         done
 
   linteum-api:
@@ -82,7 +86,7 @@ services:
     deploy:
       resources:
         limits:
-          memory: 1G
+          memory: 2048M
     ports:
       - "${API_HOST_PORT}:${API_CONTAINER_PORT}"
     environment:
@@ -94,7 +98,7 @@ services:
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
       - NLOG_CONSOLE_MIN_LEVEL=${NLOG_CONSOLE_MIN_LEVEL}
-      - ASPNETCORE_URLS=http://*:${API_CONTAINER_PORT}
+      - ASPNETCORE_HTTP_PORTS=${API_CONTAINER_PORT}
       - CorsOrigins__0=http://localhost:${BLAZOR_HOST_PORT}
       - CorsOrigins__1=http://${BLAZOR_CONTAINER_NAME}:${BLAZOR_CONTAINER_PORT}
     depends_on:
@@ -104,7 +108,7 @@ services:
       - linteum_prod1
     pull_policy: build
 
-  linteum-blazor:
+  blazor:
     build:
       context: .
       dockerfile: Linteum.BlazorApp/Dockerfile
@@ -121,7 +125,7 @@ services:
       - VERSION=${VERSION}
       - HUB_LINK=${HUB_LINK}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
-      - ASPNETCORE_URLS=http://*:${BLAZOR_CONTAINER_PORT}
+      - ASPNETCORE_HTTP_PORTS=${BLAZOR_CONTAINER_PORT}
       - ApiBaseUrl=http://${API_CONTAINER_NAME}:${API_CONTAINER_PORT}
     ports:
       - "5010-5012:${BLAZOR_CONTAINER_PORT}"
@@ -145,6 +149,7 @@ services:
           memory: 256M
     environment:
       - BOT_API_URL=http://${API_CONTAINER_NAME}:${API_CONTAINER_PORT}
+      - BOT_MASTER_PASSWORD=${MASTER_PASSWORD}
       - BOT_TIMEOUT_MINUTES=10
     depends_on:
       - linteum-api

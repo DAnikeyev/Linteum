@@ -18,7 +18,7 @@ public class Canvas
     [Range(1, 1080)]
     public int Height { get; set; }
 
-    public CanvasMode CanvasMode { get; set; } = CanvasMode.Sandbox;
+    public CanvasMode CanvasMode { get; set; } = CanvasMode.Normal;
     
     public DateTime CreatedAt { get; set; }
     

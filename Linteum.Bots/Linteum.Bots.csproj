@@ -50,6 +50,7 @@
       <Content Include="home.jpg">
         <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       </Content>
+      <None Remove="sigame.jpg" />
     </ItemGroup>
 
 </Project>

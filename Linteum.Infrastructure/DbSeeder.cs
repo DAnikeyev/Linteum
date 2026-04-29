@@ -74,48 +74,48 @@ public class DbSeeder
             .Select(u => u.Id)
             .FirstOrDefault();
         
-        var defaultCanvasName = config.DefaultCanvasName;
-        var defaultCanvas = await context.Canvases
-            .SingleOrDefaultAsync(c => c.Name == defaultCanvasName);
+        foreach (var configuredCanvas in config.GetDefaultCanvases())
+        {
+            var existingCanvas = await context.Canvases
+                .SingleOrDefaultAsync(c => c.Name == configuredCanvas.Name);
 
-        if (defaultCanvas is null)
-        {
-            logger.LogInformation("Creating default canvas: {CanvasName}", defaultCanvasName);
-            
-            var canvas = new CanvasDto()
+            if (existingCanvas is null)
             {
-                Name = defaultCanvasName,
-                CreatorId = adminId,
-                Width = config.DefaultCanvasWidth,
-                Height = config.DefaultCanvasHeight,
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            };
-            
-            try
-            {
-                var addedDefaultTask = repositoryManager.CanvasRepository.TryAddCanvas(canvas, null);
-                addedDefaultTask.Wait();
-                var addedDefault = addedDefaultTask.Result;
-                
-                if (addedDefault is null)
+                logger.LogInformation("Creating seeded canvas: {CanvasName}", configuredCanvas.Name);
+
+                configuredCanvas.CreatorId = adminId;
+                configuredCanvas.CreatedAt = DateTime.UtcNow;
+                configuredCanvas.UpdatedAt = DateTime.UtcNow;
+
+                var addedCanvas = await repositoryManager.CanvasRepository.TryAddCanvas(configuredCanvas, null);
+                if (addedCanvas is null)
                 {
-                    logger.LogError("Failed to add default canvas with name {CanvasName}", defaultCanvasName);
-                    throw new InvalidOperationException($"Failed to add default canvas with name {defaultCanvasName}");
+                    logger.LogError("Failed to add seeded canvas with name {CanvasName}", configuredCanvas.Name);
+                    throw new InvalidOperationException($"Failed to add seeded canvas with name {configuredCanvas.Name}");
                 }
-                
-                logger.LogInformation("Default canvas created successfully: {CanvasName}", defaultCanvasName);
+
+                logger.LogInformation("Seeded canvas created successfully: {CanvasName}", configuredCanvas.Name);
+                existingCanvas = await context.Canvases.SingleAsync(c => c.Name == configuredCanvas.Name);
             }
-            catch (Exception ex)
+            else
             {
-                logger.LogError(ex, "Error creating default canvas: {CanvasName}", defaultCanvasName);
-                throw;
+                logger.LogDebug("Seeded canvas already exists: {CanvasName}", configuredCanvas.Name);
+                await SyncSeedCanvasAsync(context, existingCanvas, configuredCanvas, logger);
             }
-        }
-        else
-        {
-            logger.LogDebug("Default canvas already exists: {CanvasName}", defaultCanvasName);
-            await SyncDefaultCanvasDimensionsAsync(context, defaultCanvas, config, logger);
+
+            if (config.SecondaryDefaultCanvasNames.Contains(configuredCanvas.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                var hasSubscriptions = await context.Subscriptions.AnyAsync(s => s.CanvasId == existingCanvas.Id);
+                if (!hasSubscriptions)
+                {
+                    logger.LogInformation("Secondary default canvas {CanvasName} has no subscriptions. Subscribing all users.", configuredCanvas.Name);
+                    var allUserIds = await context.Users.Select(u => u.Id).ToListAsync();
+                    foreach (var userId in allUserIds)
+                    {
+                        await repositoryManager.SubscriptionRepository.Subscribe(userId, existingCanvas.Id, null);
+                    }
+                }
+            }
         }
         
         await DeleteCanvasesWithoutSubscriptions(repositoryManager, logger, config);
@@ -203,30 +203,35 @@ public class DbSeeder
             colorsDeleted);
     }
 
-    private static async Task SyncDefaultCanvasDimensionsAsync(
+    private static async Task SyncSeedCanvasAsync(
         AppDbContext context,
-        Canvas defaultCanvas,
-        Config config,
+        Canvas existingCanvas,
+        CanvasDto configuredCanvas,
         ILogger<DbSeeder> logger)
     {
-        if (defaultCanvas.Width == config.DefaultCanvasWidth && defaultCanvas.Height == config.DefaultCanvasHeight)
+        var requiresResize = existingCanvas.Width != configuredCanvas.Width || existingCanvas.Height != configuredCanvas.Height;
+        var requiresModeUpdate = existingCanvas.CanvasMode != configuredCanvas.CanvasMode;
+
+        if (!requiresResize && !requiresModeUpdate)
         {
             return;
         }
 
         logger.LogInformation(
-            "Updating default canvas {CanvasName} size from {CurrentWidth}x{CurrentHeight} to {NewWidth}x{NewHeight}.",
-            defaultCanvas.Name,
-            defaultCanvas.Width,
-            defaultCanvas.Height,
-            config.DefaultCanvasWidth,
-            config.DefaultCanvasHeight);
+            "Updating seeded canvas {CanvasName} from {CurrentWidth}x{CurrentHeight}/{CurrentMode} to {NewWidth}x{NewHeight}/{NewMode}.",
+            existingCanvas.Name,
+            existingCanvas.Width,
+            existingCanvas.Height,
+            existingCanvas.CanvasMode,
+            configuredCanvas.Width,
+            configuredCanvas.Height,
+            configuredCanvas.CanvasMode);
 
         await using var transaction = await context.Database.BeginTransactionAsync();
 
         var outOfBoundsPixels = context.Pixels.Where(pixel =>
-            pixel.CanvasId == defaultCanvas.Id &&
-            (pixel.X >= config.DefaultCanvasWidth || pixel.Y >= config.DefaultCanvasHeight));
+            pixel.CanvasId == existingCanvas.Id &&
+            (pixel.X >= configuredCanvas.Width || pixel.Y >= configuredCanvas.Height));
 
         var outOfBoundsPixelIds = outOfBoundsPixels.Select(pixel => pixel.Id);
 
@@ -236,24 +241,27 @@ public class DbSeeder
 
         var deletedPixels = await outOfBoundsPixels.ExecuteDeleteAsync();
 
-        defaultCanvas.Width = config.DefaultCanvasWidth;
-        defaultCanvas.Height = config.DefaultCanvasHeight;
-        defaultCanvas.UpdatedAt = DateTime.UtcNow;
+        existingCanvas.Width = configuredCanvas.Width;
+        existingCanvas.Height = configuredCanvas.Height;
+        existingCanvas.CanvasMode = configuredCanvas.CanvasMode;
+        existingCanvas.UpdatedAt = DateTime.UtcNow;
 
         await context.SaveChangesAsync();
         await transaction.CommitAsync();
 
         logger.LogInformation(
-            "Updated default canvas {CanvasName} to {Width}x{Height}. Deleted {PixelChangedEventCount} PixelChangedEvents and {PixelCount} Pixels outside the new boundaries.",
-            defaultCanvas.Name,
-            defaultCanvas.Width,
-            defaultCanvas.Height,
+            "Updated seeded canvas {CanvasName} to {Width}x{Height}/{CanvasMode}. Deleted {PixelChangedEventCount} PixelChangedEvents and {PixelCount} Pixels outside the new boundaries.",
+            existingCanvas.Name,
+            existingCanvas.Width,
+            existingCanvas.Height,
+            existingCanvas.CanvasMode,
             deletedPixelChangedEvents,
             deletedPixels);
     }
 
     public static async Task DeleteCanvasesWithoutSubscriptions<T>(RepositoryManager repositoryManager, ILogger<T> logger, Config config)
     {
+        var protectedCanvasNames = config.GetProtectedCanvasNames().ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var canvas in await repositoryManager.CanvasRepository.GetAllAsync())
         {
             var subs = await repositoryManager.SubscriptionRepository.GetByCanvasIdAsync(canvas.Id);
@@ -264,7 +272,7 @@ public class DbSeeder
                 canvas.Name,
                 subscriptionCount);
 
-            if (subscriptionCount == 0 && canvas.Name != config.DefaultCanvasName)
+            if (subscriptionCount == 0 && !protectedCanvasNames.Contains(canvas.Name))
             {
                 logger.LogInformation("Deleting canvas without subscriptions: {CanvasName}", canvas.Name);
                 await repositoryManager.CanvasRepository.TryDeleteCanvasByName(canvas.Name);

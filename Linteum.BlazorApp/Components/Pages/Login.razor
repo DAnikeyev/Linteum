@@ -40,41 +40,43 @@
                 <div class="alert alert-danger">@_error</div>
             }
 
-            <!-- Email -->
-            <div class="mb-4">
-                <label for="emailInput" class="form-label">Email</label>
-                <input id="emailInput" class="form-control fixed-width" @bind="_email" @oninput="ClearError" />
-                @if (!string.IsNullOrEmpty(_emailError))
-                {
-                    <div class="text-danger mt-1">@_emailError</div>
-                }
-            </div>
+            <form @onsubmit="HandleLogin" @onsubmit:preventDefault>
+                <!-- Email -->
+                <div class="mb-4">
+                    <label for="emailInput" class="form-label">Email</label>
+                    <input id="emailInput" class="form-control fixed-width" @bind="_email" @bind:event="oninput" @bind:after="ClearError" />
+                    @if (!string.IsNullOrEmpty(_emailError))
+                    {
+                        <div class="text-danger mt-1">@_emailError</div>
+                    }
+                </div>
 
-            <!-- Password -->
-            <div class="mb-4">
-                <label for="passwordInput" class="form-label">
-                    Password
-                    <span class="field-hint"
-                          title="We don't store unhashed passwords. We don't use your email for anything except login."
-                          aria-label="Security and privacy info">?</span>
-                </label>
-                <input id="passwordInput" type="password" class="form-control fixed-width" @bind="_password" @oninput="ClearError" />
-                @if (!string.IsNullOrEmpty(_passwordError))
-                {
-                    <div class="text-danger mt-1">@_passwordError</div>
-                }
-            </div>
+                <!-- Password -->
+                <div class="mb-4">
+                    <label for="passwordInput" class="form-label">
+                        Password
+                        <span class="field-hint"
+                              title="We don't store unhashed passwords. We don't use your email for anything except login."
+                              aria-label="Security and privacy info">?</span>
+                    </label>
+                    <input id="passwordInput" type="password" class="form-control fixed-width" @bind="_password" @bind:event="oninput" @bind:after="ClearError" />
+                    @if (!string.IsNullOrEmpty(_passwordError))
+                    {
+                        <div class="text-danger mt-1">@_passwordError</div>
+                    }
+                </div>
 
-            <!-- Buttons -->
-            <div class="d-flex gap-2 login-actions">
-                <button class="btn btn-primary flex-fill" @onclick="HandleLogin">Login</button>
-                <button class="btn btn-outline-primary flex-fill"
-                        type="button"
-                        @onclick="GoogleLoginAsync"
-                        disabled="@(!_isGoogleEnabled)">
-                    Google Login
-                </button>
-            </div>
+                <!-- Buttons -->
+                <div class="d-flex gap-2 login-actions">
+                    <button class="btn btn-primary flex-fill" type="submit">Login</button>
+                    <button class="btn btn-outline-primary flex-fill"
+                            type="button"
+                            @onclick="GoogleLoginAsync"
+                            disabled="@(!_isGoogleEnabled)">
+                        Google Login
+                    </button>
+                </div>
+            </form>
             <p class="auth-switch">
                 Don&#39;t have an account? <a href="/signup">Sign up</a>
             </p>
@@ -83,6 +85,7 @@
 </div>
 
 @code {
+    private static readonly TimeSpan AuthOperationTimeout = TimeSpan.FromSeconds(10);
     private string _email = string.Empty;
     private string _password = string.Empty;
     private string? _emailError;
@@ -96,7 +99,7 @@
     private string _busyMessage = "Checking whether you are already signed in.";
     private bool _isGoogleEnabled => !string.IsNullOrWhiteSpace(Config.GoogleClientId);
 
-    private void ClearError(ChangeEventArgs e)
+    private void ClearError()
     {
         _emailError = null;
         _passwordError = null;
@@ -123,18 +126,32 @@
             return;
 
         SetBusyState("Signing in", "Verifying your credentials.");
-        await InvokeAsync(StateHasChanged);
-        Logger.LogInformation("Login attempt for {Email}", _email);
-        var (user, sessionId) = await ApiClient.LoginAsync(_email, _password);
-        if (user != null)
+        try
         {
-            Logger.LogInformation("Login successful for {Email}", _email);
-            Navigation.NavigateTo(Config.DefaultPage, replace: true);
-        }
-        else
-        {
+            Logger.LogInformation("Login attempt for {Email}", _email);
+            var (user, sessionId) = await WithAuthTimeoutAsync(ApiClient.LoginAsync(_email, _password), "Password login");
+            if (user != null)
+            {
+                Logger.LogInformation("Login successful for {Email}", _email);
+                Navigation.NavigateTo(Config.DefaultPage, replace: true);
+                return;
+            }
+
             Logger.LogWarning("Login failed for {Email}", _email);
             _error = "Invalid login credentials.";
+        }
+        catch (TimeoutException ex)
+        {
+            Logger.LogWarning(ex, "Login timed out for {Email}", _email);
+            _error = "Login timed out. Please try again.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Login failed for {Email}", _email);
+            _error = "Could not sign in right now. Please try again.";
+        }
+        finally
+        {
             _isBusy = false;
         }
     }
@@ -182,17 +199,35 @@
         }
 
         SetBusyState("Signing in", "Completing Google sign-in.");
-        await InvokeAsync(StateHasChanged);
-        var (user, sessionId, error) = await ApiClient.LoginWithGoogleCodeAsync(authCode);
-        if (user != null && sessionId != null)
+        try
         {
-            Logger.LogInformation("Google login successful for {Email}", user.Email);
-            Navigation.NavigateTo(Config.DefaultPage, replace: true);
-            return;
-        }
+            var (user, sessionId, error) = await WithAuthTimeoutAsync(
+                ApiClient.LoginWithGoogleCodeAsync(authCode),
+                "Google login");
 
-        _error = string.IsNullOrWhiteSpace(error) ? "Google login failed." : error;
-        _isBusy = false;
+            if (user != null && sessionId != null)
+            {
+                Logger.LogInformation("Google login successful for {Email}", user.Email);
+                Navigation.NavigateTo(Config.DefaultPage, replace: true);
+                return;
+            }
+
+            _error = string.IsNullOrWhiteSpace(error) ? "Google login failed." : error;
+        }
+        catch (TimeoutException ex)
+        {
+            Logger.LogWarning(ex, "Google login timed out.");
+            _error = "Google login timed out. Please try again.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Google login failed.");
+            _error = "Could not complete Google login. Please try again.";
+        }
+        finally
+        {
+            _isBusy = false;
+        }
         await InvokeAsync(StateHasChanged);
     }
 
@@ -202,6 +237,7 @@
         _error = string.IsNullOrWhiteSpace(error)
             ? "Google login was canceled or blocked."
             : $"Google login failed: {error}";
+        _isBusy = false;
         StateHasChanged();
         return Task.CompletedTask;
     }
@@ -237,11 +273,16 @@
             var shouldRenderLogin = true;
             try
             {
-                var sessionIdString = await LocalStorageService.GetItemAsync<string>(LocalStorageKey.SessionId);
+                var sessionIdString = await WithAuthTimeoutAsync(
+                    LocalStorageService.GetItemAsync<string>(LocalStorageKey.SessionId),
+                    "Reading saved session");
+
                 if (sessionIdString != null && Guid.TryParse(sessionIdString, out var sessionId))
                 {
                     Logger.LogInformation("Session ID found, validating with server.");
-                    var (user, validatedSessionId) = await ApiClient.LoginAsync(sessionId);
+                    var (user, validatedSessionId) = await WithAuthTimeoutAsync(
+                        ApiClient.LoginAsync(sessionId),
+                        "Validating session");
 
                     if (user != null && validatedSessionId != null)
                     {
@@ -261,21 +302,55 @@
                     Logger.LogInformation("No valid session ID found, staying on login page.");
                 }
             }
+            catch (TimeoutException ex)
+            {
+                Logger.LogWarning(ex, "Session check timed out on login page.");
+                _error = "Session check timed out. Please sign in manually.";
+                await ClearStoredSessionSafelyAsync();
+            }
             catch (Exception ex)
             {
                 Logger.LogError(ex, "Error checking session validity on login page.");
-                await LocalStorageService.ClearAsync();
-                ApiClient.ClearSession();
+                _error = "Could not verify your session. Please sign in again.";
+                await ClearStoredSessionSafelyAsync();
             }
-
-            if (shouldRenderLogin)
+            finally
             {
-                await InitializeGoogleAsync();
-                _isAuthResolved = true;
-                _isBusy = false;
-                await InvokeAsync(StateHasChanged);
+                if (shouldRenderLogin)
+                {
+                    await InitializeGoogleAsync();
+                    _isAuthResolved = true;
+                    _isBusy = false;
+                    await InvokeAsync(StateHasChanged);
+                }
             }
         }
+    }
+
+    private async Task<T> WithAuthTimeoutAsync<T>(Task<T> task, string operationName)
+    {
+        try
+        {
+            return await task.WaitAsync(AuthOperationTimeout);
+        }
+        catch (TimeoutException ex)
+        {
+            throw new TimeoutException($"{operationName} timed out after {AuthOperationTimeout.TotalSeconds:0} seconds.", ex);
+        }
+    }
+
+    private async Task ClearStoredSessionSafelyAsync()
+    {
+        try
+        {
+            await LocalStorageService.ClearAsync();
+        }
+        catch (Exception ex)
+        {
+            Logger.LogWarning(ex, "Failed to clear local storage after login session check failure.");
+        }
+
+        ApiClient.ClearSession();
     }
 
     private void SetBusyState(string title, string message)

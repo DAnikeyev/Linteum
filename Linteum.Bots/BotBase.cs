@@ -10,6 +10,7 @@ public abstract class BotBase
 
     protected readonly HttpClient HttpClient;
     protected readonly string ApiUrl;
+    protected string? MasterPassword { get; }
     protected string BotEmail { get; }
     protected string BotPassword { get; }
     protected string BotUserName { get; }
@@ -21,6 +22,7 @@ public abstract class BotBase
         BotPassword = password;
         BotUserName = userName;
         ApiUrl = Environment.GetEnvironmentVariable("BOT_API_URL") ?? "http://localhost:5182";
+        MasterPassword = Environment.GetEnvironmentVariable("BOT_MASTER_PASSWORD");
 
         var handler = new HttpClientHandler
         {
@@ -69,15 +71,16 @@ public abstract class BotBase
             timeout = TimeSpan.FromMinutes(minutes);
 
         using var cts = new CancellationTokenSource(timeout);
+        var runToken = cts.Token;
         Console.WriteLine($"Bot will run for up to {timeout.TotalMinutes} minute(s).");
 
         _ = Task.Run(async () =>
         {
             try
             {
-                while (!cts.Token.IsCancellationRequested)
+                while (!runToken.IsCancellationRequested)
                 {
-                    await Task.Delay(1000, cts.Token);
+                    await Task.Delay(1000, runToken);
                     long currentCount = Interlocked.Exchange(ref _requestCount, 0);
                     Console.WriteLine($"[{BotUserName}] Requests per second: {currentCount}");
                 }
@@ -151,30 +154,71 @@ public abstract class BotBase
         return null;
     }
     
-    protected async Task PaintPixelAsync(CanvasDto canvas, int x, int y, int colorId)
+    protected async Task<bool> TryPaintPixelAsync(CanvasDto canvas, int x, int y, int colorId, CancellationToken ct = default)
     {
-        Interlocked.Increment(ref _requestCount);
-        var pixelDto = new PixelDto
+        var result = await TryPaintPixelsAsync(canvas,
+        [
+            new PixelDto
+            {
+                X = x,
+                Y = y,
+                ColorId = colorId,
+                CanvasId = canvas.Id,
+            }
+        ], ct);
+
+        return result is { ChangedPixels.Count: > 0 };
+    }
+
+    protected async Task<PixelBatchChangeResultDto?> TryPaintPixelsAsync(CanvasDto canvas, IReadOnlyCollection<PixelDto> pixels, CancellationToken ct = default)
+    {
+        Interlocked.Add(ref _requestCount, pixels.Count);
+        var requestDto = new PixelBatchChangeRequestDto
         {
-            X = x, 
-            Y = y, 
-            ColorId = colorId,
-            CanvasId = canvas.Id
+            MasterPassword = MasterPassword,
+            Pixels = pixels.Select(pixel => new PixelDto
+            {
+                Id = pixel.Id,
+                X = pixel.X,
+                Y = pixel.Y,
+                ColorId = pixel.ColorId,
+                OwnerId = pixel.OwnerId,
+                Price = pixel.Price,
+                CanvasId = canvas.Id,
+            }).ToList(),
         };
 
         try
         {
-            using var response = await HttpClient.PostAsJsonAsync($"Pixels/change/{canvas.Name}", pixelDto);
-            await response.Content.CopyToAsync(Stream.Null);
+            using var response = await HttpClient.PostAsJsonAsync($"Pixels/change-batch/{canvas.Name}", requestDto, ct);
             if (!response.IsSuccessStatusCode)
             {
-                Console.WriteLine($"Failed to paint pixel at {x},{y}: {response.StatusCode}");
+                Console.WriteLine($"Failed to paint batch on {canvas.Name}: {response.StatusCode}");
+                var content = await response.Content.ReadAsStringAsync(ct);
+                if (!string.IsNullOrWhiteSpace(content))
+                {
+                    Console.WriteLine(content);
+                }
+                return null;
             }
+
+            return await response.Content.ReadFromJsonAsync<PixelBatchChangeResultDto>(cancellationToken: ct);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            Console.WriteLine($"Painting batch on {canvas.Name} timed out.");
+            return null;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error painting pixel: {ex.Message}");
+            Console.WriteLine($"Error painting batch: {ex.Message}");
+            return null;
         }
+    }
+
+    protected async Task PaintPixelAsync(CanvasDto canvas, int x, int y, int colorId)
+    {
+        await TryPaintPixelAsync(canvas, x, y, colorId);
     }
 }
 

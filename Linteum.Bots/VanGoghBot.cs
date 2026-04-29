@@ -6,6 +6,8 @@ namespace Linteum.Bots;
 
 public class VanGoghBot : BotBase
 {
+    private const int BatchSize = 100;
+
     public VanGoghBot() : base("vangogh@linteum.com", "SecurePassword123!", "VanGoghBot")
     {
     }
@@ -24,7 +26,7 @@ public class VanGoghBot : BotBase
                 Name = "VanGogh",
                 Width = 100,
                 Height = 80, 
-                CanvasMode = CanvasMode.Sandbox
+                CanvasMode = CanvasMode.FreeDraw
             };
             var response = await HttpClient.PostAsJsonAsync($"Canvases/Add?passwordHash=", newCanvas);
             if (response.IsSuccessStatusCode)
@@ -62,6 +64,7 @@ public class VanGoghBot : BotBase
         }
 
         var random = new Random();
+        var batch = new List<PixelDto>(BatchSize);
 
         Console.WriteLine("Starting painting loop...");
         while (!ct.IsCancellationRequested)
@@ -80,9 +83,20 @@ public class VanGoghBot : BotBase
                 targetColor = whiteColor;
             }
 
-            await PaintPixelAsync(canvas, x, y, targetColor.Id);
+            batch.Add(new PixelDto
+            {
+                X = x,
+                Y = y,
+                ColorId = targetColor.Id,
+                CanvasId = canvas.Id,
+            });
 
-            await Task.Delay(1, ct);
+            if (batch.Count >= BatchSize)
+            {
+                await TryPaintPixelsAsync(canvas, batch, ct);
+                batch.Clear();
+                await Task.Delay(1, ct);
+            }
         }
     }
 }

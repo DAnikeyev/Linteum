@@ -8,8 +8,12 @@ internal class CanvasRepositoryReadTest : SyntheticDataTest
     public async Task TryAddCanvas()
     {
         var canvasRepo = RepoManager.CanvasRepository;
+        var creator = await DbHelper.AddDefaultUser("canvas-read-owner");
+        Assert.That(creator?.Id, Is.Not.Null);
+
         var canvasWithPassword = new CanvasDto
         {
+            CreatorId = creator!.Id!.Value,
             Name = "Test Canvas",
             Width = 10,
             Height = 10,
@@ -17,6 +21,7 @@ internal class CanvasRepositoryReadTest : SyntheticDataTest
         var password = "testpassword";
         var canvasWithoutPassword = new CanvasDto
         {
+            CreatorId = creator.Id.Value,
             Name = "Test Canvas No Password",
             Width = 10,
             Height = 10,
@@ -26,12 +31,16 @@ internal class CanvasRepositoryReadTest : SyntheticDataTest
         Assert.IsNotNull(newCanvasWithPassword);
         var newCanvasWithoutPassword = await canvasRepo.TryAddCanvas(canvasWithoutPassword, null);
         Assert.IsNotNull(newCanvasWithoutPassword);
+
+        var seededCanvasCount = DefaultConfig.GetProtectedCanvasNames().Count;
         
         var allPublicCanvases = (await canvasRepo.GetAllAsync()).ToList();
         var allCanvases = (await canvasRepo.GetAllAsync(true)).ToList();
-        Assert.That(allPublicCanvases.Count, Is.EqualTo(2));
-        Assert.That(allCanvases.Count, Is.EqualTo(3));
+        Assert.That(allPublicCanvases.Count, Is.EqualTo(seededCanvasCount + 1));
+        Assert.That(allCanvases.Count, Is.EqualTo(seededCanvasCount + 2));
         Assert.That(allPublicCanvases.Any(c => c.Name == DefaultConfig.DefaultCanvasName), Is.True);
+        Assert.That(allPublicCanvases.Any(c => c.Name == "home_FreeDraw"), Is.True);
+        Assert.That(allPublicCanvases.Any(c => c.Name == "home_Economy"), Is.True);
         Assert.That(allPublicCanvases.Any(c => c.Id == newCanvasWithoutPassword.Id), Is.True);
         Assert.That(allCanvases.Any(c => c.Id == newCanvasWithoutPassword.Id), Is.True);
         Assert.That(allCanvases.Any(c => c.Id == newCanvasWithPassword.Id), Is.True);

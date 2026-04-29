@@ -5,7 +5,7 @@ namespace Linteum.Shared;
 public class Config
 {
     public string DefaultCanvasName { get; set; } = "home";
-    public List<string> SecondaryCanvasNames { get; set; } = new() { "VanGogh", "Thailand" };
+    public List<string> SecondaryDefaultCanvasNames { get; set; } = new() { "home_FreeDraw", "home_Economy", "VanGogh", "Thailand" };
     public string MasterPasswordHash { get; set; } = "MasterPasswordHash";
     public string GoogleClientId { get; set; } = string.Empty;
     
@@ -14,6 +14,80 @@ public class Config
 
     public int ExpiredSessionTimeoutMinutes { get; set; } = 60;
     public int DefaultCanvasHeight { get; set; } = 1024;
+    public int NormalModeDailyPixelLimit { get; set; } = 100;
+
+    public List<CanvasDto> SeedCanvases { get; set; } = new()
+    {
+        new CanvasDto
+        {
+            Name = "home",
+            Width = 1024,
+            Height = 1024,
+            CanvasMode = CanvasMode.Normal,
+        },
+        new CanvasDto
+        {
+            Name = "home_FreeDraw",
+            Width = 1024,
+            Height = 1024,
+            CanvasMode = CanvasMode.FreeDraw,
+        },
+        new CanvasDto
+        {
+            Name = "home_Economy",
+            Width = 1024,
+            Height = 1024,
+            CanvasMode = CanvasMode.Economy,
+        }
+    };
+
+    public IReadOnlyCollection<string> GetProtectedCanvasNames() =>
+        SeedCanvases
+            .Select(canvas => canvas.Name)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    public IReadOnlyCollection<CanvasDto> GetDefaultCanvases()
+    {
+        var seedCanvases = SeedCanvases
+            .Where(canvas => !string.IsNullOrWhiteSpace(canvas.Name))
+            .Select(canvas => new CanvasDto
+            {
+                Name = canvas.Name,
+                Width = string.Equals(canvas.Name, DefaultCanvasName, StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(canvas.Name, "home_FreeDraw", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(canvas.Name, "home_Economy", StringComparison.OrdinalIgnoreCase)
+                    ? DefaultCanvasWidth
+                    : canvas.Width,
+                Height = string.Equals(canvas.Name, DefaultCanvasName, StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(canvas.Name, "home_FreeDraw", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(canvas.Name, "home_Economy", StringComparison.OrdinalIgnoreCase)
+                    ? DefaultCanvasHeight
+                    : canvas.Height,
+                CanvasMode = canvas.CanvasMode,
+                CreatorId = canvas.CreatorId,
+                CreatedAt = canvas.CreatedAt,
+                UpdatedAt = canvas.UpdatedAt,
+            })
+            .ToList();
+
+        if (seedCanvases.Count > 0)
+        {
+            return seedCanvases;
+        }
+
+        return new[]
+        {
+            new CanvasDto
+            {
+                Name = DefaultCanvasName,
+                Width = DefaultCanvasWidth,
+                Height = DefaultCanvasHeight,
+                CanvasMode = CanvasMode.Normal,
+            }
+        };
+    }
     
     public List<ColorDto> Colors { get; set; } = new List<ColorDto>()
     {

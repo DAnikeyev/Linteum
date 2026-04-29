@@ -6,6 +6,8 @@ namespace Linteum.Bots;
 
 public class MunchBot : BotBase
 {
+    private const int BatchSize = 100;
+
     public MunchBot() : base("munch@linteum.com", "Scream123!", "MunchBot")
     {
     }
@@ -24,7 +26,7 @@ public class MunchBot : BotBase
                 Name = "Munch",
                 Width = 100,
                 Height = 127, 
-                CanvasMode = CanvasMode.Sandbox
+                CanvasMode = CanvasMode.FreeDraw
             };
             var response = await HttpClient.PostAsJsonAsync($"Canvases/Add?passwordHash=", newCanvas);
             if (response.IsSuccessStatusCode)
@@ -61,6 +63,7 @@ public class MunchBot : BotBase
         }
 
         var random = new Random();
+        var batch = new List<PixelDto>(BatchSize);
 
         Console.WriteLine("Starting painting loop (1ms delay, 80% accuracy)...");
         while (!ct.IsCancellationRequested)
@@ -79,9 +82,20 @@ public class MunchBot : BotBase
                 targetColor = whiteColor;
             }
 
-            await PaintPixelAsync(canvas, x, y, targetColor.Id);
+            batch.Add(new PixelDto
+            {
+                X = x,
+                Y = y,
+                ColorId = targetColor.Id,
+                CanvasId = canvas.Id,
+            });
 
-            await Task.Delay(1, ct);
+            if (batch.Count >= BatchSize)
+            {
+                await TryPaintPixelsAsync(canvas, batch, ct);
+                batch.Clear();
+                await Task.Delay(1, ct);
+            }
         }
     }
 }

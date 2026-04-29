@@ -1,12 +1,16 @@
 @page "/canvas/{canvasName}"
 @layout Layout.BaseLayout
 @using Linteum.BlazorApp.Components.Notification
+@using Linteum.BlazorApp.LocalDTO
+@using Linteum.BlazorApp.Components.Layout
 @using Linteum.Shared.DTO
 @using NLog
 @inject IConfiguration Configuration
 @using Linteum.Shared
 @using Linteum.BlazorApp.Services
 @using Microsoft.AspNetCore.SignalR.Client
+@using System.Collections.Concurrent
+@using System.Threading.Channels
 @implements IAsyncDisposable
 @inject MyApiClient ApiClient
 @inject NotificationService NotificationService
@@ -15,6 +19,8 @@
 @inject NavigationManager NavigationManager
 @using Microsoft.Extensions.Hosting
 @inject IHostEnvironment Environment
+@inject Config DefaultConfig
+@inject CanvasChatStateService CanvasChatState
 
 <div class="canvas-page-container"
      style="--sidebar-margin:@SidebarMargin;">
@@ -36,26 +42,37 @@
                          style="position: absolute; background:#ffffff;">
 
                         <canvas @ref="_canvasRef"
+                                class="canvas-surface"
                                 width="@_canvas.Width"
-                                height="@_canvas.Height"
-                                style="width:100%; height:100%; display:block; pointer-events:none; image-rendering:pixelated;">
+                                height="@_canvas.Height">
                         </canvas>
 
                         <canvas @ref="_overlayRef"
+                                class="canvas-surface canvas-surface--overlay"
                                 width="@_canvas.Width"
-                                height="@_canvas.Height"
-                                style="width:100%; height:100%; display:block; pointer-events:none; image-rendering:pixelated; position:absolute; top:0; left:0;">
+                                height="@_canvas.Height">
                         </canvas>
+
+                        @if (ShowTextCaret)
+                        {
+                            <div class="canvas-text-caret" style="@(GetTextCaretStyle())"></div>
+                        }
 
                     </div>
                 </div>
             </div>
 
-            <PixelManager @ref="_pixelManager" Canvas="@_canvas" ClickedPixel="@_clickedPixel" ClickedPixelData="@_clickedPixelData" CanvasRenderer="@_renderer" OnlineUsers="@_onlineUsers" IsMobileLayout="@_isMobileLayout" />
+            <PixelManager @ref="_pixelManager" Canvas="@_canvas" ClickedPixel="@_clickedPixel" ClickedPixelData="@_clickedPixelData" CanvasRenderer="@_renderer" Gold="@_gold" OnlineUsers="@_onlineUsers" IsMobileLayout="@_isMobileLayout" MaintenanceProgress="@_maintenanceProgress" OnEconomyBalanceChanged="RefreshGoldAsync" OnTextCaretPreviewChanged="HandleTextCaretPreviewChanged" IsBrushEnabled="@_isBrushEnabled" IsBrushEnabledChanged="HandleBrushToggledAsync" IsEraserBrushEnabled="@_isEraserBrushEnabled" IsEraserBrushEnabledChanged="HandleEraserBrushToggledAsync" SelectedEraserSize="@_selectedEraserSize" SelectedEraserSizeChanged="HandleSelectedEraserSizeChangedAsync" SelectedBrushColorHexChanged="HandleSelectedBrushColorHexChangedAsync" OnCanvasErased="HandleCanvasErasedLocallyAsync" OnCanvasDeleted="HandleCanvasDeletedLocallyAsync" />
         </div>
 
         <div @ref="_coordsDisplayRef" class="canvas-coordinates"
              style="left: calc(@(SidebarMargin) + 12px);"></div>
+
+        <CanvasLobbyChat CanvasName="@_canvas.Name"
+                         CurrentUserName="@_currentUserName"
+                         State="@CurrentChatState"
+                         OnSend="SendCanvasChatMessageAsync" />
+
     }
 </div>
 
@@ -66,12 +83,18 @@
     [CascadingParameter(Name = "SidebarMargin")]
     public string SidebarMargin { get; set; } = "0px";
 
+    [CascadingParameter]
+    public CanvasSidebar? Sidebar { get; set; }
+
     private static readonly Logger _nlog = LogManager.GetCurrentClassLogger();
 
     private CanvasDto? _canvas;
     private string? _loadedCanvasName;
     private (int X, int Y)? _clickedPixel;
     private PixelDto? _clickedPixelData;
+    private long _gold;
+    private Guid? _currentUserId;
+    private string? _currentUserName;
 
     // SignalR
     private HubConnection? _hubConnection;
@@ -99,15 +122,96 @@
     private string _lastSidebarMargin = "0px";
     private bool _isMobileLayout;
     private List<ColorDto>? _colors;
+    private TextCaretPreviewState _textCaretPreview = TextCaretPreviewState.Hidden;
     private DotNetObjectReference<CanvasPage>? _objRef;
-    private IJSObjectReference? _resizeListener;
+    private string? _resizeListenerId;
     private int _canvasLoadVersion;
     private bool _jsViewportInitialized;
     private bool _pendingViewportRefresh = true;
-    private int _rendererInitAttempts;
+    private bool _rendererInitializationInProgress;
+    private int _disposeState;
+    private bool _isBrushEnabled;
+    private bool _isEraserBrushEnabled;
+    private int _selectedEraserSize = 1;
+    private string? _selectedBrushColorHex;
+    private CanvasMaintenanceProgressDto? _maintenanceProgress;
+    private bool _suppressNextEraseNotification;
+    private bool _suppressNextDeleteNotification;
+    private bool _isHandlingCanvasErase;
+    private bool _isHandlingCanvasDelete;
+    private readonly HashSet<(int X, int Y)> _brushStrokePixels = new();
+    private readonly List<(int X, int Y, int ColorId, string ColorHex)> _pendingBrushPixels = new();
+    private readonly HashSet<(int X, int Y)> _pendingErasePixels = new();
+    private readonly HashSet<(int X, int Y)> _clearedErasePixels = new();
+    private readonly List<CoordinateDto> _pendingEraseCoordinates = new();
+    private readonly object _brushStrokeLock = new();
+    private readonly SemaphoreSlim _brushFlushSemaphore = new(1, 1);
+    private readonly SemaphoreSlim _eraseFlushSemaphore = new(1, 1);
+    private readonly CancellationTokenSource _brushFlushLoopCts = new();
+    private readonly CancellationTokenSource _eraseFlushLoopCts = new();
+    private readonly CancellationTokenSource _confirmedPlaybackLoopCts = new();
+    private readonly Channel<ConfirmedPlaybackWorkItem> _confirmedPlaybackChannel = Channel.CreateUnbounded<ConfirmedPlaybackWorkItem>(new UnboundedChannelOptions
+    {
+        SingleReader = true,
+        SingleWriter = false,
+    });
+    private readonly ConcurrentDictionary<string, byte> _pendingLocalPlaybackOperationIds = new(StringComparer.Ordinal);
+    private bool _brushStrokeActive;
+    private int _brushSelectionVersion;
+    private Guid? _activeStrokeId;
+    private int _strokeChunkSequence;
+    private DateTime _strokeChunkStartedAtUtc;
+    private int _pendingConfirmedPlaybackCount;
+    private const int BrushBatchSize = 500;
+    private const string ReceiveCanvasChatMessageEventName = "ReceiveCanvasChatMessage";
+    private const string SessionExpiredEventName = "SessionExpired";
+    private const string CanvasMaintenanceProgressEventName = "CanvasMaintenanceProgress";
+    private const string ReceiveConfirmedPixelPlaybackBatchEventName = "ReceiveConfirmedPixelPlaybackBatch";
+    private const string ReceiveConfirmedPixelDeletionPlaybackBatchEventName = "ReceiveConfirmedPixelDeletionPlaybackBatch";
+    private static readonly TimeSpan BrushFlushInterval = TimeSpan.FromMilliseconds(75);
+    private static readonly TimeSpan EraseFlushInterval = TimeSpan.FromMilliseconds(200);
+    private Task? _brushFlushLoopTask;
+    private Task? _eraseFlushLoopTask;
+    private Task? _confirmedPlaybackLoopTask;
 
     // PixelManager reference
     private PixelManager? _pixelManager;
+    private bool IsFreeDrawCanvas => _canvas?.CanvasMode == CanvasMode.FreeDraw;
+    private bool IsDragToolEnabled => _isBrushEnabled || _isEraserBrushEnabled;
+    private bool ShowTextCaret => _canvas?.CanvasMode == CanvasMode.FreeDraw && _clickedPixel.HasValue && _textCaretPreview.IsVisible;
+    private CanvasChatLobbyState CurrentChatState => CanvasChatState.GetState(_canvas?.Name ?? canvasName);
+    private bool IsDisposed => Volatile.Read(ref _disposeState) != 0;
+
+    private bool IsCurrentCanvasLoad(int loadVersion, CanvasDto? canvasSnapshot = null)
+    {
+        if (IsDisposed || loadVersion != Volatile.Read(ref _canvasLoadVersion))
+        {
+            return false;
+        }
+
+        return canvasSnapshot == null || ReferenceEquals(canvasSnapshot, _canvas);
+    }
+
+    private static bool IsExpectedUiShutdownException(Exception ex)
+    {
+        return ex is ObjectDisposedException or JSDisconnectedException or TaskCanceledException;
+    }
+
+    private async Task RequestRenderAsync()
+    {
+        if (IsDisposed)
+        {
+            return;
+        }
+
+        try
+        {
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex) when (IsExpectedUiShutdownException(ex) || IsDisposed)
+        {
+        }
+    }
 
             
     // LIFECYCLE: SETUP SIGNALR
@@ -125,6 +229,8 @@
 
             var hubUrl = $"{apiBase.TrimEnd('/')}/canvashub";
             var sessionId = await LocalStorageService.GetItemAsync<string>(LocalStorageKey.SessionId);
+            _currentUserId = await LocalStorageService.GetItemAsync<Guid?>(LocalStorageKey.UserId);
+            _currentUserName = await LocalStorageService.GetItemAsync<string>(LocalStorageKey.UserName);
 
             _hubConnection = new HubConnectionBuilder()
                 .WithUrl(hubUrl, options =>
@@ -151,45 +257,59 @@
             
             _nlog.Info($"SignalR HubConnection built for {hubUrl}, starting connection...");
 
-            _hubConnection.On<int, int, int>("ReceivePixelUpdate", async (x, y, colorId) =>
+            _hubConnection.On<PixelDto>("ReceivePixelUpdate", async pixel =>
             {
-                if (_renderer == null || _colors == null) return;
-
-                var currentCanvasName = _canvas?.Name ?? canvasName;
-                var selectedPixelId = _clickedPixel.HasValue && _clickedPixel.Value.X == x && _clickedPixel.Value.Y == y
-                    ? _clickedPixelData?.Id
-                    : null;
-                ApiClient.HandlePixelColorChanged(currentCanvasName, x, y, colorId, selectedPixelId);
-
-                // Try to find the color hex from the ID sent
-                var c = _colors.FirstOrDefault(cDto => cDto.Id == colorId);
-                if (c != null)
+                if (pixel != null)
                 {
-                    _renderer.EnqueuePixel(x, y, c.HexValue);
-                }
-
-                // Update pixel history if this pixel is currently selected
-                if (_clickedPixel.HasValue && _clickedPixel.Value.X == x && _clickedPixel.Value.Y == y && _pixelManager != null)
-                {
-                    if (_clickedPixelData != null)
-                    {
-                        _clickedPixelData.ColorId = colorId;
-                        if (_clickedPixelData.Id.HasValue)
-                        {
-                            ApiClient.InvalidateHistoryCache(_clickedPixelData.Id.Value);
-                        }
-                    }
-
-                    await _pixelManager.UpdatePixelHistory();
-                    await InvokeAsync(StateHasChanged);
+                    await HandlePixelUpdatedAsync(pixel);
                 }
             });
+
+            _hubConnection.On<List<PixelDto>>("ReceivePixelBatchUpdate", async pixels =>
+            {
+                if (pixels == null || pixels.Count == 0)
+                {
+                    return;
+                }
+
+                foreach (var pixel in pixels)
+                {
+                    await HandlePixelUpdatedAsync(pixel);
+                }
+            });
+
+            _hubConnection.On<ConfirmedPixelPlaybackBatchDto>(ReceiveConfirmedPixelPlaybackBatchEventName, playbackBatch =>
+                InvokeAsync(() => EnqueueConfirmedPixelPlaybackAsync(playbackBatch)));
+
+            _hubConnection.On<ConfirmedPixelDeletionPlaybackBatchDto>(ReceiveConfirmedPixelDeletionPlaybackBatchEventName, playbackBatch =>
+                InvokeAsync(() => EnqueueConfirmedPixelDeletionPlaybackAsync(playbackBatch)));
 
             _hubConnection.On<List<string>>("UpdateOnlineUsers", (users) =>
             {
                 _onlineUsers = users;
                 InvokeAsync(StateHasChanged);
             });
+
+            _hubConnection.On<CanvasChatMessageDto>(ReceiveCanvasChatMessageEventName, chatMessage =>
+                InvokeAsync(() => HandleCanvasChatMessageAsync(chatMessage)));
+
+            _hubConnection.On(SessionExpiredEventName, () =>
+                InvokeAsync(HandleSessionExpiredAsync));
+
+            _hubConnection.On<IReadOnlyCollection<CoordinateDto>>("PixelsDeleted", coordinates =>
+                InvokeAsync(() => HandlePixelsDeletedAsync(coordinates)));
+
+            _hubConnection.On<string>("CanvasErased", canvasNameFromHub =>
+                InvokeAsync(() => OnCanvasErasedFromHubAsync(canvasNameFromHub)));
+
+            _hubConnection.On<string>("CanvasDeleted", canvasNameFromHub =>
+                InvokeAsync(() => OnCanvasDeletedFromHubAsync(canvasNameFromHub)));
+
+            _hubConnection.On<CanvasMaintenanceProgressDto>(CanvasMaintenanceProgressEventName, progress =>
+                InvokeAsync(() => HandleCanvasMaintenanceProgressAsync(progress)));
+
+            _hubConnection.On<IReadOnlyCollection<CanvasIncomeUpdateDto>>("ReceiveCanvasIncomeUpdates", updates =>
+                InvokeAsync(() => HandleCanvasIncomeUpdatesAsync(updates)));
             
             _hubConnection.Reconnected += async (_) =>
             {
@@ -205,10 +325,19 @@
         {
             _nlog.Error(ex, "Failed to start SignalR connection");
         }
+
+        _brushFlushLoopTask = RunBrushFlushLoopAsync(_brushFlushLoopCts.Token);
+        _eraseFlushLoopTask = RunEraseFlushLoopAsync(_eraseFlushLoopCts.Token);
+        _confirmedPlaybackLoopTask = RunConfirmedPlaybackLoopAsync(_confirmedPlaybackLoopCts.Token);
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (IsDisposed)
+        {
+            return;
+        }
+
         if (firstRender)
         {
             _hasRendered = true;
@@ -216,84 +345,190 @@
             _pendingViewportRefresh = true;
 
             _objRef = DotNetObjectReference.Create(this);
-            _resizeListener = await JSRuntime.InvokeAsync<IJSObjectReference>("canvasHelpers.registerResizeListener", _objRef);
+            try
+            {
+                _resizeListenerId = await JSRuntime.InvokeAsync<string>("canvasHelpers.registerResizeListener", _objRef);
+            }
+            catch (Exception ex) when (IsExpectedUiShutdownException(ex))
+            {
+                return;
+            }
         }
 
-        if (_canvas != null && _renderer == null)
-        {
-            // 1. Calculate the real viewport from the rendered host area first
-            await CalculateViewportDimensions();
-            _pendingViewportRefresh = false;
-            StateHasChanged();
+        var loadVersion = Volatile.Read(ref _canvasLoadVersion);
+        var canvasSnapshot = _canvas;
 
-            // 2. Initialize the renderer and load the image (awaitable – no white flash)
-            _renderer = new CanvasRenderer(JSRuntime);
-            var initialized = await _renderer.InitializeAsync(_canvasRef, _overlayRef);
-            if (!initialized)
+        if (canvasSnapshot != null && _renderer == null && !_rendererInitializationInProgress)
+        {
+            _rendererInitializationInProgress = true;
+
+            try
             {
-                _renderer = null;
-                _rendererInitAttempts++;
-                if (_rendererInitAttempts <= 3)
+                // 1. Calculate the real viewport from the rendered host area first
+                await CalculateViewportDimensions();
+                if (!IsCurrentCanvasLoad(loadVersion, canvasSnapshot) || _renderer != null)
                 {
-                    await Task.Delay(50);
-                    await InvokeAsync(StateHasChanged);
+                    return;
                 }
-                else
+
+                _pendingViewportRefresh = false;
+                await RequestRenderAsync();
+                if (!IsCurrentCanvasLoad(loadVersion, canvasSnapshot) || _renderer != null)
                 {
-                    _nlog.Warn("Canvas renderer initialization failed after {Attempts} attempts.", _rendererInitAttempts);
+                    return;
                 }
+
+                // 2. Initialize the renderer and load the image (awaitable – no white flash)
+                var renderer = new CanvasRenderer(JSRuntime);
+                _renderer = renderer;
+                await renderer.InitializeAsync(_canvasRef, _overlayRef);
+                if (!IsCurrentCanvasLoad(loadVersion, canvasSnapshot) || !ReferenceEquals(_renderer, renderer))
+                {
+                    await renderer.DisposeAsync();
+                    if (ReferenceEquals(_renderer, renderer))
+                    {
+                        _renderer = null;
+                    }
+
+                    return;
+                }
+
+                await LoadCanvasImage(loadVersion);
+                if (!IsCurrentCanvasLoad(loadVersion, canvasSnapshot) || !ReferenceEquals(_renderer, renderer))
+                {
+                    return;
+                }
+
+                // 3. Initialize JS viewport (fit + center) now that dimensions are correct
+                await InitJsViewport(loadVersion);
+                if (!IsCurrentCanvasLoad(loadVersion, canvasSnapshot) || !ReferenceEquals(_renderer, renderer))
+                {
+                    return;
+                }
+
+                // 3.5. Request one more post-init fit after the shell is visible.
+                // Some deployed layouts settle after first paint, which can skew the first measurement.
+                _pendingViewportRefresh = true;
+
+                // 4. Reveal the canvas shell with a smooth fade-in
+                _canvasReady = true;
+                await RequestRenderAsync();
+                return;
+            }
+            catch (Exception ex) when (IsExpectedUiShutdownException(ex))
+            {
+                return;
+            }
+            finally
+            {
+                _rendererInitializationInProgress = false;
+            }
+        }
+
+        if (_pendingViewportRefresh && canvasSnapshot != null && _jsViewportInitialized)
+        {
+            await CalculateViewportDimensions();
+            if (!IsCurrentCanvasLoad(loadVersion, canvasSnapshot) || !_jsViewportInitialized)
+            {
                 return;
             }
 
-            _rendererInitAttempts = 0;
-            await LoadCanvasImage();
-
-            // 3. Initialize JS viewport (fit + center) now that dimensions are correct
-            await InitJsViewport();
-
-            // 3.5. Request one more post-init fit after the shell is visible.
-            // Some deployed layouts settle after first paint, which can skew the first measurement.
-            _pendingViewportRefresh = true;
-
-            // 4. Reveal the canvas shell with a smooth fade-in
-            _canvasReady = true;
-            StateHasChanged();
-            return;
-        }
-
-        if (_pendingViewportRefresh && _canvas != null && _jsViewportInitialized)
-        {
-            await CalculateViewportDimensions();
             _pendingViewportRefresh = false;
-            await JSRuntime.InvokeVoidAsync("canvasViewport.fitCanvas", ViewportWidth, ViewportHeight);
-            StateHasChanged();
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("canvasViewport.fitCanvas", ViewportWidth, ViewportHeight);
+            }
+            catch (Exception ex) when (IsExpectedUiShutdownException(ex))
+            {
+                return;
+            }
+
+            await RequestRenderAsync();
         }
     }
 
-    private async Task InitJsViewport()
+    private async Task InitJsViewport(int loadVersion)
     {
-        if (_canvas == null || _objRef == null) return;
-        _jsViewportInitialized = true;
+        var canvasSnapshot = _canvas;
+        var objRefSnapshot = _objRef;
+        if (canvasSnapshot == null || objRefSnapshot == null || !IsCurrentCanvasLoad(loadVersion, canvasSnapshot)) return;
+
         await JSRuntime.InvokeVoidAsync("canvasViewport.init",
-            _objRef, _viewportRef, _rendererRef, _coordsDisplayRef,
-            _canvas.Width, _canvas.Height,
+            objRefSnapshot, _viewportRef, _rendererRef, _coordsDisplayRef,
+            canvasSnapshot.Width, canvasSnapshot.Height,
             ViewportWidth, ViewportHeight);
+
+        if (!IsCurrentCanvasLoad(loadVersion, canvasSnapshot))
+        {
+            return;
+        }
+
+        _jsViewportInitialized = true;
+        await SyncBrushModeAsync();
+    }
+
+    private async Task HandleSessionExpiredAsync()
+    {
+        _nlog.Info("Received session expiration notification from SignalR hub.");
+        await LocalStorageService.ClearAsync();
+        ApiClient.ClearSession();
+        NavigationManager.NavigateTo("/login", true);
+    }
+
+    private Task HandleCanvasChatMessageAsync(CanvasChatMessageDto? chatMessage)
+    {
+        if (chatMessage == null || string.IsNullOrWhiteSpace(chatMessage.CanvasName) || string.IsNullOrWhiteSpace(chatMessage.Message))
+        {
+            return Task.CompletedTask;
+        }
+
+        CanvasChatState.AddMessage(chatMessage);
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task<bool> SendCanvasChatMessageAsync(string message)
+    {
+        var currentCanvasName = _canvas?.Name ?? canvasName;
+        if (string.IsNullOrWhiteSpace(currentCanvasName))
+        {
+            return false;
+        }
+
+        try
+        {
+            await ApiClient.SendCanvasChatMessageAsync(currentCanvasName, message);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            _nlog.Warn(ex, "Failed to send canvas chat message for canvas {0}", currentCanvasName);
+            await NotifyAsync(new CustomNotification
+            {
+                Message = $"Error sending chat message: {ex.Message}",
+                Type = NotificationType.Error,
+            });
+            return false;
+        }
     }
 
     [JSInvokable]
     public async Task OnPixelClicked(int x, int y)
     {
-        if (_canvas == null) return;
+        if (_canvas == null || IsDisposed) return;
 
         _clickedPixel = (x, y);
         _clickedPixelData = await ApiClient.GetPixelData(_canvas.Name, x, y, useCache: true);
+        if (IsDisposed)
+        {
+            return;
+        }
 
         if (_clickedPixelData != null && _colors != null)
         {
             var color = _colors.FirstOrDefault(c => c.Id == _clickedPixelData.ColorId);
             if (color != null && _renderer != null)
             {
-                _renderer.EnqueuePixel(x, y, color.HexValue);
+                _renderer.EnqueuePixel(x, y, color.HexValue, suppressRipple: true);
             }
         }
 
@@ -301,14 +536,197 @@
     }
 
     [JSInvokable]
+    public Task OnBrushStrokeStarted()
+    {
+        if (IsDisposed)
+        {
+            return Task.CompletedTask;
+        }
+
+        lock (_brushStrokeLock)
+        {
+            _brushStrokeActive = true;
+            _brushStrokePixels.Clear();
+            _activeStrokeId = Guid.NewGuid();
+            _strokeChunkSequence = 0;
+            _strokeChunkStartedAtUtc = DateTime.UtcNow;
+        }
+
+        return Task.CompletedTask;
+    }
+
+    [JSInvokable]
+    public async Task OnBrushStrokeEnded()
+    {
+        if (IsDisposed)
+        {
+            return;
+        }
+
+        var hasPendingBrushPixels = false;
+        var hasPendingErasePixels = false;
+        lock (_brushStrokeLock)
+        {
+            _brushStrokeActive = false;
+            _brushStrokePixels.Clear();
+            hasPendingBrushPixels = _pendingBrushPixels.Count > 0;
+            hasPendingErasePixels = _pendingEraseCoordinates.Count > 0;
+        }
+
+        if (hasPendingBrushPixels)
+        {
+            await FlushPendingBrushPixelsAsync(drainAllRemaining: true);
+        }
+
+        if (hasPendingErasePixels)
+        {
+            await FlushPendingErasePixelsAsync(drainAllRemaining: true);
+        }
+
+        ResetStrokePlaybackTracking();
+    }
+
+    [JSInvokable]
+    public async Task OnBrushPixelPaintRequested(int x, int y)
+    {
+        if (_canvas == null || _renderer == null || _pixelManager == null || !IsDragToolEnabled || _canvas.CanvasMode != CanvasMode.FreeDraw || IsDisposed)
+        {
+            return;
+        }
+
+        var isErasing = _isEraserBrushEnabled;
+        var brushPaintSettings = isErasing ? null : _pixelManager.GetBrushPaintSettings();
+        if (!isErasing && brushPaintSettings is null)
+        {
+            return;
+        }
+
+        bool shouldPaint;
+        bool shouldFlushBrushBatch;
+        lock (_brushStrokeLock)
+        {
+            if (!_brushStrokeActive)
+            {
+                _brushStrokeActive = true;
+                _brushStrokePixels.Clear();
+            }
+
+            shouldPaint = _brushStrokePixels.Add((x, y));
+            shouldFlushBrushBatch = false;
+        }
+
+        if (!shouldPaint)
+        {
+            return;
+        }
+
+        if (isErasing)
+        {
+            var erasedPixels = GetEraserCoordinates(x, y).ToList();
+            var eraseCandidates = new List<CoordinateDto>();
+            var shouldFlushEraseBatch = false;
+
+            lock (_brushStrokeLock)
+            {
+                foreach (var pixel in erasedPixels)
+                {
+                    var coordinate = (pixel.X, pixel.Y);
+                    if (_clearedErasePixels.Contains(coordinate) || _pendingErasePixels.Contains(coordinate))
+                    {
+                        continue;
+                    }
+
+                    if (ApiClient.IsPixelKnownWhite(_canvas.Name, pixel.X, pixel.Y))
+                    {
+                        _clearedErasePixels.Add(coordinate);
+                        continue;
+                    }
+
+                    eraseCandidates.Add(pixel);
+                }
+            }
+
+            if (eraseCandidates.Count > 0)
+            {
+                var nonWhiteEraseCandidates = await _renderer.FilterNonWhiteCoordinatesAsync(eraseCandidates);
+                var nonWhiteCandidateKeys = nonWhiteEraseCandidates
+                    .Select(filtered => (filtered.X, filtered.Y))
+                    .ToHashSet();
+                var skippedAsWhite = eraseCandidates
+                    .Where(candidate => !nonWhiteCandidateKeys.Contains((candidate.X, candidate.Y)))
+                    .ToList();
+
+                RememberClearedPixels(skippedAsWhite);
+
+                lock (_brushStrokeLock)
+                {
+                    foreach (var pixel in nonWhiteEraseCandidates)
+                    {
+                        var coordinate = (pixel.X, pixel.Y);
+                        if (_clearedErasePixels.Contains(coordinate) || !_pendingErasePixels.Add(coordinate))
+                        {
+                            continue;
+                        }
+
+                        _pendingEraseCoordinates.Add(pixel);
+                    }
+
+                    shouldFlushEraseBatch = _pendingEraseCoordinates.Count >= BrushBatchSize;
+                }
+            }
+
+            if (shouldFlushEraseBatch)
+            {
+                await FlushPendingErasePixelsAsync();
+            }
+        }
+        else
+        {
+            var (colorId, colorHex) = brushPaintSettings!.Value;
+
+            lock (_brushStrokeLock)
+            {
+                _pendingErasePixels.Remove((x, y));
+                _pendingEraseCoordinates.RemoveAll(coordinate => coordinate.X == x && coordinate.Y == y);
+                _clearedErasePixels.Remove((x, y));
+                _pendingBrushPixels.Add((x, y, colorId, colorHex));
+                shouldFlushBrushBatch = _pendingBrushPixels.Count >= BrushBatchSize;
+            }
+        }
+
+        if (shouldFlushBrushBatch)
+        {
+            await FlushPendingBrushPixelsAsync();
+        }
+    }
+
+    [JSInvokable]
     public async Task OnWindowResize()
     {
+        if (IsDisposed)
+        {
+            return;
+        }
+
         await CalculateViewportDimensions();
+        if (IsDisposed)
+        {
+            return;
+        }
+
         if (_jsViewportInitialized)
         {
-            await JSRuntime.InvokeVoidAsync("canvasViewport.fitCanvas", ViewportWidth, ViewportHeight);
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("canvasViewport.fitCanvas", ViewportWidth, ViewportHeight);
+            }
+            catch (Exception ex) when (IsExpectedUiShutdownException(ex))
+            {
+                return;
+            }
         }
-        StateHasChanged();
+
+        await RequestRenderAsync();
     }
 
     private async Task CalculateViewportDimensions()
@@ -339,6 +757,9 @@
                 ViewportHeight = Math.Max(100, m.WindowHeight - m.MainVPad - safetyPadding);
             }
         }
+        catch (Exception ex) when (IsExpectedUiShutdownException(ex))
+        {
+        }
         catch (Exception ex)
         {
             _nlog.Warn(ex, "Failed to calculate viewport dimensions");
@@ -351,7 +772,22 @@
     protected override async Task OnParametersSetAsync()
     {
         var requestedCanvasName = canvasName;
-        var loadVersion = System.Threading.Interlocked.Increment(ref _canvasLoadVersion);
+        var loadVersion = Interlocked.Increment(ref _canvasLoadVersion);
+
+        lock (_brushStrokeLock)
+        {
+            _brushStrokeActive = false;
+            _brushStrokePixels.Clear();
+            _pendingBrushPixels.Clear();
+            _pendingErasePixels.Clear();
+            _clearedErasePixels.Clear();
+            _pendingEraseCoordinates.Clear();
+            _activeStrokeId = null;
+            _strokeChunkSequence = 0;
+            _strokeChunkStartedAtUtc = default;
+        }
+
+        _pendingLocalPlaybackOperationIds.Clear();
 
         if (_hasRendered && _lastSidebarMargin != SidebarMargin)
         {
@@ -376,6 +812,9 @@
         _canvas = null;
         _loadedCanvasName = requestedCanvasName;
         _pendingViewportRefresh = true;
+        _rendererInitializationInProgress = false;
+        _maintenanceProgress = null;
+        _textCaretPreview = TextCaretPreviewState.Hidden;
 
         if (_renderer != null)
         {
@@ -397,6 +836,15 @@
             if (loadVersion != _canvasLoadVersion || requestedCanvasName != canvasName) return;
 
             _canvas = loadedCanvas;
+            if (_canvas.CanvasMode != CanvasMode.FreeDraw && _isBrushEnabled)
+            {
+                _isBrushEnabled = false;
+            }
+            if (_canvas.CanvasMode != CanvasMode.FreeDraw && _isEraserBrushEnabled)
+            {
+                _isEraserBrushEnabled = false;
+            }
+            await RefreshGoldAsync();
 
             await LoadCanvasImage(loadVersion);
 
@@ -412,7 +860,7 @@
 
             if (_hasRendered && _renderer != null)
             {
-                await InitJsViewport();
+                await InitJsViewport(loadVersion);
             }
         }
         catch (Exception ex)
@@ -424,20 +872,1028 @@
     private async Task LoadCanvasImage(int? loadVersion = null)
     {
         if (_canvas == null || _renderer == null) return;
+
+        var canvasSnapshot = _canvas;
+        var versionSnapshot = loadVersion ?? _canvasLoadVersion;
         try
         {
-            var canvasSnapshot = _canvas;
-            var versionSnapshot = loadVersion ?? _canvasLoadVersion;
-
             var imageBytes = await ApiClient.GetCanvasImage(canvasSnapshot);
-            if (versionSnapshot != _canvasLoadVersion || !ReferenceEquals(canvasSnapshot, _canvas) || _renderer == null) return;
+            if (!IsCurrentCanvasLoad(versionSnapshot, canvasSnapshot) || _renderer == null) return;
 
             await _renderer.LoadImageAsync(imageBytes);
+        }
+        catch (Exception ex) when (IsExpectedUiShutdownException(ex) || !IsCurrentCanvasLoad(versionSnapshot, canvasSnapshot))
+        {
         }
         catch (Exception ex)
         {
             _nlog.Warn(ex, "Failed to load image for canvas {0}", canvasName);
         }
+    }
+
+    private async Task RefreshGoldAsync()
+    {
+        if (_canvas?.CanvasMode != CanvasMode.Economy)
+        {
+            _gold = 0;
+            return;
+        }
+
+        try
+        {
+            _gold = await ApiClient.GetCurrentGoldAsync(_canvas.Id);
+        }
+        catch (Exception ex)
+        {
+            _nlog.Warn(ex, "Failed to refresh gold for canvas {0}", _canvas.Name);
+            _gold = 0;
+        }
+    }
+
+    private async Task HandleCanvasIncomeUpdatesAsync(IReadOnlyCollection<CanvasIncomeUpdateDto> updates)
+    {
+        if (_canvas?.CanvasMode != CanvasMode.Economy || string.IsNullOrWhiteSpace(_currentUserName))
+        {
+            return;
+        }
+
+        var currentUserUpdate = updates.FirstOrDefault(update =>
+            string.Equals(update.UserName, _currentUserName, StringComparison.Ordinal));
+
+        if (currentUserUpdate == null)
+        {
+            return;
+        }
+
+        _gold = currentUserUpdate.NewBalance;
+
+        await NotifyAsync(new CustomNotification
+        {
+            Message = $"Received {currentUserUpdate.Amount} gold as income.",
+            Type = NotificationType.Success,
+        });
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task HandleCanvasMaintenanceProgressAsync(CanvasMaintenanceProgressDto? progress)
+    {
+        if (progress == null)
+        {
+            return;
+        }
+
+        var currentCanvasName = _canvas?.Name ?? canvasName;
+        if (!string.Equals(currentCanvasName, progress.CanvasName, StringComparison.OrdinalIgnoreCase))
+        {
+            return;
+        }
+
+        _maintenanceProgress = progress;
+
+        if (string.Equals(progress.Status, "Failed", StringComparison.OrdinalIgnoreCase))
+        {
+            await NotifyAsync(new CustomNotification
+            {
+                Message = progress.Message ?? $"Canvas {progress.CanvasName} {progress.Operation.ToLowerInvariant()} failed.",
+                Type = NotificationType.Error,
+            });
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private Task HandleCanvasErasedLocallyAsync()
+    {
+        _suppressNextEraseNotification = true;
+        return HandleCanvasErasedAsync(showNotification: false);
+    }
+
+    private Task HandleCanvasDeletedLocallyAsync()
+    {
+        _suppressNextDeleteNotification = true;
+        return HandleCanvasDeletedAsync(showNotification: false);
+    }
+
+    private Task OnCanvasErasedFromHubAsync(string erasedCanvasName)
+    {
+        var currentCanvasName = _canvas?.Name ?? canvasName;
+        if (!string.Equals(currentCanvasName, erasedCanvasName, StringComparison.OrdinalIgnoreCase))
+        {
+            return Task.CompletedTask;
+        }
+
+        var showNotification = !_suppressNextEraseNotification;
+        _suppressNextEraseNotification = false;
+        return HandleCanvasErasedAsync(showNotification);
+    }
+
+    private Task OnCanvasDeletedFromHubAsync(string deletedCanvasName)
+    {
+        var currentCanvasName = _canvas?.Name ?? canvasName;
+        if (!string.Equals(currentCanvasName, deletedCanvasName, StringComparison.OrdinalIgnoreCase))
+        {
+            return Task.CompletedTask;
+        }
+
+        var showNotification = !_suppressNextDeleteNotification;
+        _suppressNextDeleteNotification = false;
+        return HandleCanvasDeletedAsync(showNotification);
+    }
+
+    private async Task HandleCanvasErasedAsync(bool showNotification)
+    {
+        if (_canvas == null || _isHandlingCanvasErase)
+        {
+            return;
+        }
+
+        _isHandlingCanvasErase = true;
+        try
+        {
+            lock (_brushStrokeLock)
+            {
+                _brushStrokeActive = false;
+                _brushStrokePixels.Clear();
+                _pendingBrushPixels.Clear();
+                _pendingErasePixels.Clear();
+                _clearedErasePixels.Clear();
+                _pendingEraseCoordinates.Clear();
+            }
+
+            ApiClient.ClearCanvasCache(_canvas.Name);
+            if (_clickedPixelData?.Id.HasValue == true)
+            {
+                ApiClient.InvalidateHistoryCache(_clickedPixelData.Id.Value);
+            }
+
+            _maintenanceProgress = null;
+
+            _clickedPixelData = null;
+            await LoadCanvasImage();
+
+            if (showNotification)
+            {
+                await NotifyAsync(new CustomNotification
+                {
+                    Message = $"Canvas {_canvas.Name} was erased.",
+                    Type = NotificationType.Info,
+                });
+            }
+
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            _nlog.Warn(ex, "Failed to refresh erased canvas {0}", _canvas.Name);
+        }
+        finally
+        {
+            _isHandlingCanvasErase = false;
+        }
+    }
+
+    private async Task HandleCanvasDeletedAsync(bool showNotification)
+    {
+        if (_canvas == null || _isHandlingCanvasDelete)
+        {
+            return;
+        }
+
+        _isHandlingCanvasDelete = true;
+        var deletedCanvasName = _canvas.Name;
+
+        try
+        {
+            lock (_brushStrokeLock)
+            {
+                _brushStrokeActive = false;
+                _brushStrokePixels.Clear();
+                _pendingBrushPixels.Clear();
+                _pendingErasePixels.Clear();
+                _clearedErasePixels.Clear();
+                _pendingEraseCoordinates.Clear();
+            }
+
+            ApiClient.ClearCanvasCache(deletedCanvasName);
+            if (_clickedPixelData?.Id.HasValue == true)
+            {
+                ApiClient.InvalidateHistoryCache(_clickedPixelData.Id.Value);
+            }
+
+            _maintenanceProgress = null;
+
+            _clickedPixel = null;
+            _clickedPixelData = null;
+            _onlineUsers = new List<string>();
+
+            if (Sidebar != null)
+            {
+                await Sidebar.RemoveCanvasAsync(deletedCanvasName);
+                await Sidebar.RefreshCanvases();
+            }
+
+            if (_hubConnection?.State == HubConnectionState.Connected && string.Equals(_connectedGroup, deletedCanvasName, StringComparison.OrdinalIgnoreCase))
+            {
+                await _hubConnection.InvokeAsync("LeaveCanvasGroup", deletedCanvasName);
+                _connectedGroup = null;
+            }
+
+            if (showNotification)
+            {
+                await NotifyAsync(new CustomNotification
+                {
+                    Message = $"Canvas {deletedCanvasName} was deleted by its creator.",
+                    Type = NotificationType.Info,
+                });
+            }
+
+            NavigationManager.NavigateTo(DefaultConfig.DefaultPage);
+        }
+        catch (Exception ex)
+        {
+            _nlog.Warn(ex, "Failed to handle deleted canvas {0}", deletedCanvasName);
+        }
+    }
+
+    private async Task HandleBrushToggledAsync(bool isEnabled)
+    {
+        var shouldResetStroke = !isEnabled || _isEraserBrushEnabled;
+        _isBrushEnabled = isEnabled;
+        if (isEnabled)
+        {
+            _isEraserBrushEnabled = false;
+        }
+
+        if (shouldResetStroke)
+        {
+            ResetBrushStroke();
+        }
+
+        await SyncBrushModeAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task HandleEraserBrushToggledAsync(bool isEnabled)
+    {
+        var shouldResetStroke = !isEnabled || _isBrushEnabled;
+        _isEraserBrushEnabled = isEnabled;
+        if (isEnabled)
+        {
+            _isBrushEnabled = false;
+        }
+
+        if (shouldResetStroke)
+        {
+            ResetBrushStroke();
+        }
+
+        await SyncBrushModeAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private Task HandleSelectedEraserSizeChangedAsync(int size)
+    {
+        _selectedEraserSize = size;
+        return SyncBrushPreviewAndStateAsync();
+    }
+
+    private Task HandleSelectedBrushColorHexChangedAsync(string? colorHex)
+    {
+        _selectedBrushColorHex = colorHex;
+        return SyncBrushPreviewAndStateAsync();
+    }
+
+    private Task HandleTextCaretPreviewChanged(TextCaretPreviewState state)
+    {
+        _textCaretPreview = state;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SyncBrushModeAsync()
+    {
+        if (!_jsViewportInitialized)
+        {
+            return;
+        }
+
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("canvasViewport.setBrushEnabled", IsDragToolEnabled);
+            await JSRuntime.InvokeVoidAsync("canvasViewport.setBrushPreview", _isEraserBrushEnabled, _selectedBrushColorHex, _selectedEraserSize);
+        }
+        catch (Exception ex)
+        {
+            _nlog.Warn(ex, "Failed to sync brush mode to canvas viewport");
+        }
+    }
+
+    private async Task SyncBrushPreviewAndStateAsync()
+    {
+        await SyncBrushModeAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private void ResetBrushStroke()
+    {
+        lock (_brushStrokeLock)
+        {
+            _brushStrokeActive = false;
+            _brushStrokePixels.Clear();
+            _activeStrokeId = null;
+            _strokeChunkSequence = 0;
+            _strokeChunkStartedAtUtc = default;
+        }
+    }
+
+    private async Task UpdateBrushSelectionAsync((int X, int Y) pixel, PixelDto? pixelData, int requestVersion)
+    {
+        if (requestVersion != Volatile.Read(ref _brushSelectionVersion))
+        {
+            return;
+        }
+
+        _clickedPixel = pixel;
+        _clickedPixelData = pixelData;
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private Task EnqueueConfirmedPixelPlaybackAsync(ConfirmedPixelPlaybackBatchDto? playbackBatch)
+    {
+        if (playbackBatch == null || playbackBatch.Pixels.Count == 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        if (!string.IsNullOrWhiteSpace(playbackBatch.ClientOperationId)
+            && _pendingLocalPlaybackOperationIds.TryRemove(playbackBatch.ClientOperationId, out _))
+        {
+            return Task.CompletedTask;
+        }
+
+        Interlocked.Increment(ref _pendingConfirmedPlaybackCount);
+        return _confirmedPlaybackChannel.Writer.WriteAsync(ConfirmedPlaybackWorkItem.FromPixels(playbackBatch)).AsTask();
+    }
+
+    private Task EnqueueConfirmedPixelDeletionPlaybackAsync(ConfirmedPixelDeletionPlaybackBatchDto? playbackBatch)
+    {
+        if (playbackBatch == null || playbackBatch.Coordinates.Count == 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        if (!string.IsNullOrWhiteSpace(playbackBatch.ClientOperationId)
+            && _pendingLocalPlaybackOperationIds.TryRemove(playbackBatch.ClientOperationId, out _))
+        {
+            return Task.CompletedTask;
+        }
+
+        Interlocked.Increment(ref _pendingConfirmedPlaybackCount);
+        return _confirmedPlaybackChannel.Writer.WriteAsync(ConfirmedPlaybackWorkItem.FromDeletes(playbackBatch)).AsTask();
+    }
+
+    private async Task RunBrushFlushLoopAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var timer = new PeriodicTimer(BrushFlushInterval);
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                var hasPendingBrushPixels = false;
+                lock (_brushStrokeLock)
+                {
+                    hasPendingBrushPixels = _pendingBrushPixels.Count > 0;
+                }
+
+                if (!hasPendingBrushPixels)
+                {
+                    continue;
+                }
+
+                await InvokeAsync(() => FlushPendingBrushPixelsAsync());
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task RunConfirmedPlaybackLoopAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            while (await _confirmedPlaybackChannel.Reader.WaitToReadAsync(cancellationToken))
+            {
+                while (_confirmedPlaybackChannel.Reader.TryRead(out var workItem))
+                {
+                    Interlocked.Decrement(ref _pendingConfirmedPlaybackCount);
+                    await PlayConfirmedPlaybackAsync(workItem, cancellationToken);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task PlayConfirmedPlaybackAsync(ConfirmedPlaybackWorkItem workItem, CancellationToken cancellationToken)
+    {
+        var totalItemCount = workItem.IsDeletion ? workItem.Coordinates.Count : workItem.Pixels.Count;
+        if (totalItemCount == 0)
+        {
+            return;
+        }
+
+        var durationMs = NormalizeConfirmedPlaybackDuration(workItem.DurationMs, totalItemCount, Volatile.Read(ref _pendingConfirmedPlaybackCount));
+        var stepCount = Math.Max(1, Math.Min(totalItemCount, (int)Math.Ceiling(durationMs / 16d)));
+        var delayPerStepMs = stepCount <= 1 ? 0 : Math.Max(1, durationMs / stepCount);
+        var processedCount = 0;
+
+        for (var step = 0; step < stepCount && processedCount < totalItemCount; step++)
+        {
+            var remainingCount = totalItemCount - processedCount;
+            var remainingSteps = stepCount - step;
+            var sliceCount = Math.Max(1, (int)Math.Ceiling(remainingCount / (double)remainingSteps));
+
+            if (workItem.IsDeletion)
+            {
+                var slice = workItem.Coordinates.Skip(processedCount).Take(sliceCount).ToList();
+                await HandlePixelsDeletedAsync(slice);
+            }
+            else
+            {
+                var slice = workItem.Pixels.Skip(processedCount).Take(sliceCount).ToList();
+                foreach (var pixel in slice)
+                {
+                    await HandlePixelUpdatedAsync(pixel, suppressRipple: true);
+                }
+            }
+
+            processedCount += sliceCount;
+
+            if (delayPerStepMs > 0 && processedCount < totalItemCount)
+            {
+                await Task.Delay(delayPerStepMs, cancellationToken);
+            }
+        }
+    }
+
+    private static int NormalizeConfirmedPlaybackDuration(int durationMs, int itemCount, int pendingQueueDepth)
+    {
+        var fallbackDurationMs = Math.Max(16, (int)Math.Ceiling(itemCount * 1000d / 600d));
+        var effectiveDurationMs = durationMs > 0 ? durationMs : fallbackDurationMs;
+        var maxDurationMs = pendingQueueDepth > 2 ? 32 : pendingQueueDepth > 0 ? 64 : 120;
+        return Math.Max(16, Math.Min(effectiveDurationMs, maxDurationMs));
+    }
+
+    private void TrackLocalPlaybackOperation(StrokePlaybackMetadataDto? playback)
+    {
+        if (!string.IsNullOrWhiteSpace(playback?.ClientOperationId))
+        {
+            _pendingLocalPlaybackOperationIds[playback.ClientOperationId] = 0;
+        }
+    }
+
+    private void ForgetLocalPlaybackOperation(StrokePlaybackMetadataDto? playback)
+    {
+        if (!string.IsNullOrWhiteSpace(playback?.ClientOperationId))
+        {
+            _pendingLocalPlaybackOperationIds.TryRemove(playback.ClientOperationId, out _);
+        }
+    }
+
+    private StrokePlaybackMetadataDto? CreateStrokePlaybackMetadataLocked()
+    {
+        if (!_activeStrokeId.HasValue)
+        {
+            return null;
+        }
+
+        var nowUtc = DateTime.UtcNow;
+        var startedAtUtc = _strokeChunkStartedAtUtc == default ? nowUtc : _strokeChunkStartedAtUtc;
+        _strokeChunkStartedAtUtc = nowUtc;
+
+        return new StrokePlaybackMetadataDto
+        {
+            ClientOperationId = Guid.NewGuid().ToString("N"),
+            StrokeId = _activeStrokeId.Value,
+            ChunkSequence = _strokeChunkSequence++,
+            ChunkDurationMs = Math.Max(16, (int)Math.Round((nowUtc - startedAtUtc).TotalMilliseconds)),
+        };
+    }
+
+    private void ResetStrokePlaybackTracking()
+    {
+        lock (_brushStrokeLock)
+        {
+            if (_pendingBrushPixels.Count > 0 || _pendingEraseCoordinates.Count > 0)
+            {
+                return;
+            }
+
+            _activeStrokeId = null;
+            _strokeChunkSequence = 0;
+            _strokeChunkStartedAtUtc = default;
+        }
+    }
+
+    private async Task HandlePixelsDeletedAsync(IReadOnlyCollection<CoordinateDto>? coordinates)
+    {
+        if (_canvas == null || coordinates == null || coordinates.Count == 0)
+        {
+            return;
+        }
+
+        var currentCanvasName = _canvas.Name;
+        var selectedPixelId = _clickedPixelData?.Id;
+        var selectedPixelDeleted = false;
+        var uniquePixels = new HashSet<(int X, int Y)>();
+
+        foreach (var coordinate in coordinates)
+        {
+            if (!uniquePixels.Add((coordinate.X, coordinate.Y)))
+            {
+                continue;
+            }
+
+            lock (_brushStrokeLock)
+            {
+                _pendingErasePixels.Remove((coordinate.X, coordinate.Y));
+                _pendingEraseCoordinates.RemoveAll(item => item.X == coordinate.X && item.Y == coordinate.Y);
+                _clearedErasePixels.Add((coordinate.X, coordinate.Y));
+            }
+
+            ApiClient.HandlePixelDeleted(currentCanvasName, coordinate.X, coordinate.Y, _canvas.Id);
+            _renderer?.EnqueuePixelClear(coordinate.X, coordinate.Y);
+
+            if (_clickedPixel.HasValue && _clickedPixel.Value.X == coordinate.X && _clickedPixel.Value.Y == coordinate.Y)
+            {
+                selectedPixelDeleted = true;
+            }
+        }
+
+        if (selectedPixelDeleted)
+        {
+            if (selectedPixelId.HasValue)
+            {
+                ApiClient.InvalidateHistoryCache(selectedPixelId.Value);
+            }
+
+            _clickedPixelData = null;
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private Task HandlePixelUpdatedAsync(PixelDto pixel)
+    {
+        return HandlePixelUpdatedAsync(pixel, suppressRipple: !ShouldAnimateRemoteRipple(pixel));
+    }
+
+    private async Task HandlePixelUpdatedAsync(PixelDto pixel, bool suppressRipple)
+    {
+        if (_renderer == null || _colors == null)
+        {
+            return;
+        }
+
+        var currentCanvasName = _canvas?.Name ?? canvasName;
+        var selectedPixelId = _clickedPixel.HasValue && _clickedPixel.Value.X == pixel.X && _clickedPixel.Value.Y == pixel.Y
+            ? _clickedPixelData?.Id
+            : null;
+
+        lock (_brushStrokeLock)
+        {
+            _pendingErasePixels.Remove((pixel.X, pixel.Y));
+            _pendingEraseCoordinates.RemoveAll(coordinate => coordinate.X == pixel.X && coordinate.Y == pixel.Y);
+            _clearedErasePixels.Remove((pixel.X, pixel.Y));
+        }
+
+        if (_canvas?.CanvasMode == CanvasMode.Economy)
+        {
+            ApiClient.InvalidatePixelCache(currentCanvasName, pixel.X, pixel.Y);
+            if (selectedPixelId.HasValue)
+            {
+                ApiClient.InvalidateHistoryCache(selectedPixelId.Value);
+            }
+        }
+        else
+        {
+            ApiClient.HandlePixelColorChanged(currentCanvasName, pixel.X, pixel.Y, pixel.ColorId, pixel.Id ?? selectedPixelId, pixel.OwnerId);
+        }
+
+        var color = _colors.FirstOrDefault(cDto => cDto.Id == pixel.ColorId);
+        if (color != null)
+        {
+            _renderer.EnqueuePixel(pixel.X, pixel.Y, color.HexValue, suppressRipple);
+        }
+
+        if (_clickedPixel.HasValue && _clickedPixel.Value.X == pixel.X && _clickedPixel.Value.Y == pixel.Y && _pixelManager != null)
+        {
+            if (_canvas?.CanvasMode == CanvasMode.Economy)
+            {
+                _clickedPixelData = await ApiClient.GetPixelData(currentCanvasName, pixel.X, pixel.Y, useCache: false);
+            }
+            else if (_clickedPixelData != null)
+            {
+                _clickedPixelData.ColorId = pixel.ColorId;
+                _clickedPixelData.Id ??= pixel.Id;
+                _clickedPixelData.OwnerId = pixel.OwnerId;
+                if (_clickedPixelData.Id.HasValue)
+                {
+                    ApiClient.InvalidateHistoryCache(_clickedPixelData.Id.Value);
+                }
+            }
+
+            await _pixelManager.UpdatePixelHistory();
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task RunEraseFlushLoopAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            using var timer = new PeriodicTimer(EraseFlushInterval);
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                var hasPendingErasePixels = false;
+                lock (_brushStrokeLock)
+                {
+                    hasPendingErasePixels = _pendingEraseCoordinates.Count > 0;
+                }
+
+                if (!hasPendingErasePixels)
+                {
+                    continue;
+                }
+
+                await InvokeAsync(() => FlushPendingErasePixelsAsync());
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task FlushPendingBrushPixelsAsync(bool drainAllRemaining = false)
+    {
+        if (_canvas == null)
+        {
+            return;
+        }
+
+        await _brushFlushSemaphore.WaitAsync();
+        try
+        {
+            while (true)
+            {
+                List<(int X, int Y, int ColorId, string ColorHex)> batch;
+                StrokePlaybackMetadataDto? playback;
+                lock (_brushStrokeLock)
+                {
+                    if (_pendingBrushPixels.Count == 0)
+                    {
+                        return;
+                    }
+
+                    var firstColorId = _pendingBrushPixels[0].ColorId;
+                    batch = _pendingBrushPixels
+                        .TakeWhile(item => item.ColorId == firstColorId)
+                        .Take(BrushBatchSize)
+                        .ToList();
+                    _pendingBrushPixels.RemoveRange(0, batch.Count);
+                    playback = CreateStrokePlaybackMetadataLocked();
+                }
+
+                if (batch.Count == 0)
+                {
+                    return;
+                }
+
+                TrackLocalPlaybackOperation(playback);
+
+                var requestVersion = Interlocked.Increment(ref _brushSelectionVersion);
+
+                try
+                {
+                    var result = _pixelManager != null
+                        ? await _pixelManager.PaintBatchAsync(
+                            batch.Select(item => new CoordinateDto(item.X, item.Y)).ToList(),
+                            batch[0].ColorId,
+                            playback: playback)
+                        : await ApiClient.PaintBatch(
+                            _canvas,
+                            batch.Select(item => new CoordinateDto(item.X, item.Y)).ToList(),
+                            batch[0].ColorId,
+                            playback: playback);
+
+                    if (result.ChangedPixels.Count == 0)
+                    {
+                        ForgetLocalPlaybackOperation(playback);
+                    }
+
+                    var changedCoordinates = result.ChangedPixels
+                        .Select(pixel => (pixel.X, pixel.Y))
+                        .ToHashSet();
+                    var rejectedPixels = batch
+                        .Where(item => !changedCoordinates.Contains((item.X, item.Y)))
+                        .Select(item => (item.X, item.Y))
+                        .ToList();
+
+                    if (rejectedPixels.Count > 0)
+                    {
+                        await RestoreRejectedBrushPixelsAsync(rejectedPixels);
+                    }
+
+                    var lastChangedPixel = result.ChangedPixels.LastOrDefault();
+                    if (lastChangedPixel != null)
+                    {
+                        await UpdateBrushSelectionAsync((lastChangedPixel.X, lastChangedPixel.Y), lastChangedPixel, requestVersion);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    ForgetLocalPlaybackOperation(playback);
+                    _nlog.Warn(ex, "Brush batch paint rejected on canvas {0}", _canvas.Name);
+                    await RestoreRejectedBrushPixelsAsync(batch.Select(item => (item.X, item.Y)));
+                    return;
+                }
+
+                if (!drainAllRemaining)
+                {
+                    return;
+                }
+            }
+        }
+        finally
+        {
+            _brushFlushSemaphore.Release();
+            ResetStrokePlaybackTracking();
+        }
+    }
+
+    private async Task FlushPendingErasePixelsAsync(bool drainAllRemaining = false)
+    {
+        var renderer = _renderer;
+        if (_canvas == null || renderer == null)
+        {
+            return;
+        }
+
+        await _eraseFlushSemaphore.WaitAsync();
+
+        try
+        {
+            while (true)
+            {
+                List<CoordinateDto> eraseBatch;
+                StrokePlaybackMetadataDto? playback;
+                lock (_brushStrokeLock)
+                {
+                    if (_pendingEraseCoordinates.Count == 0)
+                    {
+                        return;
+                    }
+
+                    var queuedBatch = _pendingEraseCoordinates.Take(BrushBatchSize).ToList();
+                    _pendingEraseCoordinates.RemoveRange(0, queuedBatch.Count);
+                    foreach (var coordinate in queuedBatch)
+                    {
+                        _pendingErasePixels.Remove((coordinate.X, coordinate.Y));
+                    }
+
+                    eraseBatch = queuedBatch
+                        .Where(coordinate => !_clearedErasePixels.Contains((coordinate.X, coordinate.Y)))
+                        .ToList();
+
+                    playback = eraseBatch.Count > 0 ? CreateStrokePlaybackMetadataLocked() : null;
+                }
+
+                if (eraseBatch.Count == 0)
+                {
+                    if (!drainAllRemaining)
+                    {
+                        return;
+                    }
+
+                    continue;
+                }
+
+                var filteredEraseBatch = await renderer.FilterNonWhiteCoordinatesAsync(eraseBatch);
+                var filteredEraseKeys = filteredEraseBatch
+                    .Select(filtered => (filtered.X, filtered.Y))
+                    .ToHashSet();
+                var skippedAsWhite = eraseBatch
+                    .Where(coordinate => !filteredEraseKeys.Contains((coordinate.X, coordinate.Y)))
+                    .ToList();
+
+                RememberClearedPixels(skippedAsWhite);
+
+                if (filteredEraseBatch.Count == 0)
+                {
+                    if (!drainAllRemaining)
+                    {
+                        return;
+                    }
+
+                    continue;
+                }
+
+                var requestVersion = Interlocked.Increment(ref _brushSelectionVersion);
+
+                try
+                {
+                    TrackLocalPlaybackOperation(playback);
+                    var result = await ApiClient.DeleteBatchAsync(_canvas, filteredEraseBatch, playback: playback);
+                    if (result.DeletedCoordinates.Count == 0)
+                    {
+                        ForgetLocalPlaybackOperation(playback);
+                    }
+
+                    var deletedCoordinateKeys = result.DeletedCoordinates
+                        .Select(coordinate => (coordinate.X, coordinate.Y))
+                        .ToHashSet();
+                    var rejectedPixels = filteredEraseBatch
+                        .Where(item => !deletedCoordinateKeys.Contains((item.X, item.Y)))
+                        .Select(item => (item.X, item.Y))
+                        .ToList();
+
+                    if (rejectedPixels.Count > 0)
+                    {
+                        await RestoreRejectedBrushPixelsAsync(rejectedPixels);
+                    }
+
+                    if (result.DeletedCoordinates.Count > 0)
+                    {
+                        await HandlePixelsDeletedAsync(result.DeletedCoordinates);
+
+                        var lastDeletedPixel = result.DeletedCoordinates.LastOrDefault();
+                        if (lastDeletedPixel != null)
+                        {
+                            await UpdateBrushSelectionAsync((lastDeletedPixel.X, lastDeletedPixel.Y), null, requestVersion);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    ForgetLocalPlaybackOperation(playback);
+                    _nlog.Warn(ex, "Brush batch erase rejected on canvas {0}", _canvas.Name);
+                    await RestoreRejectedBrushPixelsAsync(filteredEraseBatch.Select(item => (item.X, item.Y)));
+                    return;
+                }
+
+                if (!drainAllRemaining)
+                {
+                    return;
+                }
+            }
+        }
+        finally
+        {
+            _eraseFlushSemaphore.Release();
+            ResetStrokePlaybackTracking();
+        }
+    }
+
+    private IEnumerable<CoordinateDto> GetEraserCoordinates(int x, int y)
+    {
+        if (_canvas == null)
+        {
+            yield break;
+        }
+
+        var half = _selectedEraserSize / 2;
+        for (var dx = -half; dx <= half; dx++)
+        {
+            var targetX = x + dx;
+            if (targetX < 0 || targetX >= _canvas.Width)
+            {
+                continue;
+            }
+
+            for (var dy = -half; dy <= half; dy++)
+            {
+                var targetY = y + dy;
+                if (targetY < 0 || targetY >= _canvas.Height)
+                {
+                    continue;
+                }
+
+                yield return new CoordinateDto(targetX, targetY);
+            }
+        }
+    }
+
+    private void RememberClearedPixels(IReadOnlyCollection<CoordinateDto> coordinates)
+    {
+        if (_canvas == null || coordinates.Count == 0)
+        {
+            return;
+        }
+
+        foreach (var coordinate in coordinates)
+        {
+            lock (_brushStrokeLock)
+            {
+                _pendingErasePixels.Remove((coordinate.X, coordinate.Y));
+                _pendingEraseCoordinates.RemoveAll(item => item.X == coordinate.X && item.Y == coordinate.Y);
+                _clearedErasePixels.Add((coordinate.X, coordinate.Y));
+            }
+
+            ApiClient.HandlePixelDeleted(_canvas.Name, coordinate.X, coordinate.Y, _canvas.Id);
+        }
+    }
+
+    private async Task RestoreRejectedBrushPixelsAsync(IEnumerable<(int X, int Y)> coordinates)
+    {
+        foreach (var (x, y) in coordinates.Distinct())
+        {
+            await RestoreRejectedBrushPixelAsync(x, y);
+        }
+    }
+
+    private bool HasPendingLocalPixelMutation(int x, int y)
+    {
+        lock (_brushStrokeLock)
+        {
+            return _pendingErasePixels.Contains((x, y))
+                || _pendingBrushPixels.Any(pixel => pixel.X == x && pixel.Y == y);
+        }
+    }
+
+    private async Task RestoreRejectedBrushPixelAsync(int x, int y)
+    {
+        if (_canvas == null || HasPendingLocalPixelMutation(x, y))
+        {
+            return;
+        }
+
+        PixelDto? actualPixel = null;
+
+        try
+        {
+            actualPixel = await ApiClient.GetPixelData(_canvas.Name, x, y, useCache: false);
+        }
+        catch (Exception reloadEx)
+        {
+            _nlog.Warn(reloadEx, "Failed to reload pixel data after rejected brush paint at ({0}, {1}) on canvas {2}", x, y, _canvas.Name);
+        }
+
+        if (HasPendingLocalPixelMutation(x, y))
+        {
+            return;
+        }
+
+        if (actualPixel != null)
+        {
+            var restoredColor = _colors?.FirstOrDefault(color => color.Id == actualPixel.ColorId);
+            if (restoredColor != null && _renderer != null)
+            {
+                _renderer.EnqueuePixel(x, y, restoredColor.HexValue, suppressRipple: true);
+            }
+
+            if (actualPixel.Id.HasValue)
+            {
+                ApiClient.InvalidateHistoryCache(actualPixel.Id.Value);
+            }
+
+            if (_clickedPixel.HasValue && _clickedPixel.Value.X == x && _clickedPixel.Value.Y == y)
+            {
+                _clickedPixelData = actualPixel;
+                await InvokeAsync(StateHasChanged);
+            }
+
+            return;
+        }
+
+        await LoadCanvasImage();
+
+        if (_clickedPixel.HasValue && _clickedPixel.Value.X == x && _clickedPixel.Value.Y == y)
+        {
+            _clickedPixelData = null;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private string GetTextCaretStyle()
+    {
+        if (!_clickedPixel.HasValue)
+        {
+            return string.Empty;
+        }
+
+        var x = _clickedPixel.Value.X;
+        var y = _clickedPixel.Value.Y + 1;
+        var color = string.IsNullOrWhiteSpace(_textCaretPreview.ColorHex) ? "#1e4f9d" : _textCaretPreview.ColorHex;
+        return $"left:{x}px; top:{y}px; height:{_textCaretPreview.FontSize}px; background:{color};";
+    }
+
+    private bool ShouldAnimateRemoteRipple(PixelDto pixel)
+    {
+        return pixel.OwnerId.HasValue
+            && _currentUserId.HasValue
+            && pixel.OwnerId.Value != _currentUserId.Value;
     }
 
     private async Task NotifyAsync(CustomNotification note)
@@ -452,28 +1908,102 @@
         }
     }
 
+    private sealed class ConfirmedPlaybackWorkItem
+    {
+        public List<PixelDto> Pixels { get; init; } = [];
+        public List<CoordinateDto> Coordinates { get; init; } = [];
+        public bool IsDeletion { get; init; }
+        public int DurationMs { get; init; }
+
+        public static ConfirmedPlaybackWorkItem FromPixels(ConfirmedPixelPlaybackBatchDto playbackBatch) => new()
+        {
+            Pixels = playbackBatch.Pixels,
+            DurationMs = playbackBatch.DurationMs,
+        };
+
+        public static ConfirmedPlaybackWorkItem FromDeletes(ConfirmedPixelDeletionPlaybackBatchDto playbackBatch) => new()
+        {
+            Coordinates = playbackBatch.Coordinates,
+            IsDeletion = true,
+            DurationMs = playbackBatch.DurationMs,
+        };
+    }
+
     public async ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposeState, 1) != 0)
+        {
+            return;
+        }
+
         _canvasReady = false;
+        _rendererInitializationInProgress = false;
+        Interlocked.Increment(ref _canvasLoadVersion);
+        _brushFlushLoopCts.Cancel();
+        _eraseFlushLoopCts.Cancel();
+        _confirmedPlaybackLoopCts.Cancel();
+        _pendingLocalPlaybackOperationIds.Clear();
 
-        try { await JSRuntime.InvokeVoidAsync("canvasViewport.dispose"); } catch { }
+        try { await JSRuntime.InvokeVoidAsync("canvasViewport.dispose"); } catch (Exception ex) when (IsExpectedUiShutdownException(ex)) { }
 
-        if (_resizeListener != null)
+        if (_resizeListenerId != null)
         {
             try
             {
-                await JSRuntime.InvokeVoidAsync("canvasHelpers.unregisterResizeListener", _resizeListener);
-                await _resizeListener.DisposeAsync();
+                await JSRuntime.InvokeVoidAsync("canvasHelpers.unregisterResizeListener", _resizeListenerId);
             }
-            catch { }
+            catch (Exception ex) when (IsExpectedUiShutdownException(ex)) { }
+
+            _resizeListenerId = null;
         }
 
         _objRef?.Dispose();
+        _objRef = null;
 
         if (_renderer != null)
         {
             await _renderer.DisposeAsync();
+            _renderer = null;
         }
+
+        if (_eraseFlushLoopTask != null)
+        {
+            try
+            {
+                await _eraseFlushLoopTask;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+
+        if (_brushFlushLoopTask != null)
+        {
+            try
+            {
+                await _brushFlushLoopTask;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+
+        if (_confirmedPlaybackLoopTask != null)
+        {
+            try
+            {
+                await _confirmedPlaybackLoopTask;
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+
+        _brushFlushLoopCts.Dispose();
+        _eraseFlushLoopCts.Dispose();
+        _confirmedPlaybackLoopCts.Dispose();
+        _brushFlushSemaphore.Dispose();
+        _eraseFlushSemaphore.Dispose();
         
         if (_hubConnection != null)
         {

@@ -39,7 +39,7 @@
             <!-- Email -->
             <div class="mb-4">
                 <label for="emailInput" class="form-label">Email</label>
-                <input id="emailInput" class="form-control fixed-width" @bind="_signupModel.Email" @oninput="ClearError" />
+                <input id="emailInput" class="form-control fixed-width" @bind="_signupModel.Email" @bind:event="oninput" @bind:after="ClearError" />
                 @if (!string.IsNullOrEmpty(_emailError))
                 {
                     <div class="text-danger mt-1">@_emailError</div>
@@ -49,7 +49,7 @@
             <!-- Password -->
             <div class="mb-4">
                 <label for="passwordInput" class="form-label">Password</label>
-                <input id="passwordInput" type="password" class="form-control fixed-width" @bind="_signupModel.Password" @oninput="ClearError" />
+                <input id="passwordInput" type="password" class="form-control fixed-width" @bind="_signupModel.Password" @bind:event="oninput" @bind:after="ClearError" />
                 @if (!string.IsNullOrEmpty(_passwordError))
                 {
                     <div class="text-danger mt-1">@_passwordError</div>
@@ -59,7 +59,7 @@
             <!-- Username -->
             <div class="mb-4">
                 <label for="usernameInput" class="form-label">Username</label>
-                <input id="usernameInput" class="form-control fixed-width" @bind="_signupModel.UserName" @oninput="ClearError" />
+                <input id="usernameInput" class="form-control fixed-width" @bind="_signupModel.UserName" @bind:event="oninput" @bind:after="ClearError" />
                 @if (!string.IsNullOrEmpty(_usernameError))
                 {
                     <div class="text-danger mt-1">@_usernameError</div>
@@ -87,7 +87,7 @@
     private string _busyTitle = "Checking session";
     private string _busyMessage = "Checking whether you are already signed in.";
 
-    private void ClearError(ChangeEventArgs e)
+    private void ClearError()
     {
         _emailError = null;
         _passwordError = null;

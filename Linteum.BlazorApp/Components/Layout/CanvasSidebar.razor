@@ -34,6 +34,34 @@
         StateHasChanged();
     }
 
+    public async Task RemoveCanvasAsync(string canvasName)
+    {
+        var item = _canvases?.FirstOrDefault(c => string.Equals(c.Name, canvasName, StringComparison.OrdinalIgnoreCase));
+        if (item != null)
+        {
+            _canvases!.Remove(item);
+            _nlog.Info("Removed canvas {0} from sidebar list", canvasName);
+        }
+
+        if (string.Equals(_pendingCanvasName, canvasName, StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                _pendingCts?.Cancel();
+                _pendingCts?.Dispose();
+            }
+            catch (Exception ex)
+            {
+                _nlog.Warn(ex, "Error while clearing pending action for deleted canvas {0}", canvasName);
+            }
+
+            _pendingCts = null;
+            _pendingCanvasName = null;
+        }
+
+        await InvokeAsync(StateHasChanged);
+    }
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender && !_hasRendered)
@@ -321,6 +349,22 @@
 
     private bool IsHome(string? name) =>
         !string.IsNullOrEmpty(name) && string.Equals(name, DefaultConfig.DefaultCanvasName, StringComparison.OrdinalIgnoreCase);
+
+    private static string GetCanvasModeIcon(CanvasMode mode) => mode switch
+    {
+        CanvasMode.Normal => "🎨",
+        CanvasMode.FreeDraw => "✏️",
+        CanvasMode.Economy => "💰",
+        _ => "🖼️"
+    };
+
+    private static string GetCanvasModeTooltip(CanvasMode mode) => mode switch
+    {
+        CanvasMode.Normal => "Normal mode",
+        CanvasMode.FreeDraw => "FreeDraw mode",
+        CanvasMode.Economy => "Economy mode",
+        _ => mode.ToString()
+    };
 }
 @if (!_isCollapsed)
 {
@@ -360,17 +404,21 @@
                 {
                     var isHome = IsHome(canvas.Name);
                     <li class="list-group-item sidebar-canvas-item d-flex justify-content-between align-items-center">
-                        <div class="d-flex align-items-center canvas-name-container" @onclick="@(() => NavigateToCanvas(canvas.Name))" style="cursor: pointer;">
-                            <span class="me-2 fs-5">@(isHome ? "🏠" : "🎨") </span>
-                            <span class="canvas-name-text">@canvas.Name</span>
+                        <div class="d-flex align-items-center canvas-name-container"
+                             @onclick="@(() => NavigateToCanvas(canvas.Name))"
+                             style="cursor: pointer;"
+                             title="@canvas.Name">
+                            <span class="me-2 fs-5"
+                                  title="@(isHome ? $"{GetCanvasModeTooltip(canvas.CanvasMode)} · Home canvas" : GetCanvasModeTooltip(canvas.CanvasMode))">@GetCanvasModeIcon(canvas.CanvasMode)</span>
+                            <span class="canvas-name-text" title="@canvas.Name">@canvas.Name</span>
                         </div>
                         <div class="d-flex align-items-center unsubscribe-container">
                             @if (!isHome)
                             {
-                                <button class="btn btn-danger btn-unsubscribe" title="Unsubscribe"
+                                <button class="btn btn-danger btn-unsubscribe" title="Leave @canvas.Name"
                                         @onclick="async () => await OnUnsubscribeClicked(canvas.Name)"
                                         @onclick:stopPropagation="true">
-                                    Unsubscribe
+                                    Leave
                                 </button>
                             }
                         </div>

@@ -1,5 +1,4 @@
 using System.Net.Http.Json;
-using System.Threading.Channels;
 using Linteum.Shared;
 using Linteum.Shared.DTO;
 using SixLabors.ImageSharp;
@@ -8,8 +7,9 @@ namespace Linteum.Bots;
 
 public class XeroxBot : BotBase
 {
-    private const int WorkerCount = 16;
-    private const int QueueCapacity = 2048;
+    private const int BatchSize = 100;
+    private const int MaxRetries = 5;
+    private const int RequestDelayMs = 1;
 
     private readonly string _canvasName;
     private readonly string _imageName;
@@ -36,11 +36,13 @@ public class XeroxBot : BotBase
 
     protected override async Task<CanvasDto?> GetOrCreateCanvasAsync()
     {
-        try
+        using var response = await HttpClient.GetAsync($"Canvases/name/{Uri.EscapeDataString(_canvasName)}");
+        if (response.IsSuccessStatusCode)
         {
-            return await HttpClient.GetFromJsonAsync<CanvasDto>($"Canvases/name/{_canvasName}");
+            return await response.Content.ReadFromJsonAsync<CanvasDto>();
         }
-        catch (HttpRequestException ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound)
+
+        if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
             Console.WriteLine($"Canvas '{_canvasName}' not found, creating with image dimensions...");
 
@@ -58,19 +60,26 @@ public class XeroxBot : BotBase
                 Name = _canvasName,
                 Width = imageInfo.Width,
                 Height = imageInfo.Height,
-                CanvasMode = CanvasMode.Sandbox
+                CanvasMode = CanvasMode.FreeDraw
             };
 
             Console.WriteLine($"Creating canvas '{_canvasName}' ({newCanvas.Width}x{newCanvas.Height})...");
-            var response = await HttpClient.PostAsJsonAsync("Canvases/Add?passwordHash=", newCanvas);
-            if (response.IsSuccessStatusCode)
+            var createResponse = await HttpClient.PostAsJsonAsync("Canvases/Add?passwordHash=", newCanvas);
+            if (createResponse.IsSuccessStatusCode)
             {
-                return await response.Content.ReadFromJsonAsync<CanvasDto>();
+                return await createResponse.Content.ReadFromJsonAsync<CanvasDto>();
             }
 
-            Console.WriteLine($"Failed to create canvas: {response.StatusCode}");
+            Console.WriteLine($"Failed to create canvas: {createResponse.StatusCode}");
             return null;
         }
+
+        var errorBody = await response.Content.ReadAsStringAsync();
+        Console.WriteLine($"Failed to fetch canvas '{_canvasName}': {(int)response.StatusCode} {response.StatusCode}");
+        if (!string.IsNullOrWhiteSpace(errorBody))
+            Console.WriteLine(errorBody);
+
+        return null;
     }
 
     protected override async Task RunBehaviorAsync(CanvasDto canvas, List<ColorDto> colors, CancellationToken ct)
@@ -101,56 +110,60 @@ public class XeroxBot : BotBase
             (pixels[i], pixels[j]) = (pixels[j], pixels[i]);
         }
 
-        Console.WriteLine($"Drawing {pixels.Count} pixels in random order ({WorkerCount} workers)...");
-
-        var channel = Channel.CreateBounded<(int X, int Y, int ColorId)>(new BoundedChannelOptions(QueueCapacity)
-        {
-            FullMode = BoundedChannelFullMode.Wait,
-            SingleWriter = true,
-            SingleReader = false
-        });
+        Console.WriteLine($"Drawing {pixels.Count} pixels in random order in batches of {BatchSize}...");
 
         int drawn = 0;
+        int failed = 0;
+        var batch = new List<PixelDto>(BatchSize);
 
-        var workers = new List<Task>(WorkerCount);
-        for (int i = 0; i < WorkerCount; i++)
+        foreach (var (x, y) in pixels)
         {
-            int workerId = i;
-            workers.Add(Task.Run(async () =>
+            var targetColor = grid[x, y];
+            batch.Add(new PixelDto
             {
-                await foreach (var item in channel.Reader.ReadAllAsync(ct))
+                X = x,
+                Y = y,
+                ColorId = targetColor.Id,
+                CanvasId = canvas.Id,
+            });
+
+            if (batch.Count >= BatchSize)
+            {
+                var changedCount = await PaintPixelBatchWithRetriesAsync(canvas, batch, ct);
+                drawn += changedCount;
+                failed += batch.Count - changedCount;
+                if (drawn > 0 && drawn % 1000 < BatchSize)
                 {
-                    try
-                    {
-                        await PaintPixelAsync(canvas, item.X, item.Y, item.ColorId);
-                        int count = Interlocked.Increment(ref drawn);
-                        if (count % 1000 == 0)
-                            Console.WriteLine($"Progress: {count}/{pixels.Count} pixels drawn.");
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"[Worker {workerId}] Error: {ex.Message}");
-                        await Task.Delay(50, ct);
-                    }
+                    Console.WriteLine($"Progress: {drawn}/{pixels.Count} pixels drawn.");
                 }
-            }));
-        }
 
-        try
-        {
-            foreach (var (x, y) in pixels)
-            {
-                var targetColor = grid[x, y];
-                await channel.Writer.WriteAsync((x, y, targetColor.Id), ct);
+                batch.Clear();
             }
         }
-        finally
+
+        if (batch.Count > 0)
         {
-            channel.Writer.Complete();
-            await Task.WhenAll(workers);
+            var changedCount = await PaintPixelBatchWithRetriesAsync(canvas, batch, ct);
+            drawn += changedCount;
+            failed += batch.Count - changedCount;
         }
 
-        Console.WriteLine($"Done! All {pixels.Count} pixels drawn.");
+        Console.WriteLine($"Done! Drawn {drawn}/{pixels.Count} pixels. Failed: {failed}.");
+    }
+
+    private async Task<int> PaintPixelBatchWithRetriesAsync(CanvasDto canvas, IReadOnlyCollection<PixelDto> pixels, CancellationToken ct)
+    {
+        for (int attempt = 1; attempt <= MaxRetries + 1; attempt++)
+        {
+            var result = await TryPaintPixelsAsync(canvas, pixels, ct);
+            await Task.Delay(RequestDelayMs, ct);
+
+            if (result != null)
+                return result.ChangedPixels.Count;
+        }
+
+        Console.WriteLine($"Failed to draw a pixel batch after {MaxRetries + 1} attempts.");
+        return 0;
     }
 }
 

@@ -14,12 +14,14 @@ public class BalanceChangedEventRepository : IBalanceChangedEventRepository
     private IMapper _mapper;
     private AppDbContext _context;
     private readonly ILogger<BalanceChangedEventRepository> _logger;
+    private readonly ICanvasWriteCoordinator _canvasWriteCoordinator;
     
-    public BalanceChangedEventRepository(AppDbContext context, IMapper mapper, ILogger<BalanceChangedEventRepository> logger)
+    public BalanceChangedEventRepository(AppDbContext context, IMapper mapper, ILogger<BalanceChangedEventRepository> logger, ICanvasWriteCoordinator canvasWriteCoordinator)
     {
         _mapper = mapper;
         _context = context;
         _logger = logger;
+        _canvasWriteCoordinator = canvasWriteCoordinator;
     }
     
     public async Task<IEnumerable<BalanceChangedEventDto>> GetByUserIdAsync(Guid userId)
@@ -27,6 +29,7 @@ public class BalanceChangedEventRepository : IBalanceChangedEventRepository
         return await _context.BalanceChangedEvents.AsNoTracking()
             .Where(e => e.UserId == userId)
             .OrderByDescending(x => x.ChangedAt)
+            .Take(500)
             .ProjectTo<BalanceChangedEventDto>(_mapper.ConfigurationProvider)
             .ToListAsync()
             .ContinueWith(t => t.Result.AsEnumerable());
@@ -37,6 +40,7 @@ public class BalanceChangedEventRepository : IBalanceChangedEventRepository
         return await _context.BalanceChangedEvents.AsNoTracking()
             .Where(e => e.UserId == userId && e.CanvasId == CanvasId)
             .OrderByDescending(x => x.ChangedAt)
+            .Take(500)
             .ProjectTo<BalanceChangedEventDto>(_mapper.ConfigurationProvider)
             .ToListAsync()
             .ContinueWith(t => t.Result.AsEnumerable());
@@ -44,41 +48,45 @@ public class BalanceChangedEventRepository : IBalanceChangedEventRepository
 
     public async Task<BalanceChangedEventDto?> TryChangeBalanceAsync(Guid userId, Guid canvasId, long delta, BalanceChangedReason reason)
     {
-        await using var transaction = await _context.Database.BeginTransactionAsync();
-        try
+        return await _canvasWriteCoordinator.ExecuteAsync(canvasId, async _ =>
         {
-            var lastEntry = await _context.BalanceChangedEvents
-                .Where(e => e.UserId == userId && e.CanvasId == canvasId)
-                .OrderByDescending(e => e.ChangedAt)
-                .FirstOrDefaultAsync();
-
-            var newBalance = lastEntry?.NewBalance + delta ?? delta;
-            if (newBalance < 0)
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            try
             {
+                var lastEntry = await _context.BalanceChangedEvents
+                    .Where(e => e.UserId == userId && e.CanvasId == canvasId)
+                    .OrderByDescending(e => e.ChangedAt)
+                    .ThenByDescending(e => e.Id)
+                    .FirstOrDefaultAsync();
+
+                var newBalance = lastEntry?.NewBalance + delta ?? delta;
+                if (newBalance < 0)
+                {
+                    await transaction.RollbackAsync();
+                    return null;
+                }
+
+                var newEvent = new BalanceChangedEvent
+                {
+                    Id = Guid.NewGuid(),
+                    UserId = userId,
+                    CanvasId = canvasId,
+                    ChangedAt = DateTime.UtcNow,
+                    NewBalance = newBalance,
+                    OldBalance = lastEntry?.NewBalance ?? 0,
+                    Reason = reason,
+                };
+                await _context.BalanceChangedEvents.AddAsync(newEvent);
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+                return _mapper.Map<BalanceChangedEventDto>(newEvent);
+            }
+            catch (DbUpdateException ex)
+            {
+                _logger.LogError(ex, "Error updating balance for user {UserId} on canvas {CanvasId}", userId, canvasId);
                 await transaction.RollbackAsync();
                 return null;
             }
-
-            var newEvent = new BalanceChangedEvent
-            {
-                Id = Guid.NewGuid(),
-                UserId = userId,
-                CanvasId = canvasId,
-                ChangedAt = DateTime.UtcNow,
-                NewBalance = newBalance,
-                OldBalance = lastEntry?.NewBalance ?? 0,
-                Reason = reason,
-            };
-            await _context.BalanceChangedEvents.AddAsync(newEvent);
-            await _context.SaveChangesAsync();
-            await transaction.CommitAsync();
-            return _mapper.Map<BalanceChangedEventDto>(newEvent);
-        }
-        catch (DbUpdateException ex)
-        {
-            _logger.LogError(ex, "Error updating balance for user {UserId} on canvas {CanvasId}", userId, canvasId);
-            await transaction.RollbackAsync();
-            return null;
-        }
+        });
     }
 }
