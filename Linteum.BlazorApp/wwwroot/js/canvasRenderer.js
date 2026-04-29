@@ -13,6 +13,9 @@ window.canvasRenderer = {
     clickStrokeStyle: 'rgba(55,140,255,1)',
     hoverLineWidth: 0.08,
     clickLineWidth: 0.12,
+    clickPreviewMode: 'blink-negative',
+    clickPreviewColor: null,
+    clickBlinkPeriodMs: 1500,
     suppressedRipples: new Map(),
     animationFrameId: null,
     suppressedRippleTtlMs: 2000,
@@ -84,49 +87,102 @@ window.canvasRenderer = {
         this.clickStrokeStyle = state && state.clickColor ? state.clickColor : 'rgba(55,140,255,1)';
         this.hoverLineWidth = state && state.hoverLineWidth ? state.hoverLineWidth : 0.08;
         this.clickLineWidth = state && state.clickLineWidth ? state.clickLineWidth : 0.12;
+        this.clickPreviewMode = state && state.clickPreviewMode ? state.clickPreviewMode : 'blink-negative';
+        this.clickPreviewColor = state && state.clickPreviewColor ? state.clickPreviewColor : null;
+        this.clickBlinkPeriodMs = state && state.clickBlinkPeriodMs ? state.clickBlinkPeriodMs : 1500;
 
         if (!this.overlayCtx) {
             return;
         }
 
         this.renderOverlay(performance.now());
-    },
 
-    drawMarkerCell: function (x, y, fillStyle) {
-        if (x < 0 || y < 0 || x >= this.width || y >= this.height) {
+        if (this.shouldAnimateOverlay()) {
+            this.ensureAnimation();
             return;
         }
 
-        this.overlayCtx.fillStyle = 'rgba(0,0,0,0.92)';
-        this.overlayCtx.fillRect(x, y, 1, 1);
-        this.overlayCtx.fillStyle = fillStyle;
-        this.overlayCtx.fillRect(x + 0.16, y + 0.16, 0.68, 0.68);
+        if (this.animationFrameId) {
+            cancelAnimationFrame(this.animationFrameId);
+            this.animationFrameId = null;
+        }
     },
 
-    drawInteractionOutline: function (pixel, strokeStyle, lineWidth) {
-        if (!this.overlayCtx || !pixel || !strokeStyle) {
-            return;
+    normalizeHexColor: function (color) {
+        if (typeof color !== 'string') {
+            return null;
         }
 
-        const baseX = pixel.x;
-        const baseY = pixel.y;
-        const ringCells = [
-            { x: baseX - 1, y: baseY - 1 },
-            { x: baseX, y: baseY - 1 },
-            { x: baseX + 1, y: baseY - 1 },
-            { x: baseX - 1, y: baseY },
-            { x: baseX + 1, y: baseY },
-            { x: baseX - 1, y: baseY + 1 },
-            { x: baseX, y: baseY + 1 },
-            { x: baseX + 1, y: baseY + 1 }
-        ];
+        const normalizedColor = color.trim();
+        if (!/^#?[0-9a-fA-F]{6}$/.test(normalizedColor)) {
+            return null;
+        }
+
+        return normalizedColor.charAt(0) === '#' ? normalizedColor.toLowerCase() : `#${normalizedColor.toLowerCase()}`;
+    },
+
+    rgbToHex: function (red, green, blue) {
+        return `#${red.toString(16).padStart(2, '0')}${green.toString(16).padStart(2, '0')}${blue.toString(16).padStart(2, '0')}`;
+    },
+
+    getNegativeHex: function (color) {
+        const normalized = this.normalizeHexColor(color) || '#ffffff';
+        const hex = normalized.substring(1);
+        const red = 255 - parseInt(hex.substring(0, 2), 16);
+        const green = 255 - parseInt(hex.substring(2, 4), 16);
+        const blue = 255 - parseInt(hex.substring(4, 6), 16);
+        return this.rgbToHex(red, green, blue);
+    },
+
+    getCommittedPixelHex: function (x, y) {
+        if (!this.committedImageData || x < 0 || y < 0 || x >= this.width || y >= this.height) {
+            return '#ffffff';
+        }
+
+        const imageData = this.getCommittedPixelData(x, y);
+        if (imageData[3] === 0) {
+            return '#ffffff';
+        }
+
+        return this.rgbToHex(imageData[0], imageData[1], imageData[2]);
+    },
+
+    shouldAnimateOverlay: function () {
+        return this.ripples.length > 0 || (this.clickPixel !== null && this.clickPreviewMode === 'blink-negative');
+    },
+
+    ensureAnimation: function () {
+        if (!this.animationFrameId) {
+            this.animationFrameId = requestAnimationFrame(this.animate.bind(this));
+        }
+    },
+
+    resolveClickPreviewColor: function (now) {
+        if (!this.clickPixel) {
+            return null;
+        }
+
+        if (this.clickPreviewMode === 'solid') {
+            return this.normalizeHexColor(this.clickPreviewColor) || '#ffffff';
+        }
+
+        const currentColor = this.getCommittedPixelHex(this.clickPixel.x, this.clickPixel.y);
+        const negativeColor = this.getNegativeHex(currentColor);
+        const blinkPeriodMs = Math.max(250, this.clickBlinkPeriodMs || 1000);
+        const halfPeriodMs = blinkPeriodMs / 2;
+        const elapsed = typeof now === 'number' ? now : performance.now();
+        return Math.floor(elapsed / halfPeriodMs) % 2 === 0 ? currentColor : negativeColor;
+    },
+
+    drawSelectedPixel: function (pixel, fillStyle) {
+        if (!this.overlayCtx || !pixel || !fillStyle || pixel.x < 0 || pixel.y < 0 || pixel.x >= this.width || pixel.y >= this.height) {
+            return;
+        }
 
         this.overlayCtx.save();
         this.overlayCtx.globalAlpha = 1;
-        for (let i = 0; i < ringCells.length; i++) {
-            const cell = ringCells[i];
-            this.drawMarkerCell(cell.x, cell.y, strokeStyle);
-        }
+        this.overlayCtx.fillStyle = fillStyle;
+        this.overlayCtx.fillRect(pixel.x, pixel.y, 1, 1);
         this.overlayCtx.restore();
     },
 
@@ -167,7 +223,7 @@ window.canvasRenderer = {
         this.overlayCtx.globalAlpha = 1.0;
         this.ripples = keep;
 
-        this.drawInteractionOutline(this.clickPixel, this.clickStrokeStyle, this.clickLineWidth);
+        this.drawSelectedPixel(this.clickPixel, this.resolveClickPreviewColor(timestamp));
     },
 
     init: function (canvasElement, overlayElement) {
@@ -189,6 +245,9 @@ window.canvasRenderer = {
         this.clickStrokeStyle = 'rgba(55,140,255,1)';
         this.hoverLineWidth = 0.08;
         this.clickLineWidth = 0.12;
+        this.clickPreviewMode = 'blink-negative';
+        this.clickPreviewColor = null;
+        this.clickBlinkPeriodMs = 1500;
         this.suppressedRipples.clear();
         
         if (this.animationFrameId) {
@@ -325,20 +384,19 @@ window.canvasRenderer = {
             });
         }
 
-        if (!this.animationFrameId && this.ripples.length > 0) {
-            this.animate();
+        if (this.shouldAnimateOverlay()) {
+            this.ensureAnimation();
         }
     },
 
     animate: function () {
+        this.animationFrameId = null;
         this.renderOverlay(performance.now());
 
-        if (this.ripples.length === 0) {
-            this.animationFrameId = null;
+        if (!this.shouldAnimateOverlay()) {
             return;
         }
 
-
-        this.animationFrameId = requestAnimationFrame(this.animate.bind(this));
+        this.ensureAnimation();
     }
 };

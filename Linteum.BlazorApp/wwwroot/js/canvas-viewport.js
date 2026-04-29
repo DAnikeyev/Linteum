@@ -163,6 +163,19 @@ function CanvasViewportController(dotNetRef, viewportEl, rendererEl, coordsEl, c
             return;
         }
 
+        var renderedClickPixel = self.brushEnabled ? null : self.clickedPx;
+        var clickPreviewMode = 'blink-negative';
+        var clickPreviewColor = null;
+        if (renderedClickPixel) {
+            if (self.eraserEnabled) {
+                clickPreviewMode = 'solid';
+                clickPreviewColor = '#ffffff';
+            } else if (self.brushEnabled && self.brushPreviewColor) {
+                clickPreviewMode = 'solid';
+                clickPreviewColor = self.brushPreviewColor;
+            }
+        }
+
         var rects = self._getRects();
         var rendererRect = rects.renderer;
         var pxScaleX = rendererRect && self.cw > 0 ? rendererRect.width / self.cw : self.scale;
@@ -171,12 +184,28 @@ function CanvasViewportController(dotNetRef, viewportEl, rendererEl, coordsEl, c
 
         window.canvasRenderer.setInteractionState({
             hoverPixel: null,
-            clickPixel: self.clickedPx,
+            clickPixel: renderedClickPixel,
             hoverColor: 'rgba(55,140,255,1)',
             clickColor: 'rgba(55,140,255,1)',
             hoverLineWidth: hoverStrokeWidth / pxScale,
-            clickLineWidth: clickStrokeWidth / pxScale
+            clickLineWidth: clickStrokeWidth / pxScale,
+            clickPreviewMode: clickPreviewMode,
+            clickPreviewColor: clickPreviewColor,
+            clickBlinkPeriodMs: 1500
         });
+    };
+
+    self._clearClickedPixel = function (notifyBlazor) {
+        if (!self.clickedPx) {
+            return;
+        }
+
+        self.clickedPx = null;
+        self._scheduleFrame();
+
+        if (notifyBlazor) {
+            self.dotNet.invokeMethodAsync('OnPixelSelectionCleared');
+        }
     };
 
     self.pixelAt = function (clientX, clientY) {
@@ -267,12 +296,14 @@ function CanvasViewportController(dotNetRef, viewportEl, rendererEl, coordsEl, c
             self.dotNet.invokeMethodAsync('OnBrushStrokeEnded');
         }
         self._updateCursor();
+        self._scheduleFrame();
     };
 
     self.setBrushPreview = function (eraserEnabled, colorHex, eraserSize) {
         self.eraserEnabled = !!eraserEnabled;
         self.brushPreviewColor = typeof colorHex === 'string' && colorHex.length > 0 ? colorHex : null;
         self.eraserSize = Math.max(1, eraserSize || 1);
+        self._scheduleFrame();
     };
 
     self._renderBrushPreviewPixel = function (p) {
@@ -485,11 +516,25 @@ function CanvasViewportController(dotNetRef, viewportEl, rendererEl, coordsEl, c
                 self.clickedPx = p;
                 self._scheduleFrame();
                 self.dotNet.invokeMethodAsync('OnPixelClicked', p.x, p.y);
+            } else if (!self.brushEnabled) {
+                self._clearClickedPixel(true);
             }
         }
         self.dragging = false;
         self.activeMouseButton = null;
         self._updateCursor();
+    };
+
+    self._onDocumentMouseDown = function (e) {
+        if (e.button !== 0 || self.brushEnabled || self.dragging || !self.clickedPx) {
+            return;
+        }
+
+        if (self.viewport && self.viewport.contains(e.target)) {
+            return;
+        }
+
+        self._clearClickedPixel(true);
     };
 
     self._onAuxClick = function (e) {
@@ -698,6 +743,7 @@ function CanvasViewportController(dotNetRef, viewportEl, rendererEl, coordsEl, c
     self.eventLayer.addEventListener('touchend', self._onTouchEnd);
     self.eventLayer.addEventListener('touchcancel', self._onTouchEnd);
 
+    document.addEventListener('mousedown', self._onDocumentMouseDown, true);
     window.addEventListener('scroll', self._onScrollOrResize, { passive: true });
     window.addEventListener('resize', self._onScrollOrResize, { passive: true });
 
@@ -736,6 +782,7 @@ CanvasViewportController.prototype.destroy = function () {
     // Remove document-level listeners that may still be attached from a drag
     document.removeEventListener('mousemove', this._onDocMove);
     document.removeEventListener('mouseup', this._onDocUp);
+    document.removeEventListener('mousedown', this._onDocumentMouseDown, true);
 
     window.removeEventListener('scroll', this._onScrollOrResize);
     window.removeEventListener('resize', this._onScrollOrResize);
