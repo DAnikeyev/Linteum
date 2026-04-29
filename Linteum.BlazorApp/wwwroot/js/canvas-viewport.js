@@ -5,7 +5,7 @@
  * to avoid Blazor Server SignalR round-trips for high-frequency mouse events.
  *
  * Performance optimizations:
- *  - GPU-accelerated CSS transform (translate3d + scale) instead of left/top/width/height
+ *  - Lightweight translate3d panning with rAF-batched renderer resizing for zoom
  *  - requestAnimationFrame batching for all visual updates
  *  - Cached viewport rect (invalidated on scroll/resize/zoom)
  *  - Document-level mousemove/mouseup during drag so panning never "sticks"
@@ -89,13 +89,13 @@ function CanvasViewportController(dotNetRef, viewportEl, rendererEl, coordsEl, c
     self._rectDirty = true;
     self._resizeObserver = null;
     self._transformDirty = false;
-    // ── GPU-accelerated renderer setup ──
+    // ── Renderer setup ──
     rendererEl.style.willChange = 'transform';
     rendererEl.style.transformOrigin = '0 0';
     rendererEl.style.position = 'absolute';
     rendererEl.style.left = '0';
     rendererEl.style.top = '0';
-    // Set the native size once; scaling is handled by transform
+    // Start at native size; zoom updates renderer dimensions
     rendererEl.style.width = cw + 'px';
     rendererEl.style.height = ch + 'px';
 
@@ -153,6 +153,11 @@ function CanvasViewportController(dotNetRef, viewportEl, rendererEl, coordsEl, c
         return resolved || cssColor;
     };
 
+    self._snapOffset = function (value) {
+        var dpr = window.devicePixelRatio || 1;
+        return Math.round(value * dpr) / dpr;
+    };
+
     self._syncInteractionOverlay = function (hoverPixel, hoverStrokeWidth, clickStrokeWidth) {
         if (!window.canvasRenderer || typeof window.canvasRenderer.setInteractionState !== 'function') {
             return;
@@ -201,8 +206,14 @@ function CanvasViewportController(dotNetRef, viewportEl, rendererEl, coordsEl, c
     };
 
     self.applyTransform = function () {
+        var renderedWidth = self.cw * self.scale;
+        var renderedHeight = self.ch * self.scale;
+        var renderedOx = self._snapOffset(self.ox);
+        var renderedOy = self._snapOffset(self.oy);
+        self.renderer.style.width = renderedWidth + 'px';
+        self.renderer.style.height = renderedHeight + 'px';
         self.renderer.style.transform =
-            'translate3d(' + self.ox + 'px,' + self.oy + 'px,0) scale(' + self.scale + ')';
+            'translate3d(' + renderedOx + 'px,' + renderedOy + 'px,0)';
         self._transformDirty = false;
         self._invalidateRects();
     };
@@ -515,8 +526,8 @@ function CanvasViewportController(dotNetRef, viewportEl, rendererEl, coordsEl, c
         var wy = (my - self.oy) / self.scale;
 
         self.scale = ns;
-        self.ox = mx - wx * ns;
-        self.oy = my - wy * ns;
+        self.ox = mx - wx * self.scale;
+        self.oy = my - wy * self.scale;
         self.clamp();
         self._transformDirty = true;
         self._invalidateRects(); // zoom changes the visual transform, rect may shift
@@ -607,8 +618,8 @@ function CanvasViewportController(dotNetRef, viewportEl, rendererEl, coordsEl, c
                 var wy = (my - self.oy) / self.scale;
 
                 self.scale = ns;
-                self.ox = mx - wx * ns;
-                self.oy = my - wy * ns;
+                self.ox = mx - wx * self.scale;
+                self.oy = my - wy * self.scale;
 
                 // Also pan with midpoint movement
                 if (self._lastPinchMid) {

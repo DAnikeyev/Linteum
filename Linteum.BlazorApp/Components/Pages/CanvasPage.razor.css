@@ -63,6 +63,21 @@
     position: absolute;
 }
 
+.canvas-surface {
+    display: block;
+    width: 100%;
+    height: 100%;
+    pointer-events: none;
+    image-rendering: crisp-edges;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: pixelated;
+}
+
+.canvas-surface--overlay {
+    position: absolute;
+    inset: 0;
+}
+
 .canvas-text-caret {
     position: absolute;
     width: 1px;

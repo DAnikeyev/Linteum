@@ -1,4 +1,6 @@
 window.canvasRenderer = {
+    canvas: null,
+    overlay: null,
     ctx: null,
     overlayCtx: null,
     width: 0,
@@ -44,6 +46,34 @@ window.canvasRenderer = {
             if (now - suppressedAt > this.suppressedRippleTtlMs) {
                 this.suppressedRipples.delete(key);
             }
+        }
+    },
+
+    disableImageSmoothing: function (context) {
+        if (!context) {
+            return;
+        }
+
+        context.imageSmoothingEnabled = false;
+
+        if ('webkitImageSmoothingEnabled' in context) {
+            context.webkitImageSmoothingEnabled = false;
+        }
+
+        if ('mozImageSmoothingEnabled' in context) {
+            context.mozImageSmoothingEnabled = false;
+        }
+
+        if ('msImageSmoothingEnabled' in context) {
+            context.msImageSmoothingEnabled = false;
+        }
+
+        if ('oImageSmoothingEnabled' in context) {
+            context.oImageSmoothingEnabled = false;
+        }
+
+        if ('imageSmoothingQuality' in context) {
+            context.imageSmoothingQuality = 'low';
         }
     },
 
@@ -141,15 +171,13 @@ window.canvasRenderer = {
     },
 
     init: function (canvasElement, overlayElement) {
+        this.canvas = canvasElement;
+        this.overlay = overlayElement;
         this.ctx = canvasElement.getContext('2d');
-        // Ensure pixels stay sharp when zooming in (pixel art style)
-        this.ctx.imageSmoothingEnabled = false;
-        // Force the browser to use nearest-neighbor interpolation for the canvas element
-        canvasElement.style.imageRendering = "pixelated";
+        this.disableImageSmoothing(this.ctx);
 
         this.overlayCtx = overlayElement.getContext('2d');
-        this.overlayCtx.imageSmoothingEnabled = false;
-        overlayElement.style.imageRendering = "pixelated";
+        this.disableImageSmoothing(this.overlayCtx);
 
         this.width = canvasElement.width;
         this.height = canvasElement.height;
@@ -183,13 +211,15 @@ window.canvasRenderer = {
 
         return new Promise(function (resolve) {
             img.onload = function () {
+                window.canvasRenderer.disableImageSmoothing(ctx);
                 ctx.clearRect(0, 0, width, height);
-                ctx.drawImage(img, 0, 0);
+                ctx.drawImage(img, 0, 0, width, height);
                 window.canvasRenderer.committedImageData = ctx.getImageData(0, 0, width, height);
                 URL.revokeObjectURL(url);
                 resolve();
             };
             img.onerror = function () {
+                window.canvasRenderer.disableImageSmoothing(ctx);
                 window.canvasRenderer.committedImageData = ctx.getImageData(0, 0, width, height);
                 URL.revokeObjectURL(url);
                 resolve();

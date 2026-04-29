@@ -42,15 +42,15 @@
                          style="position: absolute; background:#ffffff;">
 
                         <canvas @ref="_canvasRef"
+                                class="canvas-surface"
                                 width="@_canvas.Width"
-                                height="@_canvas.Height"
-                                style="width:100%; height:100%; display:block; pointer-events:none; image-rendering:pixelated;">
+                                height="@_canvas.Height">
                         </canvas>
 
                         <canvas @ref="_overlayRef"
+                                class="canvas-surface canvas-surface--overlay"
                                 width="@_canvas.Width"
-                                height="@_canvas.Height"
-                                style="width:100%; height:100%; display:block; pointer-events:none; image-rendering:pixelated; position:absolute; top:0; left:0;">
+                                height="@_canvas.Height">
                         </canvas>
 
                         @if (ShowTextCaret)
