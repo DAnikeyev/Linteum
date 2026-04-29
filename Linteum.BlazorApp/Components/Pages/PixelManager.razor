@@ -198,9 +198,10 @@
                                   rows="4"
                                   maxlength="500"
                                   placeholder="Type text to draw..."
-                                  @bind="_textContent"
-                                  @bind:event="oninput"></textarea>
-                        <div class="pm-text-note">Text starts at the selected pixel and is applied in batches of up to 100 pixels.</div>
+                                  value="@_textContent"
+                                  @oninput="OnTextContentInput"
+                                  @onkeydown="OnTextContentKeyDownAsync"></textarea>
+                        <div class="pm-text-note">Text starts at the selected pixel and is applied in batches of up to 100 pixels. Press Ctrl+Enter to paint.</div>
                     </div>
 
                     <div class="pm-field pm-paint-wrap">

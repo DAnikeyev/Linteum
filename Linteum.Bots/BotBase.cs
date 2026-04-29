@@ -7,6 +7,7 @@ namespace Linteum.Bots;
 public abstract class BotBase
 {
     private static readonly TimeSpan DefaultTimeout = TimeSpan.FromMinutes(300);
+    protected const int MaxPaintBatchSize = 500;
 
     protected readonly HttpClient HttpClient;
     protected readonly string ApiUrl;
@@ -14,7 +15,8 @@ public abstract class BotBase
     protected string BotEmail { get; }
     protected string BotPassword { get; }
     protected string BotUserName { get; }
-    private long _requestCount;
+    private long _batchedRequestCount;
+    private long _attemptedPixelCount;
 
     protected BotBase(string email, string password, string userName)
     {
@@ -81,8 +83,9 @@ public abstract class BotBase
                 while (!runToken.IsCancellationRequested)
                 {
                     await Task.Delay(1000, runToken);
-                    long currentCount = Interlocked.Exchange(ref _requestCount, 0);
-                    Console.WriteLine($"[{BotUserName}] Requests per second: {currentCount}");
+                    long currentRequestCount = Interlocked.Exchange(ref _batchedRequestCount, 0);
+                    long currentPixelCount = Interlocked.Exchange(ref _attemptedPixelCount, 0);
+                    Console.WriteLine($"[{BotUserName}] Throughput: {currentPixelCount} px/s across {currentRequestCount} batch request(s)/s");
                 }
             }
             catch (OperationCanceledException) { }
@@ -172,7 +175,22 @@ public abstract class BotBase
 
     protected async Task<PixelBatchChangeResultDto?> TryPaintPixelsAsync(CanvasDto canvas, IReadOnlyCollection<PixelDto> pixels, CancellationToken ct = default)
     {
-        Interlocked.Add(ref _requestCount, pixels.Count);
+        if (pixels.Count == 0)
+        {
+            return new PixelBatchChangeResultDto();
+        }
+
+        if (TryGetUniformBatch(pixels, out var colorId, out var price))
+        {
+            return await TryPaintCoordinatesAsync(
+                canvas,
+                pixels.Select(pixel => new CoordinateDto(pixel.X, pixel.Y)).ToList(),
+                colorId,
+                price,
+                ct);
+        }
+
+        RecordBatchAttempt(pixels.Count);
         var requestDto = new PixelBatchChangeRequestDto
         {
             MasterPassword = MasterPassword,
@@ -214,6 +232,74 @@ public abstract class BotBase
             Console.WriteLine($"Error painting batch: {ex.Message}");
             return null;
         }
+    }
+
+    protected async Task<PixelBatchChangeResultDto?> TryPaintCoordinatesAsync(CanvasDto canvas, IReadOnlyCollection<CoordinateDto> coordinates, int colorId, long price = 0, CancellationToken ct = default)
+    {
+        if (coordinates.Count == 0)
+        {
+            return new PixelBatchChangeResultDto();
+        }
+
+        RecordBatchAttempt(coordinates.Count);
+        var requestDto = new PixelBatchDto
+        {
+            MasterPassword = MasterPassword,
+            Coordinates = coordinates.ToList(),
+            ColorId = colorId,
+            Price = price,
+        };
+
+        try
+        {
+            using var response = await HttpClient.PostAsJsonAsync($"Pixels/change-batch-coordinates/{canvas.Name}", requestDto, ct);
+            if (!response.IsSuccessStatusCode)
+            {
+                Console.WriteLine($"Failed to paint coordinate batch on {canvas.Name}: {response.StatusCode}");
+                var content = await response.Content.ReadAsStringAsync(ct);
+                if (!string.IsNullOrWhiteSpace(content))
+                {
+                    Console.WriteLine(content);
+                }
+
+                return null;
+            }
+
+            return await response.Content.ReadFromJsonAsync<PixelBatchChangeResultDto>(cancellationToken: ct);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            Console.WriteLine($"Painting coordinate batch on {canvas.Name} timed out.");
+            return null;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error painting coordinate batch: {ex.Message}");
+            return null;
+        }
+    }
+
+    private void RecordBatchAttempt(int pixelCount)
+    {
+        Interlocked.Increment(ref _batchedRequestCount);
+        Interlocked.Add(ref _attemptedPixelCount, pixelCount);
+    }
+
+    private static bool TryGetUniformBatch(IReadOnlyCollection<PixelDto> pixels, out int colorId, out long price)
+    {
+        var firstPixel = pixels.First();
+        var firstColorId = firstPixel.ColorId;
+        var firstPrice = firstPixel.Price;
+
+        var isUniformBatch = pixels.All(pixel =>
+            pixel.Id == null &&
+            pixel.OwnerId == null &&
+            pixel.ColorId == firstColorId &&
+            pixel.Price == firstPrice);
+
+        colorId = firstColorId;
+        price = firstPrice;
+        return isUniformBatch;
     }
 
     protected async Task PaintPixelAsync(CanvasDto canvas, int x, int y, int colorId)

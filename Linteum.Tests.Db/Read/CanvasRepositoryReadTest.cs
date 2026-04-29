@@ -32,7 +32,7 @@ internal class CanvasRepositoryReadTest : SyntheticDataTest
         var newCanvasWithoutPassword = await canvasRepo.TryAddCanvas(canvasWithoutPassword, null);
         Assert.IsNotNull(newCanvasWithoutPassword);
 
-        var seededCanvasCount = DefaultConfig.GetProtectedCanvasNames().Count;
+        var seededCanvasCount = DefaultConfig.GetDefaultCanvases().Count;
         
         var allPublicCanvases = (await canvasRepo.GetAllAsync()).ToList();
         var allCanvases = (await canvasRepo.GetAllAsync(true)).ToList();

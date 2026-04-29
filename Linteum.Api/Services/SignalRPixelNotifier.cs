@@ -33,6 +33,11 @@ public class SignalRPixelNotifier : IPixelNotifier
         var count = _tracker.GetGroupCount(canvasName);
         _logger.LogDebug("Notifying {Count} clients in group {CanvasName} about {PixelCount} pixel updates", count, canvasName, pixels.Count);
 
+        if (count == 0)
+        {
+            return;
+        }
+
         if (pixels.Count == 1)
         {
             var pixel = pixels.First();
@@ -53,6 +58,11 @@ public class SignalRPixelNotifier : IPixelNotifier
         var count = _tracker.GetGroupCount(canvasName);
         _logger.LogDebug("Notifying {Count} clients in group {CanvasName} about {PixelCount} pixel deletions", count, canvasName, coordinates.Count);
 
+        if (count == 0)
+        {
+            return;
+        }
+
         await _hubContext.Clients.Group(canvasName).SendAsync(CanvasHub.PixelsDeletedEventName, coordinates);
     }
 
@@ -66,6 +76,11 @@ public class SignalRPixelNotifier : IPixelNotifier
         var count = _tracker.GetGroupCount(canvasName);
         _logger.LogDebug("Broadcasting confirmed paint playback to {Count} clients in group {CanvasName}. PixelCount={PixelCount}, StrokeId={StrokeId}, ChunkSequence={ChunkSequence}", count, canvasName, playbackBatch.Pixels.Count, playbackBatch.StrokeId, playbackBatch.ChunkSequence);
 
+        if (count == 0)
+        {
+            return;
+        }
+
         await _hubContext.Clients.Group(canvasName).SendAsync(CanvasHub.ReceiveConfirmedPixelPlaybackBatchEventName, playbackBatch);
     }
 
@@ -78,6 +93,11 @@ public class SignalRPixelNotifier : IPixelNotifier
 
         var count = _tracker.GetGroupCount(canvasName);
         _logger.LogDebug("Broadcasting confirmed erase playback to {Count} clients in group {CanvasName}. PixelCount={PixelCount}, StrokeId={StrokeId}, ChunkSequence={ChunkSequence}", count, canvasName, playbackBatch.Coordinates.Count, playbackBatch.StrokeId, playbackBatch.ChunkSequence);
+
+        if (count == 0)
+        {
+            return;
+        }
 
         await _hubContext.Clients.Group(canvasName).SendAsync(CanvasHub.ReceiveConfirmedPixelDeletionPlaybackBatchEventName, playbackBatch);
     }

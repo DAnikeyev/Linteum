@@ -41,6 +41,11 @@ public partial class CanvasPage
             return Task.CompletedTask;
         }
 
+        if (_isTextSelectionPersistenceEnabled && _clickedPixel.HasValue)
+        {
+            return Task.CompletedTask;
+        }
+
         _clickedPixel = null;
         _clickedPixelData = null;
         return InvokeAsync(StateHasChanged);

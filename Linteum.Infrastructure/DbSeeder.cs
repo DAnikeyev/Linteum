@@ -10,6 +10,7 @@ namespace Linteum.Infrastructure;
 public class DbSeeder
 {
     private const string DefaultColorHexValue = "#FFFFFF";
+    public sealed record InactiveCanvasCleanupCandidate(Guid Id, string Name, DateTime UpdatedAt);
 
     public static async Task SeedDefaults(AppDbContext context, Config config, IMapper mapper, RepositoryManager repositoryManager, ILogger<DbSeeder> logger)
     {
@@ -118,7 +119,6 @@ public class DbSeeder
             }
         }
         
-        await DeleteCanvasesWithoutSubscriptions(repositoryManager, logger, config);
         await context.SaveChangesAsync();
         logger.LogInformation("Database seeding completed successfully");
     }
@@ -259,25 +259,24 @@ public class DbSeeder
             deletedPixels);
     }
 
-    public static async Task DeleteCanvasesWithoutSubscriptions<T>(RepositoryManager repositoryManager, ILogger<T> logger, Config config)
+    public static async Task<IReadOnlyList<InactiveCanvasCleanupCandidate>> GetInactiveCanvasCleanupCandidatesAsync(
+        AppDbContext context,
+        Config config,
+        DateTime inactiveSinceUtc,
+        CancellationToken cancellationToken = default)
     {
         var protectedCanvasNames = config.GetProtectedCanvasNames().ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (var canvas in await repositoryManager.CanvasRepository.GetAllAsync())
-        {
-            var subs = await repositoryManager.SubscriptionRepository.GetByCanvasIdAsync(canvas.Id);
-            var subscriptionCount = subs.Count();
 
-            logger.LogInformation(
-                "Checking canvas for deletion: {CanvasName}, subscriptions: {SubscriptionCount}",
-                canvas.Name,
-                subscriptionCount);
-
-            if (subscriptionCount == 0 && !protectedCanvasNames.Contains(canvas.Name))
-            {
-                logger.LogInformation("Deleting canvas without subscriptions: {CanvasName}", canvas.Name);
-                await repositoryManager.CanvasRepository.TryDeleteCanvasByName(canvas.Name);
-            }
-        }
+        return await context.Canvases
+            .AsNoTracking()
+            .Where(canvas => !protectedCanvasNames.Contains(canvas.Name))
+            .Where(canvas => canvas.UpdatedAt < inactiveSinceUtc)
+            .Where(canvas => !context.PixelChangedEvents
+                .Where(pixelChangedEvent => pixelChangedEvent.ChangedAt >= inactiveSinceUtc)
+                .Any(pixelChangedEvent => pixelChangedEvent.Pixel != null && pixelChangedEvent.Pixel.CanvasId == canvas.Id))
+            .OrderBy(canvas => canvas.UpdatedAt)
+            .Select(canvas => new InactiveCanvasCleanupCandidate(canvas.Id, canvas.Name, canvas.UpdatedAt))
+            .ToListAsync(cancellationToken);
     }
 
     private static string NormalizeHex(string hexValue) => hexValue.Trim().ToUpperInvariant();

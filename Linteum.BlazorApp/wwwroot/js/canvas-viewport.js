@@ -34,6 +34,10 @@ window.canvasViewport = {
         if (this._instance) this._instance.setBrushPreview(eraserEnabled, colorHex, eraserSize);
     },
 
+    setSelectionPersistence: function (enabled) {
+        if (this._instance) this._instance.setSelectionPersistence(enabled);
+    },
+
     dispose: function () {
         if (this._instance) {
             this._instance.destroy();
@@ -65,6 +69,7 @@ function CanvasViewportController(dotNetRef, viewportEl, rendererEl, coordsEl, c
     self.brushPreviewColor = null;
     self.eraserEnabled = false;
     self.eraserSize = 1;
+    self.selectionPersistenceEnabled = false;
     self.brushing = false;
     self.lastBrushedKey = null;
     self.lastBrushedPixel = null;
@@ -306,6 +311,10 @@ function CanvasViewportController(dotNetRef, viewportEl, rendererEl, coordsEl, c
         self._scheduleFrame();
     };
 
+    self.setSelectionPersistence = function (enabled) {
+        self.selectionPersistenceEnabled = !!enabled;
+    };
+
     self._renderBrushPreviewPixel = function (p) {
         if (!window.canvasRenderer) {
             return;
@@ -516,7 +525,7 @@ function CanvasViewportController(dotNetRef, viewportEl, rendererEl, coordsEl, c
                 self.clickedPx = p;
                 self._scheduleFrame();
                 self.dotNet.invokeMethodAsync('OnPixelClicked', p.x, p.y);
-            } else if (!self.brushEnabled) {
+            } else if (!self.brushEnabled && !self.selectionPersistenceEnabled) {
                 self._clearClickedPixel(true);
             }
         }
@@ -526,7 +535,11 @@ function CanvasViewportController(dotNetRef, viewportEl, rendererEl, coordsEl, c
     };
 
     self._onDocumentMouseDown = function (e) {
-        if (e.button !== 0 || self.brushEnabled || self.dragging || !self.clickedPx) {
+        if (e.button !== 0 || self.brushEnabled || self.dragging || !self.clickedPx || self.selectionPersistenceEnabled) {
+            return;
+        }
+
+        if (e.target && typeof e.target.closest === 'function' && e.target.closest('.pixelmanager')) {
             return;
         }
 

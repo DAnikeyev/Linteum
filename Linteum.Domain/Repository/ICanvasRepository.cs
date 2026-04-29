@@ -12,6 +12,8 @@ public interface ICanvasRepository
     public Task<bool> TryEraseCanvasByName(string name);
     public Task<bool> TryDeleteCanvasAsync(Guid canvasId);
     public Task<bool> TryDeleteCanvasByName(string name);
+    public Task<bool> TryDeleteCanvasGraduallyAsync(Guid canvasId, CancellationToken cancellationToken = default);
+    public Task<bool> TryDeleteCanvasGraduallyByName(string name, CancellationToken cancellationToken = default);
     public Task<bool> CheckPassword(CanvasDto canvas, string? passwordHash);
     public Task<CanvasDto?> TryAddCanvas(CanvasDto canvas, string? passwordHash);
 }

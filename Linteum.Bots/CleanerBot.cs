@@ -5,7 +5,9 @@ namespace Linteum.Bots;
 
 public class CleanerBot : BotBase
 {
-    private const int BatchSize = 100;
+    private const int BatchSize = MaxPaintBatchSize;
+    private const int MaxRetries = 5;
+    private const int RequestDelayMs = 1;
     private readonly string _targetCanvasName;
 
     public CleanerBot(string targetCanvasName) : base("cleaner@linteum.com", "CleanCanvas123!", "CleanerBot")
@@ -39,23 +41,23 @@ public class CleanerBot : BotBase
 
         Console.WriteLine($"Clearing canvas '{canvas.Name}' with color '{whiteColor.Name ?? whiteColor.HexValue}'...");
 
-        var batch = new List<PixelDto>(BatchSize);
+        var totalPixels = canvas.Width * canvas.Height;
+        var cleared = 0;
+        var failed = 0;
+        var batch = new List<CoordinateDto>(BatchSize);
 
         for (int y = 0; y < canvas.Height; y++)
         {
             for (int x = 0; x < canvas.Width; x++)
             {
-                batch.Add(new PixelDto
-                {
-                    X = x,
-                    Y = y,
-                    ColorId = whiteColor.Id,
-                    CanvasId = canvas.Id,
-                });
+                batch.Add(new CoordinateDto(x, y));
 
                 if (batch.Count >= BatchSize)
                 {
-                    await TryPaintPixelsAsync(canvas, batch, ct);
+                    var requestedCount = batch.Count;
+                    var changedCount = await PaintCoordinateBatchWithRetriesAsync(canvas, whiteColor.Id, batch, ct);
+                    cleared += changedCount;
+                    failed += requestedCount - changedCount;
                     batch.Clear();
                 }
             }
@@ -63,10 +65,30 @@ public class CleanerBot : BotBase
 
         if (batch.Count > 0)
         {
-            await TryPaintPixelsAsync(canvas, batch, ct);
+            var requestedCount = batch.Count;
+            var changedCount = await PaintCoordinateBatchWithRetriesAsync(canvas, whiteColor.Id, batch, ct);
+            cleared += changedCount;
+            failed += requestedCount - changedCount;
         }
 
-        Console.WriteLine($"Canvas '{canvas.Name}' cleared.");
+        Console.WriteLine($"Canvas '{canvas.Name}' cleared. Successful={cleared}/{totalPixels}, Failed={failed}.");
+    }
+
+    private async Task<int> PaintCoordinateBatchWithRetriesAsync(CanvasDto canvas, int colorId, IReadOnlyCollection<CoordinateDto> coordinates, CancellationToken ct)
+    {
+        for (int attempt = 1; attempt <= MaxRetries + 1; attempt++)
+        {
+            var result = await TryPaintCoordinatesAsync(canvas, coordinates, colorId, ct: ct);
+            await Task.Delay(RequestDelayMs, ct);
+
+            if (result != null)
+            {
+                return result.ChangedPixels.Count;
+            }
+        }
+
+        Console.WriteLine($"Failed to clear a coordinate batch after {MaxRetries + 1} attempts.");
+        return 0;
     }
 }
 

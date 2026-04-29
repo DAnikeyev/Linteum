@@ -1,81 +1,106 @@
-# 🎨 Linteum
+# Linteum
 
-Welcome to **Linteum**, a real-time collaborative canvas where you can draw, create, and watch art happen live with friends (and bots)! 🖌️✨
+Linteum is a collaborative pixel canvas project built with Blazor, ASP.NET Core, SignalR, and PostgreSQL. You can open a canvas, place pixels, watch updates show up live, and even let bots join in.
 
-Check out the live website: [linteum.ash-twin.com](https://linteum.ash-twin.com)
+Live site: [linteum.ash-twin.com](https://linteum.ash-twin.com)
 
 ![Linteum UI Example](resources/LimteumUiExample.png)
 
 ---
 
-## 🔥 Features
+## Features
 
-- **Real-time Collaboration:** See every pixel change instantly across all clients using SignalR.
-- **Multiple Canvases:** Join existing canvases or create your own masterpiece.
-- **Bot Support:** Dedicated bots like `VanGoghBot` and `CleanerBot` to help maintain (or decorate) the canvases.
-- **User Authentication:** Simple signup or Google Login integration.
-- **Dockerized:** Easy to deploy and run anywhere.
+- Live pixel updates across connected clients through SignalR.
+- Multiple canvases, including public, private, and password-protected ones.
+- Three canvas modes: `Normal`, `FreeDraw`, and `Economy`.
+- Smoother freehand drawing with interpolated strokes.
+- Canvas creation from either a blank board or a JPG starting image.
+- Batch drawing support, plus bulk delete and queued text drawing on `FreeDraw` canvases.
+- Lobby chat so people can talk before jumping into a canvas.
+- Local accounts plus optional Google login.
+- Canvas image export.
+- Bot support for cleaning, painting, and image-based drawing.
 
----
+## Canvas modes
 
-## 🏗️ Architecture & Tech Stack
+- `Normal` - the standard shared canvas mode. It keeps a daily pixel quota per user for each canvas (100 by default).
+- `FreeDraw` - meant for faster editing. It supports batch pixel updates, batch delete, and queued text drawing.
+- `Economy` - pixels have prices, balances matter, and subscribed users can earn hourly income based on what they own on that canvas.
 
-Linteum is built with modern .NET technologies and a clean, decoupled architecture:
-
-- **Frontend:** [Blazor](https://dotnet.microsoft.com/en-us/apps/aspnet/web-apps/blazor) (Interactive Server mode) for a rich, responsive UI.
-- **Backend:** [ASP.NET Core Web API](https://dotnet.microsoft.com/en-us/apps/aspnet/apis) providing a robust HTTP-based API.
-- **Real-time:** [SignalR](https://dotnet.microsoft.com/en-us/apps/aspnet/signalr) for ultra-low latency pixel updates.
-- **Database:** [PostgreSQL](https://www.postgresql.org/) managed with [Entity Framework Core](https://learn.microsoft.com/en-us/ef/core/).
-- **Containerization:** [Docker](https://www.docker.com/) & Docker Compose for seamless environment management.
-
-### Project Breakdown
-
-- `Linteum.Api`: The heart of the system, handling data, logic, and SignalR hubs.
-- `Linteum.BlazorApp`: The user-facing web application.
-- `Linteum.Bots`: Automated clients that interact with the API to paint or clean.
-- `Linteum.Domain`: Core business logic and database entities.
-- `Linteum.Infrastructure`: Data access layer and repository implementations.
-- `Linteum.Shared`: Common DTOs and utilities used by all services.
+By default, the app seeds a small starter set of canvases: `home`, `home_FreeDraw`, and `home_Economy`.
 
 ---
 
-## 🚀 Getting Started
+## Architecture and tech stack
+
+Linteum is split into a few focused projects:
+
+- **Frontend:** [Blazor](https://dotnet.microsoft.com/en-us/apps/aspnet/web-apps/blazor) in interactive server mode.
+- **Backend:** [ASP.NET Core Web API](https://dotnet.microsoft.com/en-us/apps/aspnet/apis).
+- **Realtime updates:** [SignalR](https://dotnet.microsoft.com/en-us/apps/aspnet/signalr).
+- **Database:** [PostgreSQL](https://www.postgresql.org/) with [Entity Framework Core](https://learn.microsoft.com/en-us/ef/core/).
+- **Containers:** [Docker](https://www.docker.com/) and Docker Compose.
+
+### Project breakdown
+
+- `Linteum.Api` - API endpoints, realtime hubs, and background services.
+- `Linteum.BlazorApp` - the main web UI.
+- `Linteum.Bots` - automated clients for cleanup, art bots, and image drawing.
+- `Linteum.Domain` - entities and repository contracts.
+- `Linteum.Infrastructure` - EF Core, repositories, and data access logic.
+- `Linteum.Shared` - shared DTOs, enums, config, and helper utilities.
+
+---
+
+## Getting started
 
 ### Prerequisites
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/)
-- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0) (if running locally without Docker)
-- PowerShell (for the build script)
+- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) if you want to run the projects locally without Docker
+- PowerShell if you want to use the helper script
 
 ### Running with Docker
 
-The easiest way to get Linteum up and running is using the provided script:
+The simplest way to start the main services is:
 
-```bash
-docker-compose up -d --build
+```powershell
+docker compose up -d --build
 ```
 
-### Environment Variables
+There is also a small helper script in the repo:
 
-Before running, make sure to set up your `.env` file or environment variables as defined in `docker-compose.yml`. Key variables include:
+```powershell
+.\build-and-up.ps1
+```
+
+If you want the bots too, start Compose with the `bots` profile:
+
+```powershell
+docker compose --profile bots up -d --build
+```
+
+### Environment variables
+
+Set up your `.env` file or environment variables as described in `docker-compose.yml`. The main ones are:
+
 - `POSTGRES_USER`, `POSTGRES_PASSWORD`, `POSTGRES_DB`
-- `MASTER_PASSWORD`, `MASTER_USER`, `MASTER_EMAIL` (for initial admin setup)
-- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` (optional, for Google Auth)
+- `MASTER_PASSWORD`, `MASTER_USER`, `MASTER_EMAIL`
+- `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET` for Google login
 
 ---
 
-## 🤖 Meet the Bots
+## Bots
 
-Linteum isn't just for humans! We have several bots that can be activated:
-- **VanGoghBot**: Paints "Starry Night" onto the canvas pixel by pixel.
-- **CleanerBot**: Helps keep the canvas tidy.
-- **MunchBot**: Likes to add a little "Scream" to the mix.
-- **XeroxBot**: Draws an image on the canvas.
-- See DockerCheatSheet.md for more details on how to activate bots.
+The repo includes a few bot clients:
+
+- `CleanerBot` for clearing or tidying up a canvas.
+- `XeroxBot` for drawing an image onto a canvas.
+
+For bot commands and Docker examples, see `DockerCheatsheet.md`.
+
 ---
 
-## 🤝 Contributing
+## Contributing
 
-We're in early development, and we'd love your help! Feel free to open issues, submit PRs, or just share your art.
-
-Happy drawing! 🎨✨
+This project is still evolving, so issues and pull requests are welcome. If you want to try something, fix a rough edge, or add a feature, feel free to jump in.

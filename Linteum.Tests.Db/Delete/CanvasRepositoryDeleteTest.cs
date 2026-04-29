@@ -88,4 +88,63 @@ internal class CanvasRepositoryDeleteTest : SyntheticDataTest
         Assert.That((await pixelRepo.GetByCanvasIdAsync(canvas.Id)).Count(), Is.EqualTo(0));
         Assert.That((await pixelHistoryRepo.GetByCanvasIdAsync(canvas.Id, null)).Count(), Is.EqualTo(0));
     }
+
+    [Test]
+    public async Task TryDeleteCanvasGradually_RemovesCanvasAndRelatedDataInBatches()
+    {
+        var canvasRepo = RepoManager.CanvasRepository;
+        var pixelRepo = RepoManager.PixelRepository;
+        var pixelHistoryRepo = RepoManager.PixelChangedEventRepository;
+        var subscriptionRepo = RepoManager.SubscriptionRepository;
+        var balanceRepo = RepoManager.BalanceChangedEventRepository;
+        var creator = await DbHelper.AddDefaultUser("canvas-gradual-delete-owner");
+        var subscriber = await DbHelper.AddDefaultUser("canvas-gradual-delete-subscriber");
+        Assert.That(creator?.Id, Is.Not.Null);
+        Assert.That(subscriber?.Id, Is.Not.Null);
+
+        var black = (await RepoManager.ColorRepository.GetAllAsync()).First(color => color.Name == "Black");
+        var canvas = await canvasRepo.TryAddCanvas(new CanvasDto
+        {
+            CreatorId = creator!.Id!.Value,
+            Name = "Gradual Delete Test Canvas",
+            Width = 30,
+            Height = 20,
+            CanvasMode = CanvasMode.FreeDraw,
+        }, null);
+
+        Assert.That(canvas, Is.Not.Null);
+
+        await subscriptionRepo.Subscribe(creator.Id.Value, canvas!.Id, null);
+        await subscriptionRepo.Subscribe(subscriber!.Id!.Value, canvas.Id, null);
+        await balanceRepo.TryChangeBalanceAsync(creator.Id.Value, canvas.Id, 5, BalanceChangedReason.Regular);
+        await balanceRepo.TryChangeBalanceAsync(subscriber.Id.Value, canvas.Id, 7, BalanceChangedReason.Regular);
+
+        var pixels = Enumerable.Range(0, 520)
+            .Select(index => new PixelDto
+            {
+                CanvasId = canvas.Id,
+                X = index % canvas.Width,
+                Y = index / canvas.Width,
+                ColorId = black.Id,
+            })
+            .ToList();
+
+        var paintResult = await pixelRepo.TryChangePixelsBatchAsync(creator.Id.Value, pixels);
+
+        Assert.That(paintResult.ChangedPixels.Count, Is.EqualTo(520));
+        Assert.That((await subscriptionRepo.GetByCanvasIdAsync(canvas.Id)).Count(), Is.EqualTo(2));
+        Assert.That((await balanceRepo.GetByUserAndCanvasIdAsync(creator.Id.Value, canvas.Id)).Any(), Is.True);
+        Assert.That((await pixelRepo.GetByCanvasIdAsync(canvas.Id)).Count(), Is.EqualTo(520));
+        Assert.That((await pixelHistoryRepo.GetByCanvasIdAsync(canvas.Id, null)).Count(), Is.EqualTo(520));
+
+        var deleteResult = await canvasRepo.TryDeleteCanvasGraduallyAsync(canvas.Id);
+
+        Assert.That(deleteResult, Is.True);
+        Assert.That(await canvasRepo.GetByNameAsync(canvas.Name), Is.Null);
+        Assert.That((await subscriptionRepo.GetByCanvasIdAsync(canvas.Id)).Count(), Is.EqualTo(0));
+        Assert.That((await balanceRepo.GetByUserAndCanvasIdAsync(creator.Id.Value, canvas.Id)).Count(), Is.EqualTo(0));
+        Assert.That((await balanceRepo.GetByUserAndCanvasIdAsync(subscriber.Id.Value, canvas.Id)).Count(), Is.EqualTo(0));
+        Assert.That((await pixelRepo.GetByCanvasIdAsync(canvas.Id)).Count(), Is.EqualTo(0));
+        Assert.That((await pixelHistoryRepo.GetByCanvasIdAsync(canvas.Id, null)).Count(), Is.EqualTo(0));
+    }
 }

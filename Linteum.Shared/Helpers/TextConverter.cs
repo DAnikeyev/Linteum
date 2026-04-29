@@ -8,6 +8,8 @@ using SixLabors.ImageSharp.Processing;
 
 namespace Linteum.Shared.Helpers;
 
+public sealed record TextRenderMetrics(float PixelFontSize, int Margin, int LineHeight);
+
 public class TextConverter
 {
     private const float MinimumFontSize = 4f;
@@ -19,25 +21,23 @@ public class TextConverter
         ArgumentNullException.ThrowIfNull(textColor);
         ArgumentNullException.ThrowIfNull(text);
 
-        var pixelFontSize = ParseFontSize(fontSize);
+        var metrics = GetRenderMetrics(fontSize);
         var normalizedText = NormalizeText(text);
-        var font = CreateFont(pixelFontSize);
+        var font = CreateFont(metrics.PixelFontSize);
         var textOptions = new TextOptions(font);
-        var margin = GetMargin(pixelFontSize);
         var bounds = string.IsNullOrEmpty(normalizedText)
             ? FontRectangle.Empty
             : TextMeasurer.MeasureBounds(normalizedText, textOptions);
-        var lineHeight = GetLineHeight(textOptions);
         var textWidth = Math.Max(1, (int)Math.Ceiling(bounds.Width));
-        var textHeight = Math.Max(lineHeight, (int)Math.Ceiling(bounds.Height));
-        var width = Math.Max(textWidth + (margin * 2), (margin * 2) + 1);
-        var height = Math.Max(textHeight + (margin * 2), (margin * 2) + lineHeight);
+        var textHeight = Math.Max(metrics.LineHeight, (int)Math.Ceiling(bounds.Height));
+        var width = Math.Max(textWidth + (metrics.Margin * 2), (metrics.Margin * 2) + 1);
+        var height = Math.Max(textHeight + (metrics.Margin * 2), (metrics.Margin * 2) + metrics.LineHeight);
 
         using var mask = new Image<Rgba32>(width, height, Color.Transparent);
 
         if (!string.IsNullOrEmpty(normalizedText))
         {
-            var origin = new PointF(margin - bounds.Left, margin - bounds.Top);
+            var origin = new PointF(metrics.Margin - bounds.Left, metrics.Margin - bounds.Top);
             mask.Mutate(context => context.DrawText(normalizedText, font, Color.White, origin));
         }
 
@@ -71,6 +71,35 @@ public class TextConverter
         });
 
         return grid;
+    }
+
+    public static TextRenderMetrics GetRenderMetrics(string fontSize)
+    {
+        var pixelFontSize = ParseFontSize(fontSize);
+        var font = CreateFont(pixelFontSize);
+        var textOptions = new TextOptions(font);
+
+        return new TextRenderMetrics(
+            pixelFontSize,
+            GetMargin(pixelFontSize),
+            GetLineHeight(textOptions));
+    }
+
+    public static TextRenderMetrics GetPreviewMetrics(string fontSize)
+    {
+        var pixelFontSize = ParseFontSize(fontSize);
+
+        try
+        {
+            return GetRenderMetrics(fontSize);
+        }
+        catch (InvalidOperationException)
+        {
+            return new TextRenderMetrics(
+                pixelFontSize,
+                GetMargin(pixelFontSize),
+                GetApproximateLineHeight(pixelFontSize));
+        }
     }
 
     private static string NormalizeText(string text) => text.Replace("\r\n", "\n").Replace('\r', '\n');
@@ -124,4 +153,7 @@ public class TextConverter
         var lineBounds = TextMeasurer.MeasureBounds("Ag", textOptions);
         return Math.Max(1, (int)Math.Ceiling(lineBounds.Height));
     }
+
+    private static int GetApproximateLineHeight(float pixelFontSize) =>
+        Math.Max(1, (int)Math.Ceiling(pixelFontSize * 1.2f));
 }

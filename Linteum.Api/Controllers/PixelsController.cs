@@ -165,7 +165,15 @@ public class PixelsController : ControllerBase
             return NotFound("Canvas not found.");
         }
         pixel.CanvasId = canvas.Id;
-        _logger.LogInformation("TryChangePixel requested for canvas {CanvasName} in {CanvasMode} mode by user {UserId} at ({X}, {Y}) with color {ColorId} and price {Price}.", canvasName, canvas.CanvasMode, userId.Value, pixel.X, pixel.Y, pixel.ColorId, pixel.Price);
+        if (ShouldLogZeroPriceFreeDrawAtDebug(canvas.CanvasMode, false, [pixel]))
+        {
+            _logger.LogDebug("TryChangePixel requested for canvas {CanvasName} in {CanvasMode} mode by user {UserId} at ({X}, {Y}) with color {ColorId} and price {Price}.", canvasName, canvas.CanvasMode, userId.Value, pixel.X, pixel.Y, pixel.ColorId, pixel.Price);
+        }
+        else
+        {
+            _logger.LogInformation("TryChangePixel requested for canvas {CanvasName} in {CanvasMode} mode by user {UserId} at ({X}, {Y}) with color {ColorId} and price {Price}.", canvasName, canvas.CanvasMode, userId.Value, pixel.X, pixel.Y, pixel.ColorId, pixel.Price);
+        }
+
         var result = await _repoManager.PixelRepository.TryChangePixelAsync(userId.Value, pixel);
         if (result == null)
         {
@@ -179,7 +187,15 @@ public class PixelsController : ControllerBase
         }
         _changedPixelsChannel.Writer.TryWrite(result);
         _pixelChangeCounter.RecordSuccess(canvasName);
-        _logger.LogInformation("TryChangePixel succeeded for user {UserId} at ({X}, {Y}) on {CanvasName}. PixelId={PixelId}, Price={Price}", userId.Value, result.X, result.Y, canvasName, result.Id, result.Price);
+        if (ShouldLogZeroPriceFreeDrawAtDebug(canvas.CanvasMode, false, [result]))
+        {
+            _logger.LogDebug("TryChangePixel succeeded for user {UserId} at ({X}, {Y}) on {CanvasName}. PixelId={PixelId}, Price={Price}", userId.Value, result.X, result.Y, canvasName, result.Id, result.Price);
+        }
+        else
+        {
+            _logger.LogInformation("TryChangePixel succeeded for user {UserId} at ({X}, {Y}) on {CanvasName}. PixelId={PixelId}, Price={Price}", userId.Value, result.X, result.Y, canvasName, result.Id, result.Price);
+        }
+
         return Ok(result);
     }
 
@@ -330,13 +346,26 @@ public class PixelsController : ControllerBase
 
     private async Task<IActionResult> ExecuteBatchChangeAsync(string canvasName, CanvasMode canvasMode, Guid userId, IReadOnlyCollection<PixelDto> pixels, bool useMasterOverride, StrokePlaybackMetadataDto? playbackRequest = null, IReadOnlyCollection<CoordinateDto>? requestedCoordinates = null)
     {
-        _logger.LogInformation(
-            "TryChangePixelsBatch requested for canvas {CanvasName} in {CanvasMode} mode by user {UserId}. RequestedPixels={RequestedCount}, UsedMasterOverride={UsedMasterOverride}",
-            canvasName,
-            canvasMode,
-            userId,
-            pixels.Count,
-            useMasterOverride);
+        if (ShouldLogZeroPriceFreeDrawAtDebug(canvasMode, useMasterOverride, pixels))
+        {
+            _logger.LogDebug(
+                "TryChangePixelsBatch requested for canvas {CanvasName} in {CanvasMode} mode by user {UserId}. RequestedPixels={RequestedCount}, UsedMasterOverride={UsedMasterOverride}",
+                canvasName,
+                canvasMode,
+                userId,
+                pixels.Count,
+                useMasterOverride);
+        }
+        else
+        {
+            _logger.LogInformation(
+                "TryChangePixelsBatch requested for canvas {CanvasName} in {CanvasMode} mode by user {UserId}. RequestedPixels={RequestedCount}, UsedMasterOverride={UsedMasterOverride}",
+                canvasName,
+                canvasMode,
+                userId,
+                pixels.Count,
+                useMasterOverride);
+        }
 
         var playback = CreatePlaybackMetadataOrNull(canvasMode, playbackRequest);
         var result = await _repoManager.PixelRepository.TryChangePixelsBatchAsync(userId, pixels.ToList(), useMasterOverride, suppressNotifications: playback != null);
@@ -361,16 +390,32 @@ public class PixelsController : ControllerBase
             });
         }
 
-        _logger.LogInformation(
-            "TryChangePixelsBatch completed for user {UserId} on {CanvasName}. Requested={RequestedCount}, Deduplicated={DeduplicatedCount}, Successful={SuccessfulCount}, StoppedByBudget={StoppedByBudget}, StoppedByNormalModeLimit={StoppedByNormalModeLimit}, UsedMasterOverride={UsedMasterOverride}",
-            userId,
-            canvasName,
-            result.RequestedCount,
-            result.DeduplicatedCount,
-            result.ChangedPixels.Count,
-            result.StoppedByBudget,
-            result.StoppedByNormalModeLimit,
-            result.UsedMasterOverride);
+        if (ShouldLogZeroPriceFreeDrawAtDebug(canvasMode, useMasterOverride, pixels))
+        {
+            _logger.LogDebug(
+                "TryChangePixelsBatch completed for user {UserId} on {CanvasName}. Requested={RequestedCount}, Deduplicated={DeduplicatedCount}, Successful={SuccessfulCount}, StoppedByBudget={StoppedByBudget}, StoppedByNormalModeLimit={StoppedByNormalModeLimit}, UsedMasterOverride={UsedMasterOverride}",
+                userId,
+                canvasName,
+                result.RequestedCount,
+                result.DeduplicatedCount,
+                result.ChangedPixels.Count,
+                result.StoppedByBudget,
+                result.StoppedByNormalModeLimit,
+                result.UsedMasterOverride);
+        }
+        else
+        {
+            _logger.LogInformation(
+                "TryChangePixelsBatch completed for user {UserId} on {CanvasName}. Requested={RequestedCount}, Deduplicated={DeduplicatedCount}, Successful={SuccessfulCount}, StoppedByBudget={StoppedByBudget}, StoppedByNormalModeLimit={StoppedByNormalModeLimit}, UsedMasterOverride={UsedMasterOverride}",
+                userId,
+                canvasName,
+                result.RequestedCount,
+                result.DeduplicatedCount,
+                result.ChangedPixels.Count,
+                result.StoppedByBudget,
+                result.StoppedByNormalModeLimit,
+                result.UsedMasterOverride);
+        }
 
         if (result.ChangedPixels.Count == 0)
         {
@@ -398,6 +443,14 @@ public class PixelsController : ControllerBase
         }
 
         return playback;
+    }
+
+    private static bool ShouldLogZeroPriceFreeDrawAtDebug(CanvasMode canvasMode, bool useMasterOverride, IReadOnlyCollection<PixelDto> pixels)
+    {
+        return !useMasterOverride
+            && canvasMode == CanvasMode.FreeDraw
+            && pixels.Count > 0
+            && pixels.All(pixel => pixel.Price <= 0);
     }
 
     private static int NormalizePlaybackDuration(StrokePlaybackMetadataDto playback)

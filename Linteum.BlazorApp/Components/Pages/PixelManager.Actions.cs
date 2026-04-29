@@ -1,6 +1,7 @@
 using Linteum.BlazorApp.Components.Notification;
 using Linteum.Shared.DTO;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.Components.Web;
 
 namespace Linteum.BlazorApp.Components.Pages;
 
@@ -28,6 +29,7 @@ public partial class PixelManager
         }
 
         await NotifySelectedBrushColorChangedAsync();
+        await NotifyTextSelectionPersistenceChangedAsync();
         await NotifyTextCaretPreviewChangedAsync();
     }
 
@@ -165,6 +167,23 @@ public partial class PixelManager
             _selectedTextFontSize = fontSize;
             await NotifyTextCaretPreviewChangedAsync();
         }
+    }
+
+    private void OnTextContentInput(ChangeEventArgs args)
+    {
+        _textContent = args.Value?.ToString() ?? string.Empty;
+    }
+
+    private async Task OnTextContentKeyDownAsync(KeyboardEventArgs args)
+    {
+        if (!string.Equals(args.Key, "Enter", StringComparison.Ordinal)
+            || (!args.CtrlKey && !args.MetaKey)
+            || PaintTextDisabled)
+        {
+            return;
+        }
+
+        await PaintTextClick();
     }
 
     private async Task PaintClick()

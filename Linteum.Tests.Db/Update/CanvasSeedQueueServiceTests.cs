@@ -3,6 +3,7 @@ using Linteum.Infrastructure;
 using Linteum.Shared;
 using Linteum.Shared.DTO;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging.Abstractions;
 using SixLabors.ImageSharp;
@@ -62,7 +63,7 @@ internal class CanvasSeedQueueServiceTests : SyntheticDataTest
             Assert.That(history[0].NewPrice, Is.EqualTo(1));
 
             Assert.That(notifier.BatchSizes.Sum(), Is.EqualTo(canvas.Width * canvas.Height));
-            Assert.That(notifier.BatchSizes.All(size => size <= 100), Is.True);
+            Assert.That(notifier.BatchSizes.All(size => size <= 500), Is.True);
         }
         finally
         {
@@ -71,15 +72,15 @@ internal class CanvasSeedQueueServiceTests : SyntheticDataTest
     }
 
     [Test]
-    public async Task CanvasSeedQueueService_NotifiesInHundredPixelBatches()
+    public async Task CanvasSeedQueueService_NotifiesInConfiguredBatches()
     {
         var user = await DbHelper.AddDefaultUser("CanvasSeedBatchUser");
         var canvas = await RepoManager.CanvasRepository.TryAddCanvas(new CanvasDto
         {
             CreatorId = user!.Id!.Value,
             Name = "Seed Batch Canvas",
-            Width = 11,
-            Height = 10,
+            Width = 30,
+            Height = 40,
             CanvasMode = CanvasMode.FreeDraw,
         }, passwordHash: null);
 
@@ -107,10 +108,91 @@ internal class CanvasSeedQueueServiceTests : SyntheticDataTest
                 (await RepoManager.PixelRepository.GetByCanvasIdAsync(canvas.Id)).Count() == canvas.Width * canvas.Height,
                 TimeSpan.FromSeconds(5));
 
-            Assert.That(notifier.BatchSizes, Is.EqualTo(new[] { 100, 10 }));
+            Assert.That(notifier.BatchSizes, Is.EqualTo(new[] { 500, 500, 200 }));
         }
         finally
         {
+            await service.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Test]
+    public async Task CanvasSeedQueueService_AllowsConcurrentPaintingWithoutOverwritingLaterSeedBatches()
+    {
+        var creator = await DbHelper.AddDefaultUser("CanvasSeedConcurrentCreator");
+        var painter = await DbHelper.AddDefaultUser("CanvasSeedConcurrentPainter");
+        var canvas = await RepoManager.CanvasRepository.TryAddCanvas(new CanvasDto
+        {
+            CreatorId = creator!.Id!.Value,
+            Name = "Seed Concurrent Canvas",
+            Width = 40,
+            Height = 26,
+            CanvasMode = CanvasMode.FreeDraw,
+        }, passwordHash: null);
+
+        Assert.That(canvas, Is.Not.Null);
+
+        var sharedCoordinator = new CanvasWriteCoordinator();
+        var blockingNotifier = new BlockingPixelNotifier();
+        var service = new CanvasSeedQueueService(new CanvasSeedScopeFactory(Options, blockingNotifier), NullLogger<CanvasSeedQueueService>.Instance, sharedCoordinator);
+        var imageBytes = CreateJpegBytes(canvas!.Width, canvas.Height, (_, _) => new Rgba32(0, 0, 255));
+        var black = (await RepoManager.ColorRepository.GetAllAsync()).First(color => color.Name == "Black");
+
+        await service.StartAsync(CancellationToken.None);
+
+        await using var paintContext = new AppDbContext(Options);
+        var paintRepoManager = CreateRepositoryManager(paintContext, sharedCoordinator, new SimplePixelNotifier());
+
+        try
+        {
+            await service.QueueAsync(new QueuedCanvasSeedRequest(
+                creator.Id.Value,
+                creator.UserName!,
+                canvas.Id,
+                canvas.Name,
+                canvas.CanvasMode,
+                canvas.Width,
+                canvas.Height,
+                imageBytes));
+
+            await blockingNotifier.WaitForFirstBatchAsync(TimeSpan.FromSeconds(5));
+
+            var paintTask = paintRepoManager.PixelRepository.TryChangePixelAsync(painter!.Id!.Value, new PixelDto
+            {
+                CanvasId = canvas.Id,
+                X = 5,
+                Y = 25,
+                ColorId = black.Id,
+                Price = 0,
+            });
+
+            var completedTask = await Task.WhenAny(paintTask, Task.Delay(TimeSpan.FromSeconds(2)));
+            Assert.That(completedTask, Is.SameAs(paintTask), "Expected painting to finish while seed notifications were still blocked.");
+
+            var paintedPixel = await paintTask;
+            Assert.That(paintedPixel, Is.Not.Null);
+            Assert.That(paintedPixel!.ColorId, Is.EqualTo(black.Id));
+
+            blockingNotifier.Release();
+
+            await WaitForAsync(async () =>
+                    (await paintRepoManager.PixelRepository.GetByCanvasIdAsync(canvas.Id)).Count() == canvas.Width * canvas.Height,
+                TimeSpan.FromSeconds(10));
+
+            var finalPixel = await paintRepoManager.PixelRepository.GetByPixelDto(new PixelDto
+            {
+                CanvasId = canvas.Id,
+                X = 5,
+                Y = 25,
+            });
+
+            Assert.That(finalPixel, Is.Not.Null);
+            Assert.That(finalPixel!.ColorId, Is.EqualTo(black.Id));
+            Assert.That(finalPixel.OwnerId, Is.EqualTo(painter.Id.Value));
+        }
+        finally
+        {
+            blockingNotifier.Release();
             await service.StopAsync(CancellationToken.None);
         }
     }
@@ -147,6 +229,18 @@ internal class CanvasSeedQueueServiceTests : SyntheticDataTest
         Assert.Fail("Timed out waiting for queued canvas seeding to finish.");
     }
 
+    private static RepositoryManager CreateRepositoryManager(AppDbContext context, ICanvasWriteCoordinator canvasWriteCoordinator, IPixelNotifier notifier)
+    {
+        return new RepositoryManager(
+            context,
+            TestMapper.Instance,
+            new Config(),
+            NullLoggerFactory.Instance,
+            notifier,
+            new MemoryCache(new MemoryCacheOptions()),
+            canvasWriteCoordinator);
+    }
+
     private sealed class CapturingPixelNotifier : IPixelNotifier
     {
         public List<int> BatchSizes { get; } = [];
@@ -161,6 +255,42 @@ internal class CanvasSeedQueueServiceTests : SyntheticDataTest
         {
             BatchSizes.Add(pixels.Count);
             return Task.CompletedTask;
+        }
+
+        public Task NotifyPixelsDeleted(string canvasName, IReadOnlyCollection<CoordinateDto> coordinates) => Task.CompletedTask;
+
+        public Task NotifyConfirmedPixelsChanged(string canvasName, ConfirmedPixelPlaybackBatchDto playbackBatch) => Task.CompletedTask;
+
+        public Task NotifyConfirmedPixelsDeleted(string canvasName, ConfirmedPixelDeletionPlaybackBatchDto playbackBatch) => Task.CompletedTask;
+    }
+
+    private sealed class BlockingPixelNotifier : IPixelNotifier
+    {
+        private readonly TaskCompletionSource _firstBatchStarted = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private readonly TaskCompletionSource _release = new(TaskCreationOptions.RunContinuationsAsynchronously);
+        private int _callCount;
+
+        public async Task WaitForFirstBatchAsync(TimeSpan timeout)
+        {
+            var completedTask = await Task.WhenAny(_firstBatchStarted.Task, Task.Delay(timeout));
+            Assert.That(completedTask, Is.SameAs(_firstBatchStarted.Task), "Timed out waiting for the first seed notification batch.");
+            await _firstBatchStarted.Task;
+        }
+
+        public void Release()
+        {
+            _release.TrySetResult();
+        }
+
+        public Task NotifyPixelChanged(string canvasName, PixelDto pixel) => NotifyPixelsChanged(canvasName, [pixel]);
+
+        public async Task NotifyPixelsChanged(string canvasName, IReadOnlyCollection<PixelDto> pixels)
+        {
+            if (Interlocked.Increment(ref _callCount) == 1)
+            {
+                _firstBatchStarted.TrySetResult();
+                await _release.Task;
+            }
         }
 
         public Task NotifyPixelsDeleted(string canvasName, IReadOnlyCollection<CoordinateDto> coordinates) => Task.CompletedTask;
