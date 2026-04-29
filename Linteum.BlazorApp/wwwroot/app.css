@@ -459,3 +459,12 @@ h1:focus {
     }
 }
 
+/* Hide reconnect UI during intentional full navigation (e.g. Back to hub) — circuit drops before unload. */
+html.blazor-exit-navigation #components-reconnect-modal {
+    display: none !important;
+}
+
+html.blazor-exit-navigation #components-reconnect-modal::backdrop {
+    display: none !important;
+}
+
