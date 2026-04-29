@@ -93,6 +93,7 @@ public partial class CanvasPage : ComponentBase, IAsyncDisposable
     private int _disposeState;
     private bool _isBrushEnabled;
     private bool _isEraserBrushEnabled;
+    private bool _isTextSelectionPersistenceEnabled;
     private int _selectedEraserSize = 1;
     private string? _selectedBrushColorHex;
     private CanvasMaintenanceProgressDto? _maintenanceProgress;
@@ -308,6 +309,7 @@ public partial class CanvasPage : ComponentBase, IAsyncDisposable
 
         _jsViewportInitialized = true;
         await SyncBrushModeAsync();
+        await SyncTextModeStateAsync();
     }
 
     [JSInvokable]
@@ -562,7 +564,36 @@ public partial class CanvasPage : ComponentBase, IAsyncDisposable
     private Task HandleTextCaretPreviewChanged(TextCaretPreviewState state)
     {
         _textCaretPreview = state;
-        return InvokeAsync(StateHasChanged);
+        return SyncTextCaretPreviewAsync();
+    }
+
+    private Task HandleTextSelectionPersistenceChanged(bool isEnabled)
+    {
+        _isTextSelectionPersistenceEnabled = isEnabled;
+        return SyncTextModeStateAsync();
+    }
+
+    private async Task SyncTextCaretPreviewAsync()
+    {
+        await SyncTextModeStateAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private async Task SyncTextModeStateAsync()
+    {
+        if (!_jsViewportInitialized)
+        {
+            return;
+        }
+
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("canvasViewport.setSelectionPersistence", _isTextSelectionPersistenceEnabled);
+        }
+        catch (Exception ex)
+        {
+            _nlog.Warn(ex, "Failed to sync text selection persistence to canvas viewport");
+        }
     }
 
     private async Task SyncBrushModeAsync()
@@ -603,15 +634,20 @@ public partial class CanvasPage : ComponentBase, IAsyncDisposable
 
     private string GetTextCaretStyle()
     {
-        if (!_clickedPixel.HasValue)
+        if (!_clickedPixel.HasValue || _canvas == null)
         {
             return string.Empty;
         }
 
-        var x = _clickedPixel.Value.X;
-        var y = _clickedPixel.Value.Y + 1;
+        var x = _clickedPixel.Value.X + _textCaretPreview.Margin;
+        var y = _clickedPixel.Value.Y + _textCaretPreview.Margin;
         var color = string.IsNullOrWhiteSpace(_textCaretPreview.ColorHex) ? "#1e4f9d" : _textCaretPreview.ColorHex;
-        return $"left:{x}px; top:{y}px; height:{_textCaretPreview.FontSize}px; background:{color};";
+        return string.Join(' ',
+            $"left:calc({x} * 100% / {_canvas.Width});",
+            $"top:calc({y} * 100% / {_canvas.Height});",
+            $"width:max(1px, calc(100% / {_canvas.Width}));",
+            $"height:max(1px, calc({Math.Max(1, _textCaretPreview.LineHeight)} * 100% / {_canvas.Height}));",
+            $"background:{color};");
     }
 
     public async ValueTask DisposeAsync()

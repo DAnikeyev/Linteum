@@ -1,6 +1,7 @@
 @using Linteum.BlazorApp.Services
 @using Linteum.Shared.DTO
 @inject IJSRuntime JSRuntime
+@inject LocalStorageService LocalStorageService
 
 @if (!string.IsNullOrWhiteSpace(CanvasName))
 {
@@ -10,7 +11,7 @@
                 <span class="canvas-lobby-chat-title">Lobby Chat</span>
                 <button type="button"
                         class="canvas-lobby-chat-toggle"
-                        @onclick="ToggleMinimized"
+                        @onclick="ToggleMinimizedAsync"
                         title="@(State.IsMinimized ? "Expand chat" : "Minimize chat")"
                         aria-expanded="@(!State.IsMinimized)">
                     @(State.IsMinimized ? "▴" : "▾")
@@ -83,9 +84,14 @@
     private ElementReference _messagesContainerRef;
     private ElementReference _draftMessageRef;
     private DotNetObjectReference<CanvasLobbyChat>? _composerEnterReference;
+    private CanvasChatLobbyState? _lastBoundState;
     private bool _isSending;
+    private bool _hasLoadedMinimizedPreference;
+    private bool? _storedMinimizedPreference;
+    private bool _shouldApplyMinimizedPreference = true;
     private int _lastRenderedMessageCount = -1;
     private bool _lastRenderedMinimizedState = true;
+    private const SessionStorageKey MinimizedStorageKey = SessionStorageKey.CanvasLobbyChatMinimized;
 
     private bool IsSendDisabled =>
         _isSending
@@ -93,7 +99,25 @@
         || string.IsNullOrWhiteSpace(State.DraftMessage)
         || State.DraftMessage.Trim().Length > SendCanvasChatMessageRequestDto.MaxMessageLength;
 
-    private void ToggleMinimized() => State.IsMinimized = !State.IsMinimized;
+    protected override void OnParametersSet()
+    {
+        if (ReferenceEquals(_lastBoundState, State))
+        {
+            return;
+        }
+
+        _lastBoundState = State;
+        _shouldApplyMinimizedPreference = true;
+    }
+
+    private async Task ToggleMinimizedAsync()
+    {
+        State.IsMinimized = !State.IsMinimized;
+        _storedMinimizedPreference = State.IsMinimized;
+        _hasLoadedMinimizedPreference = true;
+        _shouldApplyMinimizedPreference = false;
+        await LocalStorageService.SetSessionItemAsync(MinimizedStorageKey, State.IsMinimized);
+    }
 
 
     private async Task SendAsync()
@@ -143,6 +167,24 @@
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
+        if (_shouldApplyMinimizedPreference)
+        {
+            if (!_hasLoadedMinimizedPreference)
+            {
+                _storedMinimizedPreference = await LocalStorageService.GetSessionItemAsync<bool?>(MinimizedStorageKey);
+                _hasLoadedMinimizedPreference = true;
+            }
+
+            _shouldApplyMinimizedPreference = false;
+
+            if (_storedMinimizedPreference.HasValue && State.IsMinimized != _storedMinimizedPreference.Value)
+            {
+                State.IsMinimized = _storedMinimizedPreference.Value;
+                await InvokeAsync(StateHasChanged);
+                return;
+            }
+        }
+
         var shouldScrollToBottom = !State.IsMinimized &&
                                    (firstRender
                                     || State.Messages.Count != _lastRenderedMessageCount

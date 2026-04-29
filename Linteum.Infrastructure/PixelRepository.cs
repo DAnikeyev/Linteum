@@ -142,7 +142,7 @@ public class PixelRepository : IPixelRepository
             return batchResult;
         }
 
-        return await _canvasWriteCoordinator.ExecuteAsync(canvas.Id, async _ =>
+        var result = await _canvasWriteCoordinator.ExecuteAsync(canvas.Id, async _ =>
         {
             var state = new BatchExecutionState();
             if (!useMasterOverride && canvas.CanvasMode == CanvasMode.Normal)
@@ -171,18 +171,6 @@ public class PixelRepository : IPixelRepository
                 var chunkResult = await ExecuteChunkAsync(ownerId, effectiveChunk, canvas, useMasterOverride);
                 if (chunkResult.ChangedPixels.Count > 0)
                 {
-                    if (!suppressNotifications)
-                    {
-                        try
-                        {
-                            await _notifier.NotifyPixelsChanged(canvas.Name, chunkResult.ChangedPixels);
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogError(ex, "Failed to broadcast pixel batch update for canvas {CanvasName}", canvas.Name);
-                        }
-                    }
-
                     batchResult.ChangedPixels.AddRange(chunkResult.ChangedPixels);
                     if (!useMasterOverride && canvas.CanvasMode == CanvasMode.Normal)
                     {
@@ -205,15 +193,30 @@ public class PixelRepository : IPixelRepository
                     batchResult.StoppedByBudget = true;
                 }
 
-                _logger.LogInformation(
-                    "Processed pixel batch chunk. OwnerId={OwnerId}, CanvasName={CanvasName}, Requested={RequestedCount}, Successful={SuccessfulCount}, StoppedByBudget={StoppedByBudget}, StoppedByNormalModeLimit={StoppedByNormalModeLimit}, UsedMasterOverride={UsedMasterOverride}",
-                    ownerId,
-                    canvas.Name,
-                    chunk.Length,
-                    chunkResult.ChangedPixels.Count,
-                    batchResult.StoppedByBudget,
-                    batchResult.StoppedByNormalModeLimit,
-                    useMasterOverride);
+                if (ShouldLogZeroPriceFreeDrawChunkAtDebug(canvas.CanvasMode, useMasterOverride, effectiveChunk))
+                {
+                    _logger.LogDebug(
+                        "Processed pixel batch chunk. OwnerId={OwnerId}, CanvasName={CanvasName}, Requested={RequestedCount}, Successful={SuccessfulCount}, StoppedByBudget={StoppedByBudget}, StoppedByNormalModeLimit={StoppedByNormalModeLimit}, UsedMasterOverride={UsedMasterOverride}",
+                        ownerId,
+                        canvas.Name,
+                        effectiveChunk.Length,
+                        chunkResult.ChangedPixels.Count,
+                        batchResult.StoppedByBudget,
+                        batchResult.StoppedByNormalModeLimit,
+                        useMasterOverride);
+                }
+                else
+                {
+                    _logger.LogInformation(
+                        "Processed pixel batch chunk. OwnerId={OwnerId}, CanvasName={CanvasName}, Requested={RequestedCount}, Successful={SuccessfulCount}, StoppedByBudget={StoppedByBudget}, StoppedByNormalModeLimit={StoppedByNormalModeLimit}, UsedMasterOverride={UsedMasterOverride}",
+                        ownerId,
+                        canvas.Name,
+                        effectiveChunk.Length,
+                        chunkResult.ChangedPixels.Count,
+                        batchResult.StoppedByBudget,
+                        batchResult.StoppedByNormalModeLimit,
+                        useMasterOverride);
+                }
 
                 if (batchResult.StoppedByBudget || batchResult.StoppedByNormalModeLimit)
                 {
@@ -223,6 +226,21 @@ public class PixelRepository : IPixelRepository
 
             return batchResult;
         });
+
+        if (!suppressNotifications && result.ChangedPixels.Count > 0)
+        {
+            await NotifyPixelsChangedSafelyAsync(canvas.Name, result.ChangedPixels);
+        }
+
+        return result;
+    }
+
+    private static bool ShouldLogZeroPriceFreeDrawChunkAtDebug(CanvasMode canvasMode, bool useMasterOverride, IReadOnlyCollection<PixelDto> pixels)
+    {
+        return !useMasterOverride
+            && canvasMode == CanvasMode.FreeDraw
+            && pixels.Count > 0
+            && pixels.All(pixel => pixel.Price <= 0);
     }
 
     public async Task<PixelBatchDeleteResultDto> TryDeletePixelsBatchAsync(Guid userId, IReadOnlyCollection<CoordinateDto> coordinates, Guid canvasId, bool useMasterOverride = false, bool suppressNotifications = false)
@@ -246,7 +264,7 @@ public class PixelRepository : IPixelRepository
             return new PixelBatchDeleteResultDto();
         }
 
-        return await _canvasWriteCoordinator.ExecuteAsync(canvasId, async _ =>
+        var result = await _canvasWriteCoordinator.ExecuteAsync(canvasId, async _ =>
         {
             var pixelsToDelete = await LoadPixelsForCoordinatesAsync(canvasId, requestedCoordinates);
             if (pixelsToDelete.Count == 0)
@@ -285,9 +303,9 @@ public class PixelRepository : IPixelRepository
                 }
             }
 
-            if (!suppressNotifications)
+            if (deletedCount > 0)
             {
-                await _notifier.NotifyPixelsDeleted(canvas.Name, deletedCoordinates);
+                await TouchCanvasAsync(canvasId, DateTime.UtcNow);
             }
 
             _logger.LogInformation("Deleted {Count} pixels and their history from canvas {CanvasName} by user {UserId}", deletedCount, canvas.Name, userId);
@@ -298,6 +316,13 @@ public class PixelRepository : IPixelRepository
                 DeletedCoordinates = deletedCoordinates,
             };
         });
+
+        if (!suppressNotifications && result.DeletedCoordinates.Count > 0)
+        {
+            await NotifyPixelsDeletedSafelyAsync(canvas.Name, result.DeletedCoordinates);
+        }
+
+        return result;
     }
 
     public async Task<NormalModeQuotaDto> GetNormalModeQuotaAsync(Guid ownerId, Guid canvasId)
@@ -505,6 +530,7 @@ public class PixelRepository : IPixelRepository
 
             await _context.PixelChangedEvents.AddRangeAsync(pixelChangedEvents);
             await _context.SaveChangesAsync();
+            await TouchCanvasAsync(pixels.First().CanvasId, DateTime.UtcNow);
             _context.ChangeTracker.Clear();
             return new ChunkExecutionResult(changedPixels);
         }
@@ -634,6 +660,7 @@ public class PixelRepository : IPixelRepository
             }
 
             await _context.SaveChangesAsync();
+            await TouchCanvasAsync(pixels.First().CanvasId, DateTime.UtcNow);
             await transaction.CommitAsync();
             _context.ChangeTracker.Clear();
             return new ChunkExecutionResult(changedPixels, failureReason);
@@ -697,6 +724,14 @@ public class PixelRepository : IPixelRepository
             .FirstOrDefaultAsync();
     }
 
+    private Task TouchCanvasAsync(Guid canvasId, DateTime updatedAtUtc)
+    {
+        return _context.Canvases
+            .Where(canvas => canvas.Id == canvasId)
+            .ExecuteUpdateAsync(setters => setters
+                .SetProperty(canvas => canvas.UpdatedAt, updatedAtUtc));
+    }
+
     private static PixelDto ClonePixel(PixelDto pixel) => new()
     {
         Id = pixel.Id,
@@ -717,5 +752,35 @@ public class PixelRepository : IPixelRepository
             .OrderBy(item => item.Index)
             .Select(item => item.Pixel)
             .ToList();
+    }
+
+    private async Task NotifyPixelsChangedSafelyAsync(string canvasName, IReadOnlyCollection<PixelDto> changedPixels)
+    {
+        foreach (var batch in changedPixels.Chunk(MaxBatchSize))
+        {
+            try
+            {
+                await _notifier.NotifyPixelsChanged(canvasName, batch);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to broadcast pixel batch update for canvas {CanvasName}", canvasName);
+            }
+        }
+    }
+
+    private async Task NotifyPixelsDeletedSafelyAsync(string canvasName, IReadOnlyCollection<CoordinateDto> deletedCoordinates)
+    {
+        foreach (var batch in deletedCoordinates.Chunk(MaxBatchSize))
+        {
+            try
+            {
+                await _notifier.NotifyPixelsDeleted(canvasName, batch);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to broadcast pixel deletion batch for canvas {CanvasName}", canvasName);
+            }
+        }
     }
 }

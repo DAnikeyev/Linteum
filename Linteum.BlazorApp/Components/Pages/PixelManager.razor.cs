@@ -3,8 +3,10 @@ using Linteum.BlazorApp.LocalDTO;
 using Linteum.BlazorApp.Services;
 using Linteum.Shared;
 using Linteum.Shared.DTO;
+using Linteum.Shared.Helpers;
 using Microsoft.AspNetCore.Components;
 using NLog;
+using System.Globalization;
 
 namespace Linteum.BlazorApp.Components.Pages;
 
@@ -36,6 +38,9 @@ public partial class PixelManager : ComponentBase
 
     [Parameter]
     public EventCallback<TextCaretPreviewState> OnTextCaretPreviewChanged { get; set; }
+
+    [Parameter]
+    public EventCallback<bool> OnTextSelectionPersistenceChanged { get; set; }
 
     [Parameter]
     public bool IsBrushEnabled { get; set; }
@@ -95,6 +100,8 @@ public partial class PixelManager : ComponentBase
     private (int X, int Y)? _economyBidPixel;
     private NormalModeQuotaDto? _normalModeQuota;
     private Guid? _normalModeQuotaCanvasId;
+    private TextCaretPreviewState _lastTextCaretPreviewState = TextCaretPreviewState.Hidden;
+    private bool _lastTextSelectionPersistenceEnabled;
 
     private ColorDto? SelectedColor => _colors?.FirstOrDefault(c => c.Id == _selectedColorId);
     private ColorDto? SelectedTextForegroundColor => _colors?.FirstOrDefault(c => c.Id == _textForegroundColorId);
@@ -248,6 +255,8 @@ public partial class PixelManager : ComponentBase
         }
 
         SyncEconomyBid();
+        await NotifyTextSelectionPersistenceChangedAsync();
+        await NotifyTextCaretPreviewChangedAsync();
 
         if (ClickedPixelData == null || !ClickedPixel.HasValue)
         {
@@ -386,20 +395,55 @@ public partial class PixelManager : ComponentBase
 
     private Task NotifyTextCaretPreviewChangedAsync()
     {
+        var previewState = CreateTextCaretPreviewState();
+        if (previewState == _lastTextCaretPreviewState)
+        {
+            return Task.CompletedTask;
+        }
+
+        _lastTextCaretPreviewState = previewState;
+
         if (!OnTextCaretPreviewChanged.HasDelegate)
         {
             return Task.CompletedTask;
         }
 
-        if (!IsTextToolActive || !ClickedPixel.HasValue)
+        return OnTextCaretPreviewChanged.InvokeAsync(previewState);
+    }
+
+    private Task NotifyTextSelectionPersistenceChangedAsync()
+    {
+        var isSelectionPersistenceEnabled = IsTextToolActive;
+        if (isSelectionPersistenceEnabled == _lastTextSelectionPersistenceEnabled)
         {
-            return OnTextCaretPreviewChanged.InvokeAsync(TextCaretPreviewState.Hidden);
+            return Task.CompletedTask;
         }
 
-        return OnTextCaretPreviewChanged.InvokeAsync(new TextCaretPreviewState(
+        _lastTextSelectionPersistenceEnabled = isSelectionPersistenceEnabled;
+
+        if (!OnTextSelectionPersistenceChanged.HasDelegate)
+        {
+            return Task.CompletedTask;
+        }
+
+        return OnTextSelectionPersistenceChanged.InvokeAsync(isSelectionPersistenceEnabled);
+    }
+
+    private TextCaretPreviewState CreateTextCaretPreviewState()
+    {
+        if (!IsTextToolActive || !ClickedPixel.HasValue)
+        {
+            return TextCaretPreviewState.Hidden;
+        }
+
+        var metrics = TextConverter.GetPreviewMetrics(_selectedTextFontSize.ToString(CultureInfo.InvariantCulture));
+
+        return new TextCaretPreviewState(
             true,
-            _selectedTextFontSize,
-            SelectedTextForegroundColor?.HexValue));
+            (int)Math.Round(metrics.PixelFontSize),
+            metrics.Margin,
+            metrics.LineHeight,
+            SelectedTextForegroundColor?.HexValue);
     }
 
     private static string GetColorDisplayName(ColorDto? color, string fallback)

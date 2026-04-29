@@ -7,7 +7,7 @@ namespace Linteum.Bots;
 
 public class XeroxBot : BotBase
 {
-    private const int BatchSize = 100;
+    private const int BatchSize = MaxPaintBatchSize;
     private const int MaxRetries = 5;
     private const int RequestDelayMs = 1;
 
@@ -110,52 +110,66 @@ public class XeroxBot : BotBase
             (pixels[i], pixels[j]) = (pixels[j], pixels[i]);
         }
 
-        Console.WriteLine($"Drawing {pixels.Count} pixels in random order in batches of {BatchSize}...");
+        Console.WriteLine($"Drawing {pixels.Count} pixels in random order using color-grouped batches of up to {BatchSize}...");
 
         int drawn = 0;
         int failed = 0;
-        var batch = new List<PixelDto>(BatchSize);
+        int processed = 0;
+        int nextProgressLogAt = 5000;
+        var pendingCoordinatesByColor = new Dictionary<int, List<CoordinateDto>>();
 
         foreach (var (x, y) in pixels)
         {
-            var targetColor = grid[x, y];
-            batch.Add(new PixelDto
+            ct.ThrowIfCancellationRequested();
+
+            var targetColorId = grid[x, y].Id;
+            if (!pendingCoordinatesByColor.TryGetValue(targetColorId, out var batch))
             {
-                X = x,
-                Y = y,
-                ColorId = targetColor.Id,
-                CanvasId = canvas.Id,
-            });
+                batch = new List<CoordinateDto>(BatchSize);
+                pendingCoordinatesByColor[targetColorId] = batch;
+            }
+
+            batch.Add(new CoordinateDto(x, y));
+            processed++;
 
             if (batch.Count >= BatchSize)
             {
-                var changedCount = await PaintPixelBatchWithRetriesAsync(canvas, batch, ct);
+                var requestedCount = batch.Count;
+                var changedCount = await PaintCoordinateBatchWithRetriesAsync(canvas, targetColorId, batch, ct);
                 drawn += changedCount;
-                failed += batch.Count - changedCount;
-                if (drawn > 0 && drawn % 1000 < BatchSize)
-                {
-                    Console.WriteLine($"Progress: {drawn}/{pixels.Count} pixels drawn.");
-                }
-
+                failed += requestedCount - changedCount;
                 batch.Clear();
+
+                if (processed >= nextProgressLogAt)
+                {
+                    Console.WriteLine($"Progress: processed {processed}/{pixels.Count} pixels. Successful={drawn}, Failed={failed}.");
+                    nextProgressLogAt += 5000;
+                }
             }
         }
 
-        if (batch.Count > 0)
+        foreach (var colorId in pendingCoordinatesByColor.Keys.OrderBy(_ => random.Next()))
         {
-            var changedCount = await PaintPixelBatchWithRetriesAsync(canvas, batch, ct);
+            var batch = pendingCoordinatesByColor[colorId];
+            if (batch.Count == 0)
+            {
+                continue;
+            }
+
+            var requestedCount = batch.Count;
+            var changedCount = await PaintCoordinateBatchWithRetriesAsync(canvas, colorId, batch, ct);
             drawn += changedCount;
-            failed += batch.Count - changedCount;
+            failed += requestedCount - changedCount;
         }
 
-        Console.WriteLine($"Done! Drawn {drawn}/{pixels.Count} pixels. Failed: {failed}.");
+        Console.WriteLine($"Done! Requested {pixels.Count} pixels. Successful={drawn}, Failed={failed}.");
     }
 
-    private async Task<int> PaintPixelBatchWithRetriesAsync(CanvasDto canvas, IReadOnlyCollection<PixelDto> pixels, CancellationToken ct)
+    private async Task<int> PaintCoordinateBatchWithRetriesAsync(CanvasDto canvas, int colorId, IReadOnlyCollection<CoordinateDto> coordinates, CancellationToken ct)
     {
         for (int attempt = 1; attempt <= MaxRetries + 1; attempt++)
         {
-            var result = await TryPaintPixelsAsync(canvas, pixels, ct);
+            var result = await TryPaintCoordinatesAsync(canvas, coordinates, colorId, ct: ct);
             await Task.Delay(RequestDelayMs, ct);
 
             if (result != null)

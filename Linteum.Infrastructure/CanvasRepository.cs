@@ -15,6 +15,8 @@ public class CanvasRepository : ICanvasRepository
 {
     private static readonly TimeSpan CacheDuration = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan MaintenanceCommandTimeout = TimeSpan.FromMinutes(10);
+    private const int MaintenanceDeleteBatchSize = 500;
+    private static readonly TimeSpan MaintenanceDeleteBatchDelay = TimeSpan.FromMilliseconds(150);
 
     private readonly IMapper _mapper;
     private readonly HashSet<string> _protectedCanvasNames;
@@ -275,6 +277,97 @@ public class CanvasRepository : ICanvasRepository
         return await TryDeleteCanvasAsync(canvas.Id);
     }
 
+    public async Task<bool> TryDeleteCanvasGraduallyAsync(Guid canvasId, CancellationToken cancellationToken = default)
+    {
+        return await _canvasWriteCoordinator.ExecuteAsync(canvasId, async token =>
+        {
+            token.ThrowIfCancellationRequested();
+
+            var overallStopwatch = Stopwatch.StartNew();
+            var canvas = await GetMaintenanceTargetByIdAsync(canvasId);
+            if (canvas == null)
+            {
+                _logger.LogDebug("Canvas with ID {CanvasId} not found for gradual deletion.", canvasId);
+                return false;
+            }
+
+            if (_protectedCanvasNames.Contains(canvas.Name))
+            {
+                _logger.LogDebug("Cannot gradually delete protected canvas with name {CanvasName}.", canvas.Name);
+                return false;
+            }
+
+            var originalCommandTimeout = _context.Database.GetCommandTimeout();
+            _context.Database.SetCommandTimeout(MaintenanceCommandTimeout);
+            try
+            {
+                _logger.LogInformation(
+                    "Starting gradual canvas deletion for {CanvasName} ({CanvasId}). BatchSize={BatchSize}, BatchDelayMs={BatchDelayMs}, CommandTimeoutSeconds={CommandTimeoutSeconds}.",
+                    canvas.Name,
+                    canvas.Id,
+                    MaintenanceDeleteBatchSize,
+                    MaintenanceDeleteBatchDelay.TotalMilliseconds,
+                    MaintenanceCommandTimeout.TotalSeconds);
+
+                var deletedSubscriptions = await DeleteSubscriptionsInBatchesAsync(canvas.Id, token);
+                var deletedBalanceEvents = await DeleteBalanceEventsInBatchesAsync(canvas.Id, token);
+                var deletedPixels = await DeletePixelsInBatchesAsync(canvas.Id, token);
+
+                var deletedCanvases = await _context.Canvases
+                    .Where(c => c.Id == canvas.Id)
+                    .ExecuteDeleteAsync(token);
+
+                _context.ChangeTracker.Clear();
+                _cache.Remove(BuildCanvasCacheKey(canvas.Name));
+
+                overallStopwatch.Stop();
+                _logger.LogInformation(
+                    "Gradual canvas deletion finished for {CanvasName} ({CanvasId}). DeletedCanvasCount={DeletedCanvasCount}, DeletedSubscriptions={DeletedSubscriptions}, DeletedBalanceEvents={DeletedBalanceEvents}, DeletedPixels={DeletedPixels}, TotalMs={TotalMs}. Pixel history was deleted gradually by pixel cascade.",
+                    canvas.Name,
+                    canvas.Id,
+                    deletedCanvases,
+                    deletedSubscriptions,
+                    deletedBalanceEvents,
+                    deletedPixels,
+                    overallStopwatch.ElapsedMilliseconds);
+
+                return deletedCanvases > 0;
+            }
+            catch (OperationCanceledException) when (token.IsCancellationRequested)
+            {
+                overallStopwatch.Stop();
+                _logger.LogInformation(
+                    "Gradual canvas deletion cancelled for {CanvasName} ({CanvasId}) after {ElapsedMs} ms.",
+                    canvas.Name,
+                    canvas.Id,
+                    overallStopwatch.ElapsedMilliseconds);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                overallStopwatch.Stop();
+                _logger.LogError(ex, "Error gradually deleting canvas with ID {CanvasId} after {ElapsedMs} ms.", canvasId, overallStopwatch.ElapsedMilliseconds);
+                return false;
+            }
+            finally
+            {
+                _context.Database.SetCommandTimeout(originalCommandTimeout);
+            }
+        }, cancellationToken);
+    }
+
+    public async Task<bool> TryDeleteCanvasGraduallyByName(string name, CancellationToken cancellationToken = default)
+    {
+        var canvas = await GetMaintenanceTargetByNameAsync(name);
+        if (canvas == null)
+        {
+            _logger.LogDebug("Canvas with name {CanvasName} not found for gradual deletion.", name);
+            return false;
+        }
+
+        return await TryDeleteCanvasGraduallyAsync(canvas.Id, cancellationToken);
+    }
+
     public async Task<bool> CheckPassword(CanvasDto canvas, string? passwordHash)
     {
         var canvasInDb = await _context.Canvases
@@ -378,6 +471,93 @@ public class CanvasRepository : ICanvasRepository
             .AsNoTracking()
             .Where(balanceChangedEvent => balanceChangedEvent.CanvasId == canvasId)
             .LongCountAsync();
+
+    private async Task<int> DeleteSubscriptionsInBatchesAsync(Guid canvasId, CancellationToken cancellationToken)
+    {
+        var deleted = 0;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var userIds = await _context.Subscriptions
+                .AsNoTracking()
+                .Where(subscription => subscription.CanvasId == canvasId)
+                .OrderBy(subscription => subscription.UserId)
+                .Select(subscription => subscription.UserId)
+                .Take(MaintenanceDeleteBatchSize)
+                .ToListAsync(cancellationToken);
+
+            if (userIds.Count == 0)
+            {
+                return deleted;
+            }
+
+            deleted += await _context.Subscriptions
+                .Where(subscription => subscription.CanvasId == canvasId && userIds.Contains(subscription.UserId))
+                .ExecuteDeleteAsync(cancellationToken);
+
+            _context.ChangeTracker.Clear();
+            await Task.Delay(MaintenanceDeleteBatchDelay, cancellationToken);
+        }
+    }
+
+    private async Task<int> DeleteBalanceEventsInBatchesAsync(Guid canvasId, CancellationToken cancellationToken)
+    {
+        var deleted = 0;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var batchIds = await _context.BalanceChangedEvents
+                .AsNoTracking()
+                .Where(balanceChangedEvent => balanceChangedEvent.CanvasId == canvasId)
+                .OrderBy(balanceChangedEvent => balanceChangedEvent.Id)
+                .Select(balanceChangedEvent => balanceChangedEvent.Id)
+                .Take(MaintenanceDeleteBatchSize)
+                .ToListAsync(cancellationToken);
+
+            if (batchIds.Count == 0)
+            {
+                return deleted;
+            }
+
+            deleted += await _context.BalanceChangedEvents
+                .Where(balanceChangedEvent => batchIds.Contains(balanceChangedEvent.Id))
+                .ExecuteDeleteAsync(cancellationToken);
+
+            _context.ChangeTracker.Clear();
+            await Task.Delay(MaintenanceDeleteBatchDelay, cancellationToken);
+        }
+    }
+
+    private async Task<int> DeletePixelsInBatchesAsync(Guid canvasId, CancellationToken cancellationToken)
+    {
+        var deleted = 0;
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var batchIds = await _context.Pixels
+                .AsNoTracking()
+                .Where(pixel => pixel.CanvasId == canvasId)
+                .OrderBy(pixel => pixel.Id)
+                .Select(pixel => pixel.Id)
+                .Take(MaintenanceDeleteBatchSize)
+                .ToListAsync(cancellationToken);
+
+            if (batchIds.Count == 0)
+            {
+                return deleted;
+            }
+
+            deleted += await _context.Pixels
+                .Where(pixel => batchIds.Contains(pixel.Id))
+                .ExecuteDeleteAsync(cancellationToken);
+
+            _context.ChangeTracker.Clear();
+            await Task.Delay(MaintenanceDeleteBatchDelay, cancellationToken);
+        }
+    }
 
     private static string BuildCanvasCacheKey(string name) => $"canvas:name:{name}";
 

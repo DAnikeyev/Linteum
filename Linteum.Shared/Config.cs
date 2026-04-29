@@ -44,6 +44,8 @@ public class Config
     public IReadOnlyCollection<string> GetProtectedCanvasNames() =>
         SeedCanvases
             .Select(canvas => canvas.Name)
+            .Append(DefaultCanvasName)
+            .Concat(SecondaryDefaultCanvasNames)
             .Where(name => !string.IsNullOrWhiteSpace(name))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();

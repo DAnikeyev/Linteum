@@ -5,8 +5,8 @@
 - Refined stroke handling for more stable drawing behavior during fast or irregular input.
 
 ## Bug Fixes and Improvements
-- Fixed issues discovered in the latest drawing workflow and tightened related edge-case handling.
-- Improved overall canvas behavior and release stability across the updated drawing path.
+- Fixed FreeDraw text-tool behavior so selected pixels persist while interacting with text controls, the caret preview remains visible, and text submission works with `Ctrl+Enter`.
+- Improved Blazor text-preview resilience by adding preview-safe font fallback logic and bundling runtime fonts in the Blazor Docker image.
 
 ## Lobby Chat
 - Added lobby chat support for the main user flow.

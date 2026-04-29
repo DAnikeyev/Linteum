@@ -23,6 +23,7 @@ try
     builder.Host.UseNLog();
 
     builder.Services.AddScoped<ProtectedLocalStorage>();
+    builder.Services.AddScoped<ProtectedSessionStorage>();
 
 #if DEBUG
     var apiBaseAddress = builder.Configuration["ApiBaseUrl"] ?? "http://localhost:5182";

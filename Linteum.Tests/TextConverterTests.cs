@@ -53,6 +53,24 @@ public class TextConverterTests
         Assert.That(CountColor(grid, TextColor.HexValue), Is.GreaterThan(0));
     }
 
+    [Test]
+    public void GetPreviewMetrics_ClampsFontSizeAndUsesExpectedMarginMath()
+    {
+        var tooSmall = TextConverter.GetPreviewMetrics("1");
+        var minimum = TextConverter.GetPreviewMetrics("4");
+        var tooLarge = TextConverter.GetPreviewMetrics("100");
+        var maximum = TextConverter.GetPreviewMetrics("25");
+
+        Assert.That(tooSmall.PixelFontSize, Is.EqualTo(minimum.PixelFontSize));
+        Assert.That(tooSmall.Margin, Is.EqualTo(minimum.Margin));
+        Assert.That(tooLarge.PixelFontSize, Is.EqualTo(maximum.PixelFontSize));
+        Assert.That(tooLarge.Margin, Is.EqualTo(maximum.Margin));
+        Assert.That(minimum.Margin, Is.EqualTo(2));
+        Assert.That(maximum.Margin, Is.EqualTo(10));
+        Assert.That(minimum.LineHeight, Is.GreaterThan(0));
+        Assert.That(maximum.LineHeight, Is.GreaterThan(0));
+    }
+
     private static int CountColor(ColorDto?[,] grid, string hexValue)
     {
         var count = 0;
