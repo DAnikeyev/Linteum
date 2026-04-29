@@ -1,3 +1,111 @@
+.canvas-add-page.settings-container {
+    gap: 1rem;
+}
+
+.canvas-add-zone {
+    gap: 0.85rem;
+}
+
+.canvas-add-zone-panel {
+    border-style: dashed;
+    background: rgba(245, 249, 255, 0.65);
+}
+
+.canvas-add-zone-lead {
+    margin: -0.15rem 0 0.35rem;
+    color: rgba(47, 74, 114, 0.78);
+    font-size: 0.8rem;
+    line-height: 1.45;
+}
+
+.canvas-add-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.canvas-add-field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+}
+
+.canvas-add-field .text-muted {
+    margin-top: 0.1rem;
+}
+
+.canvas-add-file-summary {
+    margin-top: 0.35rem;
+    padding: 0.5rem 0.65rem;
+    border-radius: 10px;
+    background: rgba(45, 114, 221, 0.08);
+    border: 1px solid rgba(45, 114, 221, 0.18);
+    color: rgba(18, 61, 138, 0.88);
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
+.creation-type-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem;
+}
+
+.creation-option {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.65rem;
+    margin: 0;
+    padding: 0.85rem 0.95rem;
+    border-radius: 14px;
+    border: 1px solid rgba(95, 118, 153, 0.28);
+    background: rgba(255, 255, 255, 0.72);
+    cursor: pointer;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease, background 0.15s ease;
+}
+
+.creation-option:hover {
+    border-color: rgba(45, 114, 221, 0.35);
+    background: rgba(255, 255, 255, 0.92);
+}
+
+.creation-option.is-selected {
+    border-color: rgba(38, 104, 204, 0.55);
+    background: linear-gradient(145deg, rgba(230, 241, 255, 0.95), rgba(255, 255, 255, 0.88));
+    box-shadow: 0 0 0 1px rgba(38, 104, 204, 0.12), 0 10px 26px rgba(29, 83, 169, 0.1);
+}
+
+.creation-option-input {
+    margin: 0.2rem 0 0;
+    width: 1.05rem;
+    height: 1.05rem;
+    flex-shrink: 0;
+    accent-color: #2668cc;
+    cursor: pointer;
+}
+
+.creation-option-body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.28rem;
+    min-width: 0;
+}
+
+.creation-option-title {
+    font-family: "Sora", "Plus Jakarta Sans", sans-serif;
+    font-size: 0.82rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: rgba(18, 61, 138, 0.92);
+}
+
+.creation-option-desc {
+    font-size: 0.76rem;
+    line-height: 1.45;
+    color: rgba(47, 74, 114, 0.82);
+}
+
 .settings-container {
     width: min(840px, calc(100% - 2rem));
     margin: 1.25rem auto;
@@ -145,6 +253,10 @@
 }
 
 @media (max-width: 860px) {
+    .creation-type-grid {
+        grid-template-columns: 1fr;
+    }
+
     .settings-container {
         width: calc(100% - 1rem);
         margin-top: 0.65rem;

@@ -52,7 +52,7 @@ namespace Linteum.Api.Migrations
 
                     b.HasIndex("UserId", "CanvasId");
 
-                    b.ToTable("BalanceChangedEvents", (string)null);
+                    b.ToTable("BalanceChangedEvents");
                 });
 
             modelBuilder.Entity("Linteum.Domain.Canvas", b =>
@@ -97,7 +97,7 @@ namespace Linteum.Api.Migrations
                     b.HasIndex("Name")
                         .IsUnique();
 
-                    b.ToTable("Canvases", (string)null);
+                    b.ToTable("Canvases");
                 });
 
             modelBuilder.Entity("Linteum.Domain.Color", b =>
@@ -119,7 +119,7 @@ namespace Linteum.Api.Migrations
 
                     b.HasKey("Id");
 
-                    b.ToTable("Colors", (string)null);
+                    b.ToTable("Colors");
                 });
 
             modelBuilder.Entity("Linteum.Domain.LoginEvent", b =>
@@ -145,7 +145,7 @@ namespace Linteum.Api.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("LoginEvents", (string)null);
+                    b.ToTable("LoginEvents");
                 });
 
             modelBuilder.Entity("Linteum.Domain.Pixel", b =>
@@ -174,12 +174,14 @@ namespace Linteum.Api.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("CanvasId");
+
                     b.HasIndex("OwnerId");
 
                     b.HasIndex("CanvasId", "X", "Y")
                         .IsUnique();
 
-                    b.ToTable("Pixels", (string)null);
+                    b.ToTable("Pixels");
                 });
 
             modelBuilder.Entity("Linteum.Domain.PixelChangedEvent", b =>
@@ -219,7 +221,7 @@ namespace Linteum.Api.Migrations
 
                     b.HasIndex("PixelId");
 
-                    b.ToTable("PixelChangedEvents", (string)null);
+                    b.ToTable("PixelChangedEvents");
                 });
 
             modelBuilder.Entity("Linteum.Domain.Subscription", b =>
@@ -236,7 +238,7 @@ namespace Linteum.Api.Migrations
 
                     b.HasIndex("UserId");
 
-                    b.ToTable("Subscriptions", (string)null);
+                    b.ToTable("Subscriptions");
                 });
 
             modelBuilder.Entity("Linteum.Domain.User", b =>
@@ -274,7 +276,7 @@ namespace Linteum.Api.Migrations
                     b.HasIndex("UserName")
                         .IsUnique();
 
-                    b.ToTable("Users", (string)null);
+                    b.ToTable("Users");
                 });
 
             modelBuilder.Entity("Linteum.Domain.BalanceChangedEvent", b =>

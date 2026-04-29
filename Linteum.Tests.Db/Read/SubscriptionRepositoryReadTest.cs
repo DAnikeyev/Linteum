@@ -11,8 +11,10 @@ namespace Linteum.Tests.Db.Delete
             var user1 = await DbHelper.AddDefaultUser("user1");
             var user2 = await DbHelper.AddDefaultUser("user2");
             var user3 = await DbHelper.AddDefaultUser("user3");
+            Assert.That(user1?.Id, Is.Not.Null);
             var canvasDto = new CanvasDto
             {
+                CreatorId = user1!.Id!.Value,
                 Name = "Test Canvas",
                 Width = 10,
                 Height = 10,

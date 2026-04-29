@@ -1,4 +1,5 @@
 using Linteum.Shared.DTO;
+using Linteum.Shared.Exceptions;
 
 namespace Linteum.Tests.Db.Create
 {
@@ -11,6 +12,7 @@ namespace Linteum.Tests.Db.Create
             var user = await DbHelper.AddDefaultUser();
             var canvasDto = new CanvasDto
             {
+                CreatorId = user!.Id!.Value,
                 Name = "Test Canvas",
                 Width = 10,
                 Height = 10,
@@ -19,8 +21,8 @@ namespace Linteum.Tests.Db.Create
             var canvas = await RepoManager.CanvasRepository.TryAddCanvas(canvasDto, password);
             Assert.IsNotNull(canvas);
             var subscriptionRepo = RepoManager.SubscriptionRepository;
-            var newSubscriptionWrong = await subscriptionRepo.Subscribe(user!.Id!.Value, canvas.Id, "wrongPassword");
-            Assert.IsNull(newSubscriptionWrong);
+            Assert.ThrowsAsync<InvalidCanvasPasswordException>(async () =>
+                await subscriptionRepo.Subscribe(user!.Id!.Value, canvas.Id, "wrongPassword"));
             var newSubscription = await subscriptionRepo.Subscribe(user.Id.Value, canvas.Id, password);
             Assert.IsNotNull(newSubscription);
             Assert.That(newSubscription.UserId, Is.EqualTo(user.Id));

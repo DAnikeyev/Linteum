@@ -1,7 +1,13 @@
 ﻿# Use ASP\.NET runtime as base image
 FROM mcr.microsoft.com/dotnet/aspnet:10.0 AS base
 WORKDIR /app
-RUN apt-get update && apt-get install -y libgssapi-krb5-2 libkrb5-3 libk5crypto3 libcom-err2 && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    fontconfig \
+    fonts-dejavu-core \
+    libgssapi-krb5-2 \
+    libkrb5-3 \
+    libk5crypto3 \
+    libcom-err2 && rm -rf /var/lib/apt/lists/*
 # Expose the API port from .env (default 8080)
 ARG API_CONTAINER_PORT=8080
 EXPOSE ${API_CONTAINER_PORT}

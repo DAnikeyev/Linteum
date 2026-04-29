@@ -1,6 +1,9 @@
 // Works only if loaded in .net when requested from Blazor
 
 window.canvasHelpers = {
+    _resizeListeners: {},
+    _nextResizeListenerId: 1,
+
     fillWhite: function (canvas, w, h) {
         if (!canvas) return;
         canvas.width = w;
@@ -64,15 +67,50 @@ window.canvasHelpers = {
         return { width: Math.max(0, width), height: Math.max(0, height) };
     },
 
-    registerResizeListener: function (dotNetHelper) {
-        var listener = function () {
-            dotNetHelper.invokeMethodAsync('OnWindowResize');
-        };
-        window.addEventListener('resize', listener);
-        return listener;
+    scrollElementToBottom: function (element) {
+        if (!element) return;
+
+        requestAnimationFrame(function () {
+            element.scrollTop = element.scrollHeight;
+        });
     },
 
-    unregisterResizeListener: function (listener) {
+    enableEnterToSend: function (element, dotNetHelper) {
+        if (!element || !dotNetHelper || element.__enterToSendHandler) return;
+
+        var handler = function (event) {
+            if (event.key !== 'Enter' || event.shiftKey || event.isComposing) return;
+
+            event.preventDefault();
+            dotNetHelper.invokeMethodAsync('OnComposerEnterPressed').catch(function () { });
+        };
+
+        element.__enterToSendHandler = handler;
+        element.addEventListener('keydown', handler);
+    },
+
+    disableEnterToSend: function (element) {
+        if (!element || !element.__enterToSendHandler) return;
+
+        element.removeEventListener('keydown', element.__enterToSendHandler);
+        delete element.__enterToSendHandler;
+    },
+
+    registerResizeListener: function (dotNetHelper) {
+        var id = 'resize-' + this._nextResizeListenerId++;
+        var listener = function () {
+            dotNetHelper.invokeMethodAsync('OnWindowResize').catch(function () { });
+        };
+        window.addEventListener('resize', listener);
+        this._resizeListeners[id] = listener;
+        return id;
+    },
+
+    unregisterResizeListener: function (listenerId) {
+        var listener = this._resizeListeners[listenerId];
+        if (!listener) return;
+
         window.removeEventListener('resize', listener);
+        delete this._resizeListeners[listenerId];
     }
 };

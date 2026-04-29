@@ -1,6 +1,7 @@
 using Linteum.BlazorApp;
 using Linteum.BlazorApp.Components;
 using Linteum.BlazorApp.Components.Notification;
+using Linteum.BlazorApp.Services;
 using Linteum.Shared;
 using Microsoft.AspNetCore.Components.Server.ProtectedBrowserStorage;
 using Microsoft.AspNetCore.DataProtection;
@@ -24,13 +25,12 @@ try
     builder.Services.AddScoped<ProtectedLocalStorage>();
 
 #if DEBUG
-    var apiContainerName = "localhost"; 
-    var apiContainerPort = "5182";
+    var apiBaseAddress = builder.Configuration["ApiBaseUrl"] ?? "http://localhost:5182";
 #else
     var apiContainerName = Environment.GetEnvironmentVariable("API_CONTAINER_NAME") ?? "api";
     var apiContainerPort = Environment.GetEnvironmentVariable("API_CONTAINER_PORT") ?? "8080";
+    var apiBaseAddress = builder.Configuration["ApiBaseUrl"] ?? $"http://{apiContainerName}:{apiContainerPort}";
 #endif
-    var apiBaseAddress = $"http://{apiContainerName}:{apiContainerPort}";
 
     logger.Info("API Base Address configured: {ApiBaseAddress}", apiBaseAddress);
 
@@ -57,6 +57,7 @@ try
         .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(builder.Environment.ContentRootPath, "keys")))
         .SetApplicationName("LinteumApp");
     builder.Services.AddScoped<LocalStorageService>();
+    builder.Services.AddScoped<CanvasChatStateService>();
     builder.Services.AddScoped<NotificationService>();
     
     logger.Info("Core services (DataProtection, LocalStorage, Notification) configured");

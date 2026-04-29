@@ -11,7 +11,7 @@ internal class PixelChangedEventRepositoryCreateTest : SyntheticDataTest
         var pixelChangedRepo = RepoManager.PixelChangedEventRepository;
         var user = await DbHelper.AddDefaultUser("U1");
         var user2 = await DbHelper.AddDefaultUser("U2");
-        var canvas = (await RepoManager.CanvasRepository.GetAllAsync()).FirstOrDefault();
+        var canvas = await RepoManager.CanvasRepository.GetByNameAsync(DefaultConfig.DefaultCanvasName);
         await RepoManager.BalanceChangedEventRepository.TryChangeBalanceAsync(user.Id.Value, canvas.Id, 1000, BalanceChangedReason.Regular);
         await RepoManager.BalanceChangedEventRepository.TryChangeBalanceAsync(user2.Id.Value, canvas.Id, 1000, BalanceChangedReason.Regular);
         var colors = (await RepoManager.ColorRepository.GetAllAsync()).ToList();
@@ -37,18 +37,21 @@ internal class PixelChangedEventRepositoryCreateTest : SyntheticDataTest
         Assert.IsNotNull(pixel2);
         Assert.That(pixel2.CanvasId, Is.EqualTo(pixel1.CanvasId));
         Assert.That(pixel2.Id, Is.EqualTo(pixel1.Id));
-        var pixelChangedEvent = (await pixelChangedRepo.GetByPixelIdAsync(pixel1.Id.Value)).ToList();
+        var pixelChangedEvent = (await pixelChangedRepo.GetByPixelIdAsync(pixel1.Id.Value))
+            .OrderBy(x => x.ChangedAt)
+            .ThenBy(x => x.Id)
+            .ToList();
         Assert.That(pixelChangedEvent.Count, Is.EqualTo(2));
         Assert.That(pixelChangedEvent[0].OwnerUserId, Is.EqualTo(user.Id));
         Assert.That(pixelChangedEvent[0].OldOwnerUserId, Is.Null);
         Assert.That(pixelChangedEvent[0].NewColorId, Is.EqualTo(pixelDto1.ColorId));
-        Assert.That(pixelChangedEvent[0].NewPrice, Is.EqualTo(pixelDto1.Price));
+        Assert.That(pixelChangedEvent[0].NewPrice, Is.EqualTo(0));
         
         Assert.That(pixelChangedEvent[1].OwnerUserId, Is.EqualTo(user2.Id));
         Assert.That(pixelChangedEvent[1].OldOwnerUserId, Is.EqualTo(user.Id));
         Assert.That(pixelChangedEvent[1].NewColorId, Is.EqualTo(pixelDto2.ColorId));
         Assert.That(pixelChangedEvent[1].OldColorId, Is.EqualTo(pixelDto1.ColorId));
-        Assert.That(pixelChangedEvent[1].NewPrice, Is.EqualTo(pixelDto2.Price));
+        Assert.That(pixelChangedEvent[1].NewPrice, Is.EqualTo(0));
     }
     
 }

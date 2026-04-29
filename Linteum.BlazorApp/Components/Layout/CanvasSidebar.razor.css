@@ -303,6 +303,9 @@
     .sidebar {
         width: 280px;
         min-width: 280px;
+        height: 100dvh;
+        min-height: 100dvh;
+        padding-bottom: env(safe-area-inset-bottom);
         box-shadow: 20px 0 40px rgba(0, 0, 0, 0.25);
     }
 

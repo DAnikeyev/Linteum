@@ -8,8 +8,12 @@ internal class CanvasRepositoryCreateTest : SyntheticDataTest
     public async Task TryAddCanvas()
     {
         var canvasRepo = RepoManager.CanvasRepository;
+        var creator = await DbHelper.AddDefaultUser("canvas-create-owner");
+        Assert.That(creator?.Id, Is.Not.Null);
+
         var canvasWithPassword = new CanvasDto
         {
+            CreatorId = creator!.Id!.Value,
             Name = "Test Canvas",
             Width = 10,
             Height = 10,
@@ -17,6 +21,7 @@ internal class CanvasRepositoryCreateTest : SyntheticDataTest
         var password = "testpassword";
         var canvasWithoutPassword = new CanvasDto
         {
+            CreatorId = creator.Id.Value,
             Name = "Test Canvas No Password",
             Width = 10,
             Height = 10,

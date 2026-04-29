@@ -10,8 +10,11 @@ internal class BalanceChangedEventRepositoryReadTest : SyntheticDataTest
         var user = await DbHelper.AddDefaultUser("U1");
         var user2 = await DbHelper.AddDefaultUser("U2");
         var user3 = await DbHelper.AddDefaultUser("U3");
-        var canvas = (await RepoManager.CanvasRepository.GetAllAsync()).FirstOrDefault();
+        var canvas = await RepoManager.CanvasRepository.GetByNameAsync(DefaultConfig.DefaultCanvasName);
         var BCERepo = RepoManager.BalanceChangedEventRepository;
+        var initialUserEventCount = (await BCERepo.GetByUserIdAsync(user.Id.Value)).Count();
+        var initialUser2EventCount = (await BCERepo.GetByUserIdAsync(user2.Id.Value)).Count();
+        var initialUser3CanvasEventCount = (await BCERepo.GetByUserAndCanvasIdAsync(user3.Id.Value, canvas.Id)).Count();
         var balance1 = await BCERepo.TryChangeBalanceAsync(user.Id.Value, canvas!.Id, 1000, BalanceChangedReason.Regular);
         var balance2 = await BCERepo.TryChangeBalanceAsync(user.Id.Value, canvas!.Id, -600, BalanceChangedReason.Regular);
         var balance3 = await BCERepo.TryChangeBalanceAsync(user.Id.Value, canvas!.Id, -600, BalanceChangedReason.Regular);
@@ -29,13 +32,13 @@ internal class BalanceChangedEventRepositoryReadTest : SyntheticDataTest
         Assert.That(balance1.Reason, Is.EqualTo(BalanceChangedReason.Regular));
         
         var balanceChangedEvents = await BCERepo.GetByUserIdAsync(user.Id.Value);
-        Assert.That(balanceChangedEvents.Count(), Is.EqualTo(4));
+        Assert.That(balanceChangedEvents.Count(), Is.EqualTo(initialUserEventCount + 3));
         var balanceChangedEvents2 = await BCERepo.GetByUserAndCanvasIdAsync(user.Id.Value, canvas!.Id);
         Assert.That(balanceChangedEvents2.Count(), Is.EqualTo(4));
         var balanceChangedEvents3 = await BCERepo.GetByUserIdAsync(user2.Id.Value);
-        Assert.That(balanceChangedEvents3.Count(), Is.EqualTo(2));
+        Assert.That(balanceChangedEvents3.Count(), Is.EqualTo(initialUser2EventCount + 1));
         var balanceChangedEvents4 = await BCERepo.GetByUserAndCanvasIdAsync(user3.Id.Value, canvas!.Id);
-        Assert.That(balanceChangedEvents4.Count(), Is.EqualTo(1));
+        Assert.That(balanceChangedEvents4.Count(), Is.EqualTo(initialUser3CanvasEventCount));
     }
     
 }

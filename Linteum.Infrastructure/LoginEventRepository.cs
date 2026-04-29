@@ -24,7 +24,10 @@ public class LoginEventRepository: ILoginEventRepository
     public async Task<IEnumerable<LoginEventDto>> GetByUserIdAsync(Guid userId)
     {
         var events = await _context.LoginEvents
+            .AsNoTracking()
             .Where(e => e.UserId == userId)
+            .OrderByDescending(e => e.LoggedInAt)
+            .Take(100)
             .Select(e => _mapper.Map<LoginEventDto>(e))
             .ToListAsync();
         return events;

@@ -1,13 +1,11 @@
 using System.Net.Http.Json;
-using System.Threading.Channels;
 using Linteum.Shared.DTO;
 
 namespace Linteum.Bots;
 
 public class CleanerBot : BotBase
 {
-    private const int WorkerCount = 24;
-    private const int QueueCapacity = 2048;
+    private const int BatchSize = 100;
     private readonly string _targetCanvasName;
 
     public CleanerBot(string targetCanvasName) : base("cleaner@linteum.com", "CleanCanvas123!", "CleanerBot")
@@ -41,35 +39,33 @@ public class CleanerBot : BotBase
 
         Console.WriteLine($"Clearing canvas '{canvas.Name}' with color '{whiteColor.Name ?? whiteColor.HexValue}'...");
 
-        var channel = Channel.CreateBounded<(int X, int Y)>(new BoundedChannelOptions(QueueCapacity)
-        {
-            FullMode = BoundedChannelFullMode.Wait,
-            SingleWriter = true,
-            SingleReader = false
-        });
-
-        var workers = new List<Task>(WorkerCount);
-        for (int i = 0; i < WorkerCount; i++)
-        {
-            workers.Add(Task.Run(async () =>
-            {
-                await foreach (var item in channel.Reader.ReadAllAsync(ct))
-                {
-                    await PaintPixelAsync(canvas, item.X, item.Y, whiteColor.Id);
-                }
-            }));
-        }
+        var batch = new List<PixelDto>(BatchSize);
 
         for (int y = 0; y < canvas.Height; y++)
         {
             for (int x = 0; x < canvas.Width; x++)
             {
-                await channel.Writer.WriteAsync((x, y), ct);
+                batch.Add(new PixelDto
+                {
+                    X = x,
+                    Y = y,
+                    ColorId = whiteColor.Id,
+                    CanvasId = canvas.Id,
+                });
+
+                if (batch.Count >= BatchSize)
+                {
+                    await TryPaintPixelsAsync(canvas, batch, ct);
+                    batch.Clear();
+                }
             }
         }
 
-        channel.Writer.Complete();
-        await Task.WhenAll(workers);
+        if (batch.Count > 0)
+        {
+            await TryPaintPixelsAsync(canvas, batch, ct);
+        }
+
         Console.WriteLine($"Canvas '{canvas.Name}' cleared.");
     }
 }

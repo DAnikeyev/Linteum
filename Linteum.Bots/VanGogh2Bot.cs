@@ -1,5 +1,4 @@
 using System.Net.Http.Json;
-using System.Threading.Channels;
 using Linteum.Shared;
 using Linteum.Shared.DTO;
 
@@ -7,8 +6,7 @@ namespace Linteum.Bots;
 
 public class VanGogh2Bot : BotBase
 {
-    private const int WorkerCount = 4;
-    private const int QueueCapacity = 1024;
+    private const int BatchSize = 100;
     private readonly string CanvasName = "VanGogh";
 
     public VanGogh2Bot() : base("vangogh2@linteum.com", "SecurePassword123!", "VanGogh2Bot")
@@ -29,7 +27,7 @@ public class VanGogh2Bot : BotBase
                 Name = CanvasName,
                 Width = 100,
                 Height = 80,
-                CanvasMode = CanvasMode.Sandbox
+                CanvasMode = CanvasMode.FreeDraw
             };
 
             var response = await HttpClient.PostAsJsonAsync("Canvases/Add?passwordHash=", newCanvas);
@@ -54,56 +52,38 @@ public class VanGogh2Bot : BotBase
 
         var grid = ImageConverter.ConvertImageToGrid(imagePath, canvas.Width, canvas.Height, colors);
         Console.WriteLine("Image converted to grid.");
-        Console.WriteLine($"Starting continuous painting loop with bounded queue: workers={WorkerCount}, capacity={QueueCapacity}.");
+        Console.WriteLine("Starting continuous batched painting loop...");
+        var batch = new List<PixelDto>(BatchSize);
 
-        var channel = Channel.CreateBounded<(int X, int Y, int ColorId)>(new BoundedChannelOptions(QueueCapacity)
+        while (!ct.IsCancellationRequested)
         {
-            FullMode = BoundedChannelFullMode.Wait,
-            SingleWriter = true,
-            SingleReader = false
-        });
-
-        var workers = new List<Task>(WorkerCount);
-        for (int i = 0; i < WorkerCount; i++)
-        {
-            int workerId = i;
-            workers.Add(Task.Run(async () =>
+            for (int y = 0; y < canvas.Height; y++)
             {
-                await foreach (var item in channel.Reader.ReadAllAsync(ct))
+                for (int x = 0; x < canvas.Width; x++)
                 {
-                    try
+                    var targetColor = grid[x, y];
+                    batch.Add(new PixelDto
                     {
-                        await PaintPixelAsync(canvas, item.X, item.Y, item.ColorId);
+                        X = x,
+                        Y = y,
+                        ColorId = targetColor.Id,
+                        CanvasId = canvas.Id,
+                    });
+
+                    if (batch.Count >= BatchSize)
+                    {
+                        await TryPaintPixelsAsync(canvas, batch, ct);
+                        batch.Clear();
                         await Task.Delay(10, ct);
-                    }
-                    catch (Exception ex)
-                    {
-                        Console.WriteLine($"[Worker {workerId}] Unexpected error: {ex.Message}");
-                        await Task.Delay(100, ct);
-                    }
-                }
-            }));
-        }
-
-        Console.WriteLine("Starting continuous painting loop with bounded queue...");
-        try
-        {
-            while (!ct.IsCancellationRequested)
-            {
-                for (int y = 0; y < canvas.Height; y++)
-                {
-                    for (int x = 0; x < canvas.Width; x++)
-                    {
-                        var targetColor = grid[x, y];
-                        await channel.Writer.WriteAsync((x, y, targetColor.Id), ct);
                     }
                 }
             }
-        }
-        finally
-        {
-            channel.Writer.Complete();
-            await Task.WhenAll(workers);
+
+            if (batch.Count > 0)
+            {
+                await TryPaintPixelsAsync(canvas, batch, ct);
+                batch.Clear();
+            }
         }
     }
 }

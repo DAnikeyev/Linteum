@@ -8,6 +8,9 @@ public interface ICanvasRepository
     public Task<CanvasDto?> GetByNameAsync(string name);
     public Task<IEnumerable<CanvasDto>> GetAllAsync(bool includePrivates = false);
     public Task<IEnumerable<CanvasDto>> SearchByNameAsync(string name, bool includePrivates = false);
+    public Task<bool> TryEraseCanvasAsync(Guid canvasId);
+    public Task<bool> TryEraseCanvasByName(string name);
+    public Task<bool> TryDeleteCanvasAsync(Guid canvasId);
     public Task<bool> TryDeleteCanvasByName(string name);
     public Task<bool> CheckPassword(CanvasDto canvas, string? passwordHash);
     public Task<CanvasDto?> TryAddCanvas(CanvasDto canvas, string? passwordHash);

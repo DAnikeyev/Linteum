@@ -1,22 +1,37 @@
 using Linteum.Api.Services;
 using Linteum.Infrastructure;
 using Linteum.Shared;
+using Linteum.Shared.DTO;
 using Microsoft.AspNetCore.SignalR;
 
 namespace Linteum.Api.Hubs;
 
 public class CanvasHub : Hub
 {
+    public const string ReceivePixelUpdateEventName = "ReceivePixelUpdate";
+    public const string ReceivePixelBatchUpdateEventName = "ReceivePixelBatchUpdate";
+    public const string ReceiveConfirmedPixelPlaybackBatchEventName = "ReceiveConfirmedPixelPlaybackBatch";
+    public const string ReceiveConfirmedPixelDeletionPlaybackBatchEventName = "ReceiveConfirmedPixelDeletionPlaybackBatch";
+    public const string UpdateOnlineUsersEventName = "UpdateOnlineUsers";
+    public const string ReceiveCanvasChatMessageEventName = "ReceiveCanvasChatMessage";
+    public const string SessionExpiredEventName = "SessionExpired";
+    public const string CanvasErasedEventName = "CanvasErased";
+    public const string CanvasDeletedEventName = "CanvasDeleted";
+    public const string CanvasMaintenanceProgressEventName = "CanvasMaintenanceProgress";
+    public const string PixelsDeletedEventName = "PixelsDeleted";
+
     private readonly IConnectionTracker _tracker;
     private readonly SessionService _sessionService;
     private readonly RepositoryManager _repositoryManager;
+    private readonly ICanvasChatBroadcaster _canvasChatBroadcaster;
     private readonly ILogger<CanvasHub> _logger;
 
-    public CanvasHub(IConnectionTracker tracker, SessionService sessionService, RepositoryManager repositoryManager, ILogger<CanvasHub> logger)
+    public CanvasHub(IConnectionTracker tracker, SessionService sessionService, RepositoryManager repositoryManager, ICanvasChatBroadcaster canvasChatBroadcaster, ILogger<CanvasHub> logger)
     {
         _tracker = tracker;
         _sessionService = sessionService;
         _repositoryManager = repositoryManager;
+        _canvasChatBroadcaster = canvasChatBroadcaster;
         _logger = logger;
     }
 
@@ -57,11 +72,48 @@ public class CanvasHub : Hub
         await BroadcastUpdateOnlineUsers(canvasName);
     }
 
+    public async Task SendCanvasChatMessage(string canvasName, string message)
+    {
+        if (string.IsNullOrWhiteSpace(canvasName))
+        {
+            throw new HubException("Canvas name is required.");
+        }
+
+        var normalizedMessage = message?.Trim();
+        if (string.IsNullOrWhiteSpace(normalizedMessage))
+        {
+            throw new HubException("Message is required.");
+        }
+
+        if (normalizedMessage.Length > SendCanvasChatMessageRequestDto.MaxMessageLength)
+        {
+            throw new HubException($"Message must be {SendCanvasChatMessageRequestDto.MaxMessageLength} characters or less.");
+        }
+
+        var joinedGroups = _tracker.GetConnectionGroups(Context.ConnectionId);
+        if (!joinedGroups.Contains(canvasName, StringComparer.OrdinalIgnoreCase))
+        {
+            throw new HubException("Join the canvas lobby before sending chat messages.");
+        }
+
+        var userName = await GetUserName() ?? "Anonymous";
+        await _canvasChatBroadcaster.BroadcastAsync(
+            canvasName,
+            new CanvasChatMessageDto
+            {
+                CanvasName = canvasName,
+                UserName = userName,
+                Message = normalizedMessage,
+                SentAtUtc = DateTime.UtcNow,
+            },
+            Context.ConnectionAborted);
+    }
+
     private async Task BroadcastUpdateOnlineUsers(string groupName)
     {
         var users = _tracker.GetGroupUsers(groupName).ToList();
         _logger.LogDebug("Broadcasting online users update to group {GroupName}. User count: {UserCount}", groupName, users.Count);
-        await Clients.Group(groupName).SendAsync("UpdateOnlineUsers", users);
+        await Clients.Group(groupName).SendAsync(UpdateOnlineUsersEventName, users);
     }
 
     private async Task<string?> GetUserName()

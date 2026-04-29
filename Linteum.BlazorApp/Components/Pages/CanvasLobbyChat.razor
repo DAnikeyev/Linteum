@@ -1,0 +1,179 @@
+@using Linteum.BlazorApp.Services
+@using Linteum.Shared.DTO
+@inject IJSRuntime JSRuntime
+
+@if (!string.IsNullOrWhiteSpace(CanvasName))
+{
+    <div class="canvas-lobby-chat-shell @(State.IsMinimized ? "minimized" : string.Empty)">
+        <section class="canvas-lobby-chat" aria-label="Lobby chat">
+            <header class="canvas-lobby-chat-header">
+                <span class="canvas-lobby-chat-title">Lobby Chat</span>
+                <button type="button"
+                        class="canvas-lobby-chat-toggle"
+                        @onclick="ToggleMinimized"
+                        title="@(State.IsMinimized ? "Expand chat" : "Minimize chat")"
+                        aria-expanded="@(!State.IsMinimized)">
+                    @(State.IsMinimized ? "▴" : "▾")
+                </button>
+            </header>
+
+            @if (!State.IsMinimized)
+            {
+                <div class="canvas-lobby-chat-body">
+                    <div @ref="_messagesContainerRef" class="canvas-lobby-chat-messages">
+                        @if (State.Messages.Count == 0)
+                        {
+                            <div class="canvas-lobby-chat-empty">
+                                Messages are shared only with users currently online in this canvas.
+                            </div>
+                        }
+                        else
+                        {
+                            @foreach (var message in State.Messages)
+                            {
+                                var isOwnMessage = IsOwnMessage(message);
+                                <article class="canvas-lobby-chat-message @(isOwnMessage ? "own" : string.Empty)">
+                                    <span class="canvas-lobby-chat-message-user">@(isOwnMessage ? "You" : GetUserName(message)):</span>
+                                    <span class="canvas-lobby-chat-message-text">@message.Message</span>
+                                    <time class="canvas-lobby-chat-message-time">@message.SentAtUtc.ToLocalTime().ToString("HH:mm")</time>
+                                </article>
+                            }
+                        }
+                    </div>
+
+                    <div class="canvas-lobby-chat-compose">
+                        <textarea class="form-control canvas-lobby-chat-textarea"
+                                  rows="3"
+                                  maxlength="@SendCanvasChatMessageRequestDto.MaxMessageLength"
+                                  placeholder="Type a message for this lobby..."
+                                  @ref="_draftMessageRef"
+                                  @bind="State.DraftMessage"
+                                  @bind:event="oninput"
+                                  disabled="@_isSending"></textarea>
+
+                        <div class="canvas-lobby-chat-compose-footer">
+                            <span class="canvas-lobby-chat-counter">@State.DraftMessage.Length/@SendCanvasChatMessageRequestDto.MaxMessageLength</span>
+                            <button type="button"
+                                    class="btn canvas-lobby-chat-send"
+                                    @onclick="SendAsync"
+                                    disabled="@IsSendDisabled">
+                                @(_isSending ? "Sending..." : "Send")
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            }
+        </section>
+    </div>
+}
+
+@code {
+    [Parameter, EditorRequired]
+    public string CanvasName { get; set; } = string.Empty;
+
+    [Parameter]
+    public string? CurrentUserName { get; set; }
+
+    [Parameter, EditorRequired]
+    public CanvasChatLobbyState State { get; set; } = default!;
+
+    [Parameter]
+    public Func<string, Task<bool>>? OnSend { get; set; }
+
+    private ElementReference _messagesContainerRef;
+    private ElementReference _draftMessageRef;
+    private DotNetObjectReference<CanvasLobbyChat>? _composerEnterReference;
+    private bool _isSending;
+    private int _lastRenderedMessageCount = -1;
+    private bool _lastRenderedMinimizedState = true;
+
+    private bool IsSendDisabled =>
+        _isSending
+        || OnSend is null
+        || string.IsNullOrWhiteSpace(State.DraftMessage)
+        || State.DraftMessage.Trim().Length > SendCanvasChatMessageRequestDto.MaxMessageLength;
+
+    private void ToggleMinimized() => State.IsMinimized = !State.IsMinimized;
+
+
+    private async Task SendAsync()
+    {
+        if (IsSendDisabled || OnSend is null)
+        {
+            return;
+        }
+
+        var message = State.DraftMessage.Trim();
+        if (string.IsNullOrWhiteSpace(message))
+        {
+            return;
+        }
+
+        _isSending = true;
+        try
+        {
+            var sent = await OnSend(message);
+            if (sent)
+            {
+                State.DraftMessage = string.Empty;
+            }
+        }
+        finally
+        {
+            _isSending = false;
+        }
+    }
+
+    [JSInvokable]
+    public async Task OnComposerEnterPressed()
+    {
+        await SendAsync();
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private DotNetObjectReference<CanvasLobbyChat> GetComposerEnterReference()
+        => _composerEnterReference ??= DotNetObjectReference.Create(this);
+
+    private bool IsOwnMessage(CanvasChatMessageDto message) =>
+        !string.IsNullOrWhiteSpace(CurrentUserName)
+        && string.Equals(CurrentUserName, message.UserName, StringComparison.Ordinal);
+
+    private static string GetUserName(CanvasChatMessageDto message) =>
+        string.IsNullOrWhiteSpace(message.UserName) ? "Anonymous" : message.UserName;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        var shouldScrollToBottom = !State.IsMinimized &&
+                                   (firstRender
+                                    || State.Messages.Count != _lastRenderedMessageCount
+                                    || _lastRenderedMinimizedState != State.IsMinimized);
+
+        _lastRenderedMessageCount = State.Messages.Count;
+        _lastRenderedMinimizedState = State.IsMinimized;
+
+        if (!shouldScrollToBottom)
+        {
+            if (!State.IsMinimized)
+            {
+                await JSRuntime.InvokeVoidAsync("canvasHelpers.enableEnterToSend", _draftMessageRef, GetComposerEnterReference());
+            }
+
+            return;
+        }
+
+        await JSRuntime.InvokeVoidAsync("canvasHelpers.scrollElementToBottom", _messagesContainerRef);
+        if (!State.IsMinimized)
+        {
+            await JSRuntime.InvokeVoidAsync("canvasHelpers.enableEnterToSend", _draftMessageRef, GetComposerEnterReference());
+        }
+    }
+
+    public void Dispose()
+    {
+        _composerEnterReference?.Dispose();
+        _composerEnterReference = null;
+    }
+}
+
+
+

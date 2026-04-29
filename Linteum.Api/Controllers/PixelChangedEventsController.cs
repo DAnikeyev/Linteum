@@ -41,10 +41,14 @@ public class PixelChangedEventsController : ControllerBase
     }
 
     [HttpGet("canvas/{canvasId}")]
-    public async Task<IActionResult> GetByCanvasId(Guid canvasId, [FromQuery] DateTime? startDate)
+    public async Task<IActionResult> GetByCanvasId(Guid canvasId, [FromQuery] DateTime? startDate, [FromQuery] int limit = 1000)
     {
-        var events = (await _repoManager.PixelChangedEventRepository.GetByCanvasIdAsync(canvasId, startDate)).ToList();
-        _logger.LogInformation("Pixel changed events for canvas {CanvasId} returned successfully. Count={Count}, StartDate={StartDate}", canvasId, events.Count, startDate);
+        // Limit to 10000 to prevent OOM on large canvases/active history
+        var safeLimit = Math.Clamp(limit, 1, 10000);
+        var events = (await _repoManager.PixelChangedEventRepository.GetByCanvasIdAsync(canvasId, startDate))
+            .Take(safeLimit)
+            .ToList();
+        _logger.LogInformation("Pixel changed events for canvas {CanvasId} returned successfully. Count={Count}, StartDate={StartDate}, Limit={Limit}", canvasId, events.Count, startDate, safeLimit);
         return Ok(events);
     }
 

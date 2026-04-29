@@ -1,3 +1,39 @@
+# 0.2.1 - 2026/04/29
+
+## Fluid Strokes and Interpolation
+- Updated fluid stroke interpolation to improve stroke continuity and rendering smoothness.
+- Refined stroke handling for more stable drawing behavior during fast or irregular input.
+
+## Bug Fixes and Improvements
+- Fixed issues discovered in the latest drawing workflow and tightened related edge-case handling.
+- Improved overall canvas behavior and release stability across the updated drawing path.
+
+## Lobby Chat
+- Added lobby chat support for the main user flow.
+- Improved realtime interaction in the lobby to make chat presence and messaging available alongside the canvas experience.
+
+# 0.2.0 - 2026/04/28
+
+## Canvas Modes and Creation
+- Introduced dedicated canvas modes: `Normal`, `FreeDraw`, and `Economy`, with mode-aware behavior across creation, rendering, and server-side validation.
+- Expanded canvas creation to support both blank canvases and JPG-based starting images, including dimension checks and clearer setup guidance.
+- Added stronger default-canvas seeding and configuration support for mode-specific canvases such as `home_FreeDraw` and `home_Economy`.
+
+## Pixel and Drawing Workflows
+- Added batch pixel change support with detailed per-request results for successful updates, deduplication, budget stops, and normal-mode daily-limit handling.
+- Added batch pixel deletion support for FreeDraw canvases to speed up cleanup and editing workflows.
+- Added queued text drawing for FreeDraw canvases, enabling users to place text with configurable font size, text color, and optional background color.
+
+## Economy and Event Processing
+- Improved repository logic and event handling for balance changes, login activity, and pixel-changed event delivery to better support the new drawing workflows.
+- Added queue-based background processing for canvas maintenance and text drawing requests to keep interactive operations responsive.
+- Expanded database coverage for the new batch-update, seeding, and queue-processing scenarios.
+
+## UI and UX Improvements
+- Refined the canvas page and pixel manager to better support mode-specific actions, bulk operations, and clearer feedback while editing.
+- Reworked canvas add and subscribe pages with search, mode labels, password hints, and more guided canvas setup flows.
+- Updated styling across the new canvas-management experience for a cleaner, more consistent release.
+
 # 0.1.2 - 2026/04/22
 
 ## Performance and Reliability

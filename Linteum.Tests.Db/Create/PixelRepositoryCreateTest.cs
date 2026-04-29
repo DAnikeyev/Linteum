@@ -15,9 +15,11 @@ internal class PixelRepositoryCreateTest : SyntheticDataTest
         // Create a canvas
         var canvasDto = new CanvasDto
         {
+            CreatorId = user!.Id!.Value,
             Name = "Test Canvas",
             Width = 10,
             Height = 10,
+            CanvasMode = CanvasMode.Economy,
         };
         var password = "testpassword";
         var canvas = await canvasRepo.TryAddCanvas(canvasDto, password);

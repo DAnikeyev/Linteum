@@ -1,6 +1,7 @@
 @page "/canvas_subscribe"
 @using Linteum.BlazorApp.Components.Layout
 @using Linteum.BlazorApp.Components.Notification
+@using Linteum.Shared
 @using Linteum.Shared.DTO
 @using System.Threading
 @layout Layout.BaseLayout
@@ -21,8 +22,9 @@
             <div class="action-row">
                 <input id="canvasNameInput"
                        class="form-control fixed-width me-2"
-                       value="@_canvasName"
-                       @oninput="OnCanvasNameInput"
+                       @bind="_canvasName"
+                       @bind:event="oninput"
+                       @bind:after="OnCanvasNameChangedAsync"
                        autocomplete="off" />
             </div>
             @if (_isSearching || _searchResults.Any() || _showNoResults)
@@ -42,7 +44,7 @@
                         {
                             <li class="list-group-item list-group-item-action d-flex justify-content-between align-items-center canvas-search-item"
                                 @onclick="() => SelectCanvas(canvas.Name)">
-                                <span>@canvas.Name</span>
+                                <span>@canvas.Name <span class="text-muted">(@GetCanvasModeLabel(canvas.CanvasMode))</span></span>
                                 @if (canvas.IsPasswordProtected)
                                 {
                                     <span class="canvas-lock-hint" title="Password protected" aria-label="Password protected">Locked</span>
@@ -61,6 +63,7 @@
                        id="canvasPasswordInput"
                        class="form-control fixed-width me-2"
                        @bind="_canvasPassword"
+                       @bind:event="oninput"
                        autocomplete="new-password" />
             </div>
             <small class="text-muted">Leave empty if the canvas has no password.</small>
@@ -87,9 +90,8 @@
     private bool _showNoResults;
     private CancellationTokenSource? _searchCts;
 
-    private async Task OnCanvasNameInput(ChangeEventArgs e)
+    private async Task OnCanvasNameChangedAsync()
     {
-        _canvasName = e.Value?.ToString();
 
         _searchCts?.Cancel();
         _searchCts?.Dispose();
@@ -155,6 +157,14 @@
         _searchResults.Clear();
         _showNoResults = false;
     }
+
+    private static string GetCanvasModeLabel(CanvasMode mode) => mode switch
+    {
+        CanvasMode.Normal => "Normal",
+        CanvasMode.FreeDraw => "FreeDraw",
+        CanvasMode.Economy => "Economy",
+        _ => mode.ToString()
+    };
 
     public void Dispose()
     {

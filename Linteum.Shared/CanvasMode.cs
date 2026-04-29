@@ -2,6 +2,7 @@ namespace Linteum.Shared;
 
 public enum CanvasMode
 {
-    Sandbox = 1,
+    Normal = 1,
     Economy = 2,
+    FreeDraw = 3,
 }

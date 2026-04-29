@@ -37,6 +37,7 @@ public class AppDbContext : DbContext
         {
             entity.HasKey(p => p.Id);
             entity.HasIndex(p => new { p.CanvasId, p.X, p.Y }).IsUnique();
+            entity.HasIndex(p => p.CanvasId);
             entity.HasIndex(p => p.OwnerId);
             entity.Property(p => p.X);
             entity.Property(p => p.Y);
@@ -65,6 +66,7 @@ public class AppDbContext : DbContext
         modelBuilder.Entity<BalanceChangedEvent>(entity =>
         {
             entity.HasKey(e => e.Id);
+            entity.HasIndex(e => e.CanvasId);
             entity.HasIndex(e => new {e.UserId, e.CanvasId});
             entity.Property(e => e.OldBalance);
             entity.Property(e => e.NewBalance);
@@ -103,7 +105,7 @@ public class AppDbContext : DbContext
             entity.HasMany(c => c.Pixels).WithOne(p => p.Canvas).HasForeignKey(p => p.CanvasId);
             entity.Property(c => c.CreatorId);
             entity.Property(c => c.CanvasMode)
-                .HasDefaultValue(CanvasMode.Sandbox);
+                .HasDefaultValue(CanvasMode.Normal);
             entity.HasOne(c => c.Creator)
                 .WithMany()
                 .HasForeignKey(c => c.CreatorId)

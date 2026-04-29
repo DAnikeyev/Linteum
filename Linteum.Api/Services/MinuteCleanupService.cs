@@ -73,6 +73,13 @@ public class MinuteCleanupService : BackgroundService
                                     break;
                                 }
 
+                                await _hubContext.Clients.Client(connectionId)
+                                    .SendAsync(CanvasHub.SessionExpiredEventName, cancellationToken: stoppingToken);
+                                _logger.LogInformation(
+                                    "Notified ConnectionId {ConnectionId} (User {UserName}) about session expiration.",
+                                    connectionId,
+                                    user.UserName);
+
                                 var groups = _tracker.GetConnectionGroups(connectionId).ToList();
                                 foreach (var group in groups)
                                 {

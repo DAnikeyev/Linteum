@@ -5,6 +5,7 @@
         <Nullable>enable</Nullable>
         <ImplicitUsings>enable</ImplicitUsings>
         <DockerDefaultTargetOS>Linux</DockerDefaultTargetOS>
+        <ServerGarbageCollection>false</ServerGarbageCollection>
     </PropertyGroup>
 
     <ItemGroup>
@@ -33,10 +34,6 @@
       <ProjectReference Include="..\Linteum.Domain\Linteum.Domain.csproj" />
       <ProjectReference Include="..\Linteum.Infrastructure\Linteum.Infrastructure.csproj" />
       <ProjectReference Include="..\Linteum.Shared\Linteum.Shared.csproj" />
-    </ItemGroup>
-
-    <ItemGroup>
-      <Folder Include="Migrations\" />
     </ItemGroup>
 
 </Project>

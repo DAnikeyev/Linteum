@@ -117,7 +117,7 @@ public class UserRepository : IUserRepository
 
                 await _subscriptionRepository.Subscribe(newUser.Id, mainCanvas.Id, null);
 
-                foreach (var secondaryName in _defaultsConfig.SecondaryCanvasNames)
+                foreach (var secondaryName in _defaultsConfig.SecondaryDefaultCanvasNames)
                 {
                     var secondaryCanvas = await _context.Canvases.AsNoTracking()
                         .FirstOrDefaultAsync(x => x.Name == secondaryName);
