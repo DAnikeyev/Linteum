@@ -1,6 +1,7 @@
 @page "/signup"
 @using Linteum.BlazorApp.Components.Layout
 @using Linteum.Shared
+@using Microsoft.AspNetCore.WebUtilities
 @layout EmptyLayout
 @inject NavigationManager Navigation
 @inject MyApiClient ApiClient
@@ -70,7 +71,7 @@
                 <button class="btn btn-primary flex-fill" @onclick="HandleSignup">Sign Up</button>
             </div>
             <p class="auth-switch">
-                Already have an account? <a href="/login">Login</a>
+                Already have an account? <a href="@BuildLoginLink()">Login</a>
             </p>
         </div>
     }
@@ -86,6 +87,7 @@
     private bool _isBusy = true;
     private string _busyTitle = "Checking session";
     private string _busyMessage = "Checking whether you are already signed in.";
+    private string? _returnUrl;
 
     private void ClearError()
     {
@@ -124,7 +126,7 @@
         var result = await ApiClient.SignupAsync(_signupModel.Email, _signupModel.Password, _signupModel.UserName);
         if (result.SessionId is not null)
         {
-            Navigation.NavigateTo(Config.DefaultPage, replace: true);
+            Navigation.NavigateTo(GetNavigationTarget(), replace: true);
         }
         else
         {
@@ -139,6 +141,7 @@
             return;
 
         var shouldRenderSignup = true;
+        ReadNavigationState();
         try
         {
             var sessionIdString = await LocalStorageService.GetItemAsync<string>(LocalStorageKey.SessionId);
@@ -148,8 +151,11 @@
                 var (user, validatedSessionId) = await ApiClient.LoginAsync(sessionId);
                 if (user != null && validatedSessionId != null)
                 {
-                    shouldRenderSignup = false;
-                    Navigation.NavigateTo(Config.DefaultPage, replace: true);
+                    if (!GuestUserHelper.IsGuest(user))
+                    {
+                        shouldRenderSignup = false;
+                        Navigation.NavigateTo(GetNavigationTarget(), replace: true);
+                    }
                 }
                 else
                 {
@@ -178,6 +184,35 @@
         _busyTitle = title;
         _busyMessage = message;
         _isBusy = true;
+    }
+
+    private void ReadNavigationState()
+    {
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var query = QueryHelpers.ParseQuery(uri.Query);
+        _returnUrl = query.TryGetValue("returnUrl", out var returnUrlValue)
+            ? NormalizeReturnUrl(returnUrlValue.ToString())
+            : null;
+    }
+
+    private string BuildLoginLink()
+    {
+        return string.IsNullOrWhiteSpace(_returnUrl)
+            ? "/login"
+            : QueryHelpers.AddQueryString("/login", "returnUrl", _returnUrl);
+    }
+
+    private string GetNavigationTarget() =>
+        string.IsNullOrWhiteSpace(_returnUrl) ? Config.DefaultPage : _returnUrl;
+
+    private static string? NormalizeReturnUrl(string? candidate)
+    {
+        if (string.IsNullOrWhiteSpace(candidate))
+        {
+            return null;
+        }
+
+        return candidate.StartsWith("/", StringComparison.Ordinal) ? candidate : null;
     }
 
     public class SignupModel

@@ -27,6 +27,31 @@ namespace Linteum.Tests.Db.Create
             Assert.That(newUser.LoginMethod, Is.EqualTo(user.LoginMethod));
             Assert.IsNotNull(newUser.Id);
         }
+
+        [Test]
+        public async Task CreateGuestUser_SubscribesToMainAndSecondaryCanvases()
+        {
+            var guestUser = await RepoManager.UserRepository.CreateGuestUserAsync();
+
+            Assert.That(guestUser, Is.Not.Null);
+            Assert.That(guestUser!.Id, Is.Not.Null);
+            Assert.That(guestUser.LoginMethod, Is.EqualTo(LoginMethod.Guest));
+
+            var subscriptions = (await RepoManager.SubscriptionRepository.GetByUserIdAsync(guestUser.Id!.Value)).ToList();
+            var subscribedCanvasIds = subscriptions.Select(subscription => subscription.CanvasId).ToHashSet();
+            var autoSubscribedCanvasNames = new[] { DefaultConfig.DefaultCanvasName }
+                .Concat(DefaultConfig.SecondaryDefaultCanvasNames);
+            var expectedCanvases = (await RepoManager.CanvasRepository.GetAllAsync(includePrivates: true))
+                .Where(canvas => autoSubscribedCanvasNames.Contains(canvas.Name, StringComparer.OrdinalIgnoreCase))
+                .ToList();
+
+            Assert.That(expectedCanvases, Is.Not.Empty);
+
+            foreach (var canvas in expectedCanvases)
+            {
+                Assert.That(subscribedCanvasIds.Contains(canvas.Id), Is.True, $"Guest user should be subscribed to '{canvas.Name}'.");
+            }
+        }
     }
 }
 

@@ -28,32 +28,39 @@
         {
             <div class="pm-economy" role="form" aria-label="Economy bidding">
                 <h6>Economy</h6>
-                <div class="pm-economy-row">
-                    <span>Gold</span>
-                    <strong>@Gold</strong>
-                </div>
-                <div class="pm-economy-row">
-                    <span>Current price</span>
-                    <strong>@CurrentPixelPrice</strong>
-                </div>
-                <div class="pm-economy-row">
-                    <span>Minimum bid</span>
-                    <strong>@MinimumBid</strong>
-                </div>
-                <div class="pm-field">
-                    <label for="economyBidInput" class="form-label">Bid in gold</label>
-                    <input id="economyBidInput"
-                           type="number"
-                           min="@MinimumBid"
-                           class="form-control pm-bid-input"
-                           @bind="_economyBidText"
-                           @bind:event="oninput"
-                           disabled="@(!ClickedPixel.HasValue)" />
-                    @if (!string.IsNullOrEmpty(EconomyValidationMessage))
-                    {
-                        <div class="pm-bid-error">@EconomyValidationMessage</div>
-                    }
-                </div>
+                @if (IsGuestUser)
+                {
+                    <div class="pm-text-note">Guest accounts cannot paint on economy canvases. Sign up or log in to place bids here.</div>
+                }
+                else
+                {
+                    <div class="pm-economy-row">
+                        <span>Gold</span>
+                        <strong>@Gold</strong>
+                    </div>
+                    <div class="pm-economy-row">
+                        <span>Current price</span>
+                        <strong>@CurrentPixelPrice</strong>
+                    </div>
+                    <div class="pm-economy-row">
+                        <span>Minimum bid</span>
+                        <strong>@MinimumBid</strong>
+                    </div>
+                    <div class="pm-field">
+                        <label for="economyBidInput" class="form-label">Bid in gold</label>
+                        <input id="economyBidInput"
+                               type="number"
+                               min="@MinimumBid"
+                               class="form-control pm-bid-input"
+                               @bind="_economyBidText"
+                               @bind:event="oninput"
+                               disabled="@(!ClickedPixel.HasValue)" />
+                        @if (!string.IsNullOrEmpty(EconomyValidationMessage))
+                        {
+                            <div class="pm-bid-error">@EconomyValidationMessage</div>
+                        }
+                    </div>
+                }
             </div>
         }
 
@@ -62,18 +69,10 @@
             <div class="pm-economy" role="status" aria-label="Normal mode daily quota">
                 <h6>Normal Mode</h6>
                 <div class="pm-economy-row">
-                    <span>Daily limit (this canvas)</span>
-                    <strong>@(_normalModeQuota?.DailyLimit ?? 100)</strong>
-                </div>
-                <div class="pm-economy-row">
                     <span>Used today</span>
-                    <strong>@(_normalModeQuota?.UsedToday ?? 0)</strong>
+                    <strong>@NormalModeUsageSummary</strong>
                 </div>
-                <div class="pm-economy-row">
-                    <span>Left today</span>
-                    <strong>@NormalModeRemainingToday</strong>
-                </div>
-                <div class="pm-text-note">Normal mode supports single-pixel painting only, with a separate daily quota on each canvas. Brush and text tools are available on FreeDraw canvases.</div>
+                <div class="pm-text-note">@NormalModeDescription</div>
             </div>
         }
 

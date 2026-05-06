@@ -78,6 +78,38 @@ try
 
     app.UseAntiforgery();
     app.MapStaticAssets();
+
+    app.MapGet("/_canvas-image/{name}", async Task<IResult> (
+        string name,
+        HttpContext httpContext,
+        IHttpClientFactory httpClientFactory,
+        CancellationToken cancellationToken) =>
+    {
+        if (!httpContext.Request.Headers.TryGetValue(CustomHeaders.SessionId, out var sessionIdValues)
+            || string.IsNullOrWhiteSpace(sessionIdValues))
+        {
+            return Results.StatusCode(StatusCodes.Status401Unauthorized);
+        }
+
+        var client = httpClientFactory.CreateClient("ApiClient");
+        using var request = new HttpRequestMessage(HttpMethod.Get, $"/canvases/image/{Uri.EscapeDataString(name)}");
+        request.Headers.TryAddWithoutValidation(CustomHeaders.SessionId, sessionIdValues.ToString());
+
+        var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
+        if (!response.IsSuccessStatusCode)
+        {
+            var statusCode = (int)response.StatusCode;
+            response.Dispose();
+            return Results.StatusCode(statusCode);
+        }
+
+        var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
+        var contentType = response.Content.Headers.ContentType?.ToString() ?? "image/png";
+
+        httpContext.Response.RegisterForDispose(response);
+        return Results.Stream(stream, contentType);
+    });
+
     app.MapRazorComponents<App>()
         .AddInteractiveServerRenderMode();
 

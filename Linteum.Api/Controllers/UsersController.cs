@@ -127,6 +127,23 @@ public class UsersController : ControllerBase
         return Ok(new LoginResponse { User = result, SessionId = sessionId });
     }
 
+    [HttpPost("login-guest")]
+    public async Task<IActionResult> LoginGuest()
+    {
+        var result = await _repoManager.UserRepository.CreateGuestUserAsync();
+        if (result == null || !result.Id.HasValue)
+        {
+            _logger.LogError("Guest login failed because a guest account could not be created.");
+            return BadRequest("Could not create a guest account.");
+        }
+
+        var sessionId = _sessionService.CreateSession(result.Id.Value);
+        await TryAddLoginEventAsync(result.Id.Value, LoginMethod.Guest);
+
+        _logger.LogInformation("Guest login succeeded for user {Email}. UserId={UserId}, SessionId={SessionId}", result.Email, result.Id.Value, sessionId);
+        return Ok(new LoginResponse { User = result, SessionId = sessionId });
+    }
+
     [HttpPost("login-google-code")]
     public async Task<IActionResult> LoginWithGoogleCode([FromBody] GoogleLoginCodeRequestDto request)
     {

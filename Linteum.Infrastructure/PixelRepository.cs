@@ -39,6 +39,7 @@ public class PixelRepository : IPixelRepository
     private readonly IPixelNotifier _notifier;
     private readonly IColorRepository _colorRepository;
     private readonly int _normalModeDailyPixelLimit;
+    private readonly int _guestNormalModeDailyPixelLimit;
     private readonly ICanvasWriteCoordinator _canvasWriteCoordinator;
 
     public PixelRepository(AppDbContext context, IMapper mapper, ILogger<PixelRepository> logger, IPixelNotifier notifier, IColorRepository colorRepository, Config config, ICanvasWriteCoordinator canvasWriteCoordinator)
@@ -49,6 +50,7 @@ public class PixelRepository : IPixelRepository
         _notifier = notifier;
         _colorRepository = colorRepository;
         _normalModeDailyPixelLimit = Math.Max(0, config.NormalModeDailyPixelLimit);
+        _guestNormalModeDailyPixelLimit = Math.Max(0, config.GuestNormalModeDailyPixelLimit);
         _canvasWriteCoordinator = canvasWriteCoordinator;
     }
 
@@ -147,8 +149,9 @@ public class PixelRepository : IPixelRepository
             var state = new BatchExecutionState();
             if (!useMasterOverride && canvas.CanvasMode == CanvasMode.Normal)
             {
+                var dailyLimit = await GetNormalModeDailyPixelLimitAsync(ownerId);
                 var usedToday = await GetUsedNormalModePixelsTodayAsync(ownerId, canvas.Id);
-                state.RemainingNormalQuota = Math.Max(0, _normalModeDailyPixelLimit - usedToday);
+                state.RemainingNormalQuota = Math.Max(0, dailyLimit - usedToday);
             }
 
             foreach (var chunk in deduplicatedPixels.Chunk(MaxBatchSize))
@@ -344,11 +347,12 @@ public class PixelRepository : IPixelRepository
             };
         }
 
+        var dailyLimit = await GetNormalModeDailyPixelLimitAsync(ownerId);
         var usedToday = canvas.CanvasMode == CanvasMode.Normal
             ? await GetUsedNormalModePixelsTodayAsync(ownerId, canvas.Id)
             : 0;
 
-        return CreateNormalModeQuotaDto(canvas.CanvasMode == CanvasMode.Normal, usedToday);
+        return CreateNormalModeQuotaDto(canvas.CanvasMode == CanvasMode.Normal, usedToday, dailyLimit);
     }
 
     private async Task<PixelAttemptResult> TryChangePixelInternalAsync(Guid ownerId, PixelDto pixel, Canvas canvas, BatchExecutionState state, bool useMasterOverride)
@@ -404,16 +408,29 @@ public class PixelRepository : IPixelRepository
             .CountAsync();
     }
 
-    private NormalModeQuotaDto CreateNormalModeQuotaDto(bool isEnforced, int usedToday)
+    private NormalModeQuotaDto CreateNormalModeQuotaDto(bool isEnforced, int usedToday, int dailyLimit)
     {
-        var remainingToday = Math.Max(0, _normalModeDailyPixelLimit - usedToday);
+        var remainingToday = Math.Max(0, dailyLimit - usedToday);
         return new NormalModeQuotaDto
         {
-            DailyLimit = _normalModeDailyPixelLimit,
+            DailyLimit = dailyLimit,
             UsedToday = usedToday,
-            RemainingToday = isEnforced ? remainingToday : _normalModeDailyPixelLimit,
+            RemainingToday = isEnforced ? remainingToday : dailyLimit,
             IsEnforced = isEnforced,
         };
+    }
+
+    private async Task<int> GetNormalModeDailyPixelLimitAsync(Guid ownerId)
+    {
+        var loginMethod = await _context.Users
+            .AsNoTracking()
+            .Where(user => user.Id == ownerId)
+            .Select(user => (LoginMethod?)user.LoginMethod)
+            .FirstOrDefaultAsync();
+
+        return loginMethod == LoginMethod.Guest
+            ? _guestNormalModeDailyPixelLimit
+            : _normalModeDailyPixelLimit;
     }
 
     private static bool IsPixelConflict(DbUpdateException exception)

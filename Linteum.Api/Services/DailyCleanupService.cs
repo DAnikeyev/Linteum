@@ -57,6 +57,16 @@ public class DailyCleanupService : BackgroundService
                 using var scope = _serviceProvider.CreateScope();
                 var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
                 var repositoryManager = scope.ServiceProvider.GetRequiredService<RepositoryManager>();
+                var expiredGuestCutoffUtc = DateTime.UtcNow.AddHours(-Math.Abs(_config.GuestUserLifetimeHours));
+                var deletedGuestUsers = await repositoryManager.UserRepository.DeleteExpiredGuestUsersAsync(expiredGuestCutoffUtc, stoppingToken);
+                if (deletedGuestUsers > 0)
+                {
+                    _logger.LogInformation(
+                        "Deleted {DeletedGuestUsers} guest users older than {GuestUserLifetimeHours} hours.",
+                        deletedGuestUsers,
+                        _config.GuestUserLifetimeHours);
+                }
+
                 var inactiveSinceUtc = DateTime.UtcNow.AddDays(-InactiveCanvasDays);
 
                 var candidates = await DbSeeder.GetInactiveCanvasCleanupCandidatesAsync(

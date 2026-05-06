@@ -68,6 +68,19 @@ public class CanvasRenderer : IAsyncDisposable
         }
     }
 
+    public async Task LoadImageFromUrlAsync(string imageUrl, string? sessionId)
+    {
+        if (!_initialized || IsDisposed || string.IsNullOrWhiteSpace(imageUrl)) return;
+
+        try
+        {
+            await _js.InvokeVoidAsync("canvasRenderer.loadImageFromUrl", imageUrl, sessionId);
+        }
+        catch (Exception ex) when (IsShuttingDown(ex))
+        {
+        }
+    }
+
     public async Task<List<CoordinateDto>> FilterNonWhiteCoordinatesAsync(IReadOnlyCollection<CoordinateDto> coordinates)
     {
         if (!_initialized || coordinates.Count == 0)

@@ -117,7 +117,7 @@ services:
       replicas: 3
       resources:
         limits:
-          memory: 256M
+          memory: 394M
     environment:
       - PASSWORD_SALT=${PASSWORD_SALT}
       - API_CONTAINER_NAME=${API_CONTAINER_NAME}

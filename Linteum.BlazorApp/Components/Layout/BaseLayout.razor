@@ -4,6 +4,7 @@
 @inject MyApiClient ApiClient
 @inject IConfiguration Configuration
 @using Linteum.BlazorApp.Components.Notification
+@using Microsoft.AspNetCore.WebUtilities
 @inherits LayoutComponentBase
 
 
@@ -67,7 +68,7 @@
                 Logger.LogInformation("No valid session ID found, redirecting to login.");
                 await LocalStorageService.ClearAsync();
                 ApiClient.ClearSession();
-                Navigation.NavigateTo("/login");
+                Navigation.NavigateTo(BuildLoginRedirectUri(), forceLoad: false);
                 return;
             }
 
@@ -79,7 +80,7 @@
                 Logger.LogInformation("Session validation failed, redirecting to login.");
                 await LocalStorageService.ClearAsync();
                 ApiClient.ClearSession();
-                Navigation.NavigateTo("/login");
+                Navigation.NavigateTo(BuildLoginRedirectUri(), forceLoad: false);
             }
             else
             {
@@ -91,7 +92,7 @@
             Logger.LogError($"Error {ex} validating session, redirecting to login.");
             await LocalStorageService.ClearAsync();
             ApiClient.ClearSession();
-            Navigation.NavigateTo("/login");
+            Navigation.NavigateTo(BuildLoginRedirectUri(), forceLoad: false);
         }
     }
 
@@ -104,6 +105,28 @@
 
         _isSidebarCollapsed = isCollapsed;
         StateHasChanged();
+    }
+
+    private string BuildLoginRedirectUri()
+    {
+        var relativePath = "/" + Navigation.ToBaseRelativePath(Navigation.Uri);
+        if (string.IsNullOrWhiteSpace(relativePath) || relativePath == "/")
+        {
+            return "/login";
+        }
+
+        var isCanvasRoute = relativePath.StartsWith("/canvas/", StringComparison.OrdinalIgnoreCase);
+        var query = new Dictionary<string, string?>
+        {
+            ["returnUrl"] = relativePath,
+        };
+
+        if (isCanvasRoute)
+        {
+            query["guest"] = "1";
+        }
+
+        return QueryHelpers.AddQueryString("/login", query!);
     }
 
 }

@@ -172,6 +172,17 @@ internal class MyApiClient
     {
         return await _localStorage.GetItemAsync<Guid?>(LocalStorageKey.UserId);
     }
+
+    public async Task<LoginMethod> GetCurrentLoginMethodAsync()
+    {
+        var loginMethod = await _localStorage.GetItemAsync<LoginMethod>(LocalStorageKey.LoginMethod);
+        return loginMethod == 0 ? LoginMethod.Password : loginMethod;
+    }
+
+    public async Task<bool> IsGuestUserAsync()
+    {
+        return GuestUserHelper.IsGuest(await GetCurrentLoginMethodAsync());
+    }
     
     public async Task<List<ColorDto>?> GetColorsAsync()
     {
@@ -397,6 +408,30 @@ internal class MyApiClient
         else
         {
             _logger.LogWarning("Session validation response data missing for sessionId: {SessionId}", sessionId);
+        }
+
+        return (loginResponse?.User, loginResponse?.SessionId);
+    }
+
+    public async Task<(UserDto? User, Guid? SessionId)> LoginAsGuestAsync()
+    {
+        _logger.LogInformation("LoginAsGuestAsync called.");
+        var response = await _httpClient.PostAsync("/users/login-guest", content: null);
+        if (!response.IsSuccessStatusCode)
+        {
+            _logger.LogWarning("Guest login failed, status: {StatusCode}", response.StatusCode);
+            return (null, null);
+        }
+
+        var loginResponse = await response.Content.ReadFromJsonAsync<LoginResponse>();
+        if (loginResponse?.SessionId != null && loginResponse.User != null && loginResponse.User.UserName != null && loginResponse.User.Email != null)
+        {
+            await PersistAuthenticatedUserAsync(loginResponse.User, loginResponse.SessionId.Value);
+            _logger.LogInformation("Guest login successful for email: {Email}", loginResponse.User.Email);
+        }
+        else
+        {
+            _logger.LogWarning("Guest login response data missing.");
         }
 
         return (loginResponse?.User, loginResponse?.SessionId);

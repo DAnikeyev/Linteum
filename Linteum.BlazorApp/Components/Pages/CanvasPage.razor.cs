@@ -59,6 +59,7 @@ public partial class CanvasPage : ComponentBase, IAsyncDisposable
     private (int X, int Y)? _clickedPixel;
     private PixelDto? _clickedPixelData;
     private long _gold;
+    private string? _currentSessionId;
     private Guid? _currentUserId;
     private string? _currentUserName;
 
@@ -90,6 +91,9 @@ public partial class CanvasPage : ComponentBase, IAsyncDisposable
     private bool _jsViewportInitialized;
     private bool _pendingViewportRefresh = true;
     private bool _rendererInitializationInProgress;
+    private bool _interactiveReady;
+    private bool _interactiveInitializationInProgress;
+    private bool _pendingCanvasLoad = true;
     private int _disposeState;
     private bool _isBrushEnabled;
     private bool _isEraserBrushEnabled;
@@ -154,7 +158,19 @@ public partial class CanvasPage : ComponentBase, IAsyncDisposable
 
     private static bool IsExpectedUiShutdownException(Exception ex)
     {
-        return ex is ObjectDisposedException or JSDisconnectedException or TaskCanceledException;
+        return ex is ObjectDisposedException or JSDisconnectedException or TaskCanceledException
+            || ex is InvalidOperationException invalidOperationException
+                && invalidOperationException.Message.Contains("statically rendered", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static bool IsCanvasNotFoundException(Exception ex)
+    {
+        return ex.Message.Contains("is not found", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private string GetCanvasImageUrl(string canvasNameValue)
+    {
+        return $"{NavigationManager.BaseUri.TrimEnd('/')}/_canvas-image/{Uri.EscapeDataString(canvasNameValue)}";
     }
 
     private async Task RequestRenderAsync()
@@ -193,6 +209,21 @@ public partial class CanvasPage : ComponentBase, IAsyncDisposable
             }
             catch (Exception ex) when (IsExpectedUiShutdownException(ex))
             {
+                return;
+            }
+        }
+
+        if (!_interactiveReady && !_interactiveInitializationInProgress)
+        {
+            await EnsureInteractiveReadyAsync();
+            if (IsDisposed)
+            {
+                return;
+            }
+
+            if (_pendingCanvasLoad)
+            {
+                await LoadRequestedCanvasAsync(canvasName, Volatile.Read(ref _canvasLoadVersion));
                 return;
             }
         }
@@ -404,17 +435,6 @@ public partial class CanvasPage : ComponentBase, IAsyncDisposable
             _pendingViewportRefresh = true;
         }
 
-        if (_hubConnection?.State == HubConnectionState.Connected && _connectedGroup != requestedCanvasName)
-        {
-            if (!string.IsNullOrEmpty(_connectedGroup))
-            {
-                await _hubConnection.InvokeAsync("LeaveCanvasGroup", _connectedGroup);
-            }
-
-            await _hubConnection.InvokeAsync("JoinCanvasGroup", requestedCanvasName);
-            _connectedGroup = requestedCanvasName;
-        }
-
         if (_loadedCanvasName == requestedCanvasName && _canvas != null)
         {
             return;
@@ -422,8 +442,9 @@ public partial class CanvasPage : ComponentBase, IAsyncDisposable
 
         _canvasReady = false;
         _canvas = null;
-        _loadedCanvasName = requestedCanvasName;
+        _loadedCanvasName = null;
         _pendingViewportRefresh = true;
+        _pendingCanvasLoad = true;
         _rendererInitializationInProgress = false;
         _maintenanceProgress = null;
         _textCaretPreview = TextCaretPreviewState.Hidden;
@@ -436,21 +457,44 @@ public partial class CanvasPage : ComponentBase, IAsyncDisposable
 
         _jsViewportInitialized = false;
 
+        if (!_interactiveReady)
+        {
+            return;
+        }
+
+        await LoadRequestedCanvasAsync(requestedCanvasName, loadVersion);
+    }
+
+    private async Task LoadRequestedCanvasAsync(string requestedCanvasName, int loadVersion)
+    {
+        if (!_interactiveReady || IsDisposed)
+        {
+            _pendingCanvasLoad = true;
+            return;
+        }
+
+        _pendingCanvasLoad = false;
+
         try
         {
             _colors ??= await ApiClient.GetColorsAsync();
-            if (loadVersion != _canvasLoadVersion || requestedCanvasName != canvasName)
+            if (loadVersion != _canvasLoadVersion || requestedCanvasName != canvasName || IsDisposed)
             {
                 return;
             }
 
             var loadedCanvas = await ApiClient.GetCanvas(requestedCanvasName);
-            if (loadVersion != _canvasLoadVersion || requestedCanvasName != canvasName)
+            if (loadVersion != _canvasLoadVersion || requestedCanvasName != canvasName || IsDisposed)
             {
                 return;
             }
 
             _canvas = loadedCanvas;
+            _loadedCanvasName = requestedCanvasName;
+            if (Sidebar != null)
+            {
+                await Sidebar.RefreshCanvases();
+            }
             if (_canvas.CanvasMode != CanvasMode.FreeDraw)
             {
                 _isBrushEnabled = false;
@@ -481,8 +525,48 @@ public partial class CanvasPage : ComponentBase, IAsyncDisposable
         }
         catch (Exception ex)
         {
+            if (IsCanvasNotFoundException(ex))
+            {
+                await HandleMissingCanvasAsync(requestedCanvasName, loadVersion);
+                return;
+            }
+
             _nlog.Warn(ex, "Failed to load canvas {CanvasName}", canvasName);
         }
+    }
+
+    private async Task HandleMissingCanvasAsync(string requestedCanvasName, int loadVersion)
+    {
+        if (loadVersion != _canvasLoadVersion || requestedCanvasName != canvasName || IsDisposed)
+        {
+            return;
+        }
+
+        _canvasReady = true;
+        _loadedCanvasName = null;
+        await RequestRenderAsync();
+
+        await NotificationService.NotifyAsync(new CustomNotification
+        {
+            Message = "Canvas with this name does not exist. Returning to home",
+            Type = NotificationType.Error,
+        });
+
+        try
+        {
+            await Task.Delay(500);
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+
+        if (loadVersion != _canvasLoadVersion || requestedCanvasName != canvasName || IsDisposed)
+        {
+            return;
+        }
+
+        NavigationManager.NavigateTo(DefaultConfig.DefaultPage, replace: true);
     }
 
     private async Task LoadCanvasImage(int? loadVersion = null)
@@ -496,13 +580,13 @@ public partial class CanvasPage : ComponentBase, IAsyncDisposable
         var versionSnapshot = loadVersion ?? _canvasLoadVersion;
         try
         {
-            var imageBytes = await ApiClient.GetCanvasImage(canvasSnapshot);
+            var imageUrl = GetCanvasImageUrl(canvasSnapshot.Name);
             if (!IsCurrentCanvasLoad(versionSnapshot, canvasSnapshot) || _renderer == null)
             {
                 return;
             }
 
-            await _renderer.LoadImageAsync(imageBytes);
+            await _renderer.LoadImageFromUrlAsync(imageUrl, _currentSessionId);
         }
         catch (Exception ex) when (IsExpectedUiShutdownException(ex) || !IsCurrentCanvasLoad(versionSnapshot, canvasSnapshot))
         {
@@ -665,12 +749,15 @@ public partial class CanvasPage : ComponentBase, IAsyncDisposable
         _confirmedPlaybackLoopCts.Cancel();
         _pendingLocalPlaybackOperationIds.Clear();
 
-        try
+        if (_jsViewportInitialized)
         {
-            await JSRuntime.InvokeVoidAsync("canvasViewport.dispose");
-        }
-        catch (Exception ex) when (IsExpectedUiShutdownException(ex))
-        {
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("canvasViewport.dispose");
+            }
+            catch (Exception ex) when (IsExpectedUiShutdownException(ex))
+            {
+            }
         }
 
         if (_resizeListenerId != null)
