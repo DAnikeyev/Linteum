@@ -95,6 +95,7 @@ public partial class CanvasPage : ComponentBase, IAsyncDisposable
     private bool _interactiveInitializationInProgress;
     private bool _pendingCanvasLoad = true;
     private int _disposeState;
+    private CancellationTokenSource? _canvasInitializationTimeoutCts;
     private bool _isBrushEnabled;
     private bool _isEraserBrushEnabled;
     private bool _isTextSelectionPersistenceEnabled;
@@ -134,6 +135,7 @@ public partial class CanvasPage : ComponentBase, IAsyncDisposable
     private const string CanvasMaintenanceProgressEventName = "CanvasMaintenanceProgress";
     private const string ReceiveConfirmedPixelPlaybackBatchEventName = "ReceiveConfirmedPixelPlaybackBatch";
     private const string ReceiveConfirmedPixelDeletionPlaybackBatchEventName = "ReceiveConfirmedPixelDeletionPlaybackBatch";
+    private static readonly TimeSpan CanvasInitializationTimeout = TimeSpan.FromSeconds(20);
     private static readonly TimeSpan BrushFlushInterval = TimeSpan.FromMilliseconds(75);
     private static readonly TimeSpan EraseFlushInterval = TimeSpan.FromMilliseconds(200);
     private Task? _brushFlushLoopTask;
@@ -183,6 +185,76 @@ public partial class CanvasPage : ComponentBase, IAsyncDisposable
         try
         {
             await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex) when (IsExpectedUiShutdownException(ex) || IsDisposed)
+        {
+        }
+    }
+
+    private void RestartCanvasInitializationTimeout(string requestedCanvasName, int loadVersion)
+    {
+        CancelCanvasInitializationTimeout();
+
+        if (IsDisposed)
+        {
+            return;
+        }
+
+        var cancellationTokenSource = new CancellationTokenSource();
+        _canvasInitializationTimeoutCts = cancellationTokenSource;
+        _ = WatchCanvasInitializationTimeoutAsync(requestedCanvasName, loadVersion, cancellationTokenSource.Token);
+    }
+
+    private void CancelCanvasInitializationTimeout()
+    {
+        var cancellationTokenSource = Interlocked.Exchange(ref _canvasInitializationTimeoutCts, null);
+        if (cancellationTokenSource == null)
+        {
+            return;
+        }
+
+        try
+        {
+            cancellationTokenSource.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+
+        cancellationTokenSource.Dispose();
+    }
+
+    private async Task WatchCanvasInitializationTimeoutAsync(string requestedCanvasName, int loadVersion, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await Task.Delay(CanvasInitializationTimeout, cancellationToken);
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+
+        if (cancellationToken.IsCancellationRequested || IsDisposed)
+        {
+            return;
+        }
+
+        if (loadVersion != Volatile.Read(ref _canvasLoadVersion)
+            || !string.Equals(requestedCanvasName, canvasName, StringComparison.Ordinal)
+            || _canvasReady)
+        {
+            return;
+        }
+
+        _nlog.Warn(
+            "Canvas {CanvasName} did not initialize within {TimeoutSeconds} seconds. Reloading page.",
+            requestedCanvasName,
+            CanvasInitializationTimeout.TotalSeconds);
+
+        try
+        {
+            await InvokeAsync(() => NavigationManager.NavigateTo(NavigationManager.Uri, forceLoad: true));
         }
         catch (Exception ex) when (IsExpectedUiShutdownException(ex) || IsDisposed)
         {
@@ -278,6 +350,7 @@ public partial class CanvasPage : ComponentBase, IAsyncDisposable
 
                 _pendingViewportRefresh = true;
                 _canvasReady = true;
+                CancelCanvasInitializationTimeout();
                 await RequestRenderAsync();
                 return;
             }
@@ -440,6 +513,8 @@ public partial class CanvasPage : ComponentBase, IAsyncDisposable
             return;
         }
 
+        RestartCanvasInitializationTimeout(requestedCanvasName, loadVersion);
+
         _canvasReady = false;
         _canvas = null;
         _loadedCanvasName = null;
@@ -542,6 +617,7 @@ public partial class CanvasPage : ComponentBase, IAsyncDisposable
             return;
         }
 
+        CancelCanvasInitializationTimeout();
         _canvasReady = true;
         _loadedCanvasName = null;
         await RequestRenderAsync();
@@ -743,6 +819,7 @@ public partial class CanvasPage : ComponentBase, IAsyncDisposable
 
         _canvasReady = false;
         _rendererInitializationInProgress = false;
+        CancelCanvasInitializationTimeout();
         Interlocked.Increment(ref _canvasLoadVersion);
         _brushFlushLoopCts.Cancel();
         _eraseFlushLoopCts.Cancel();

@@ -108,7 +108,57 @@ internal class CanvasSeedQueueServiceTests : SyntheticDataTest
                 (await RepoManager.PixelRepository.GetByCanvasIdAsync(canvas.Id)).Count() == canvas.Width * canvas.Height,
                 TimeSpan.FromSeconds(5));
 
-            Assert.That(notifier.BatchSizes, Is.EqualTo(new[] { 500, 500, 200 }));
+            Assert.That(notifier.BatchSizes.Sum(), Is.EqualTo(canvas.Width * canvas.Height));
+            Assert.That(notifier.BatchSizes.All(size => size <= 500), Is.True);
+            Assert.That(notifier.BatchSizes.Count, Is.GreaterThan(3));
+        }
+        finally
+        {
+            await service.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Test]
+    public async Task CanvasSeedQueueService_NotifiesColorGroupedBatches()
+    {
+        var user = await DbHelper.AddDefaultUser("CanvasSeedColorGroupedUser");
+        var canvas = await RepoManager.CanvasRepository.TryAddCanvas(new CanvasDto
+        {
+            CreatorId = user!.Id!.Value,
+            Name = "Seed Color Grouped Canvas",
+            Width = 20,
+            Height = 20,
+            CanvasMode = CanvasMode.FreeDraw,
+        }, passwordHash: null);
+
+        Assert.That(canvas, Is.Not.Null);
+
+        var notifier = new CapturingPixelNotifier();
+        var service = new CanvasSeedQueueService(new CanvasSeedScopeFactory(Options, notifier), NullLogger<CanvasSeedQueueService>.Instance, new CanvasWriteCoordinator());
+        var imageBytes = CreateJpegBytes(canvas!.Width, canvas.Height, (x, _) => x < canvas.Width / 2 ? new Rgba32(255, 0, 0) : new Rgba32(0, 0, 255));
+
+        await service.StartAsync(CancellationToken.None);
+
+        try
+        {
+            await service.QueueAsync(new QueuedCanvasSeedRequest(
+                user.Id.Value,
+                user.UserName!,
+                canvas.Id,
+                canvas.Name,
+                canvas.CanvasMode,
+                canvas.Width,
+                canvas.Height,
+                imageBytes));
+
+            await WaitForAsync(async () =>
+                (await RepoManager.PixelRepository.GetByCanvasIdAsync(canvas.Id)).Count() == canvas.Width * canvas.Height,
+                TimeSpan.FromSeconds(5));
+
+            Assert.That(notifier.BatchSizes, Has.Count.EqualTo(2));
+            Assert.That(notifier.BatchSizes.All(size => size == 200), Is.True);
+            Assert.That(notifier.BatchColorIds, Has.Count.EqualTo(2));
+            Assert.That(notifier.BatchColorIds.All(colorIds => colorIds.Distinct().Count() == 1), Is.True);
         }
         finally
         {
@@ -244,16 +294,19 @@ internal class CanvasSeedQueueServiceTests : SyntheticDataTest
     private sealed class CapturingPixelNotifier : IPixelNotifier
     {
         public List<int> BatchSizes { get; } = [];
+        public List<IReadOnlyCollection<int>> BatchColorIds { get; } = [];
 
         public Task NotifyPixelChanged(string canvasName, PixelDto pixel)
         {
             BatchSizes.Add(1);
+            BatchColorIds.Add([pixel.ColorId]);
             return Task.CompletedTask;
         }
 
         public Task NotifyPixelsChanged(string canvasName, IReadOnlyCollection<PixelDto> pixels)
         {
             BatchSizes.Add(pixels.Count);
+            BatchColorIds.Add(pixels.Select(pixel => pixel.ColorId).ToList());
             return Task.CompletedTask;
         }
 
