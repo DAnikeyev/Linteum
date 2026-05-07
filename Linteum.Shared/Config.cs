@@ -15,6 +15,8 @@ public class Config
     public int ExpiredSessionTimeoutMinutes { get; set; } = 60;
     public int DefaultCanvasHeight { get; set; } = 1024;
     public int NormalModeDailyPixelLimit { get; set; } = 100;
+    public int GuestNormalModeDailyPixelLimit { get; set; } = 10;
+    public int GuestUserLifetimeHours { get; set; } = 24;
 
     public List<CanvasDto> SeedCanvases { get; set; } = new()
     {
@@ -46,6 +48,12 @@ public class Config
             .Select(canvas => canvas.Name)
             .Append(DefaultCanvasName)
             .Concat(SecondaryDefaultCanvasNames)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+
+    public IReadOnlyCollection<string> GetNonUnsubscribableCanvasNames() =>
+        new[] { DefaultCanvasName }
             .Where(name => !string.IsNullOrWhiteSpace(name))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToArray();

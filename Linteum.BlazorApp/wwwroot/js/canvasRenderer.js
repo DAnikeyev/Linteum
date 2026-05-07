@@ -13,9 +13,13 @@ window.canvasRenderer = {
     clickStrokeStyle: 'rgba(55,140,255,1)',
     hoverLineWidth: 0.08,
     clickLineWidth: 0.12,
-    clickPreviewMode: 'blink-negative',
+    clickPreviewMode: 'blink-contrast',
     clickPreviewColor: null,
     clickBlinkPeriodMs: 1500,
+    clickBlinkActiveFraction: 0.32,
+    clickBlinkMaxAlpha: 0.92,
+    clickContrastBrightnessThreshold: 145,
+    clickPreviewStartedAt: 0,
     suppressedRipples: new Map(),
     animationFrameId: null,
     suppressedRippleTtlMs: 2000,
@@ -52,6 +56,18 @@ window.canvasRenderer = {
         }
     },
 
+    arePixelsEqual: function (left, right) {
+        if (left === right) {
+            return true;
+        }
+
+        if (!left || !right) {
+            return false;
+        }
+
+        return left.x === right.x && left.y === right.y;
+    },
+
     disableImageSmoothing: function (context) {
         if (!context) {
             return;
@@ -81,15 +97,27 @@ window.canvasRenderer = {
     },
 
     setInteractionState: function (state) {
-        this.hoverPixel = state && state.hoverPixel ? state.hoverPixel : null;
-        this.clickPixel = state && state.clickPixel ? state.clickPixel : null;
+        const nextHoverPixel = state && state.hoverPixel ? state.hoverPixel : null;
+        const nextClickPixel = state && state.clickPixel ? state.clickPixel : null;
+        const nextClickPreviewMode = state && state.clickPreviewMode ? state.clickPreviewMode : 'blink-contrast';
+        const nextClickPreviewColor = state && state.clickPreviewColor ? state.clickPreviewColor : null;
+        const nextClickBlinkPeriodMs = state && state.clickBlinkPeriodMs ? state.clickBlinkPeriodMs : 1500;
+
+        if (!this.arePixelsEqual(this.clickPixel, nextClickPixel)
+            || this.clickPreviewMode !== nextClickPreviewMode
+            || this.clickPreviewColor !== nextClickPreviewColor) {
+            this.clickPreviewStartedAt = performance.now();
+        }
+
+        this.hoverPixel = nextHoverPixel;
+        this.clickPixel = nextClickPixel;
         this.hoverStrokeStyle = state && state.hoverColor ? state.hoverColor : 'rgba(55,140,255,1)';
         this.clickStrokeStyle = state && state.clickColor ? state.clickColor : 'rgba(55,140,255,1)';
         this.hoverLineWidth = state && state.hoverLineWidth ? state.hoverLineWidth : 0.08;
         this.clickLineWidth = state && state.clickLineWidth ? state.clickLineWidth : 0.12;
-        this.clickPreviewMode = state && state.clickPreviewMode ? state.clickPreviewMode : 'blink-negative';
-        this.clickPreviewColor = state && state.clickPreviewColor ? state.clickPreviewColor : null;
-        this.clickBlinkPeriodMs = state && state.clickBlinkPeriodMs ? state.clickBlinkPeriodMs : 1500;
+        this.clickPreviewMode = nextClickPreviewMode;
+        this.clickPreviewColor = nextClickPreviewColor;
+        this.clickBlinkPeriodMs = nextClickBlinkPeriodMs;
 
         if (!this.overlayCtx) {
             return;
@@ -125,6 +153,15 @@ window.canvasRenderer = {
         return `#${red.toString(16).padStart(2, '0')}${green.toString(16).padStart(2, '0')}${blue.toString(16).padStart(2, '0')}`;
     },
 
+    getColorBrightness: function (color) {
+        const normalized = this.normalizeHexColor(color) || '#ffffff';
+        const hex = normalized.substring(1);
+        const red = parseInt(hex.substring(0, 2), 16);
+        const green = parseInt(hex.substring(2, 4), 16);
+        const blue = parseInt(hex.substring(4, 6), 16);
+        return (0.299 * red) + (0.587 * green) + (0.114 * blue);
+    },
+
     getNegativeHex: function (color) {
         const normalized = this.normalizeHexColor(color) || '#ffffff';
         const hex = normalized.substring(1);
@@ -148,7 +185,7 @@ window.canvasRenderer = {
     },
 
     shouldAnimateOverlay: function () {
-        return this.ripples.length > 0 || (this.clickPixel !== null && this.clickPreviewMode === 'blink-negative');
+        return this.ripples.length > 0 || (this.clickPixel !== null && this.clickPreviewMode !== 'solid');
     },
 
     ensureAnimation: function () {
@@ -157,31 +194,62 @@ window.canvasRenderer = {
         }
     },
 
-    resolveClickPreviewColor: function (now) {
+    getContrastPreviewHex: function (color) {
+        return this.getColorBrightness(color) < this.clickContrastBrightnessThreshold
+            ? '#ffffff'
+            : '#000000';
+    },
+
+    getClickBlinkAlpha: function (now) {
+        const blinkPeriodMs = Math.max(250, this.clickBlinkPeriodMs || 1000);
+        const activeFraction = Math.min(0.49, Math.max(0.1, this.clickBlinkActiveFraction || 0.32));
+        const elapsed = Math.max(0, (typeof now === 'number' ? now : performance.now()) - this.clickPreviewStartedAt);
+        const phase = (elapsed % blinkPeriodMs) / blinkPeriodMs;
+
+        if (phase >= activeFraction) {
+            return 0;
+        }
+
+        const localPhase = phase / activeFraction;
+        const pulse = Math.sin(localPhase * Math.PI);
+        return pulse * this.clickBlinkMaxAlpha;
+    },
+
+    resolveClickPreviewStyle: function (now) {
         if (!this.clickPixel) {
             return null;
         }
 
         if (this.clickPreviewMode === 'solid') {
-            return this.normalizeHexColor(this.clickPreviewColor) || '#ffffff';
+            return {
+                fillStyle: this.normalizeHexColor(this.clickPreviewColor) || '#ffffff',
+                alpha: 1
+            };
         }
 
         const currentColor = this.getCommittedPixelHex(this.clickPixel.x, this.clickPixel.y);
-        const negativeColor = this.getNegativeHex(currentColor);
-        const blinkPeriodMs = Math.max(250, this.clickBlinkPeriodMs || 1000);
-        const halfPeriodMs = blinkPeriodMs / 2;
-        const elapsed = typeof now === 'number' ? now : performance.now();
-        return Math.floor(elapsed / halfPeriodMs) % 2 === 0 ? currentColor : negativeColor;
+        return {
+            fillStyle: this.getContrastPreviewHex(currentColor),
+            alpha: this.getClickBlinkAlpha(now)
+        };
     },
 
-    drawSelectedPixel: function (pixel, fillStyle) {
-        if (!this.overlayCtx || !pixel || !fillStyle || pixel.x < 0 || pixel.y < 0 || pixel.x >= this.width || pixel.y >= this.height) {
+    drawSelectedPixel: function (pixel, previewStyle) {
+        if (!this.overlayCtx
+            || !pixel
+            || !previewStyle
+            || !previewStyle.fillStyle
+            || previewStyle.alpha <= 0
+            || pixel.x < 0
+            || pixel.y < 0
+            || pixel.x >= this.width
+            || pixel.y >= this.height) {
             return;
         }
 
         this.overlayCtx.save();
-        this.overlayCtx.globalAlpha = 1;
-        this.overlayCtx.fillStyle = fillStyle;
+        this.overlayCtx.globalAlpha = previewStyle.alpha;
+        this.overlayCtx.fillStyle = previewStyle.fillStyle;
         this.overlayCtx.fillRect(pixel.x, pixel.y, 1, 1);
         this.overlayCtx.restore();
     },
@@ -223,7 +291,7 @@ window.canvasRenderer = {
         this.overlayCtx.globalAlpha = 1.0;
         this.ripples = keep;
 
-        this.drawSelectedPixel(this.clickPixel, this.resolveClickPreviewColor(timestamp));
+        this.drawSelectedPixel(this.clickPixel, this.resolveClickPreviewStyle(timestamp));
     },
 
     init: function (canvasElement, overlayElement) {
@@ -245,9 +313,10 @@ window.canvasRenderer = {
         this.clickStrokeStyle = 'rgba(55,140,255,1)';
         this.hoverLineWidth = 0.08;
         this.clickLineWidth = 0.12;
-        this.clickPreviewMode = 'blink-negative';
+        this.clickPreviewMode = 'blink-contrast';
         this.clickPreviewColor = null;
         this.clickBlinkPeriodMs = 1500;
+        this.clickPreviewStartedAt = 0;
         this.suppressedRipples.clear();
         
         if (this.animationFrameId) {
@@ -258,33 +327,84 @@ window.canvasRenderer = {
         this.renderOverlay();
     },
 
+    drawLoadedImage: function (img) {
+        if (!this.ctx) {
+            return;
+        }
+
+        this.disableImageSmoothing(this.ctx);
+        this.ctx.clearRect(0, 0, this.width, this.height);
+        if (img) {
+            this.ctx.drawImage(img, 0, 0, this.width, this.height);
+        }
+
+        this.committedImageData = this.ctx.getImageData(0, 0, this.width, this.height);
+    },
+
     loadImage: function (imageBytes) {
         if (!this.ctx) return Promise.resolve();
 
-        const ctx = this.ctx;
-        const width = this.width;
-        const height = this.height;
         const blob = new Blob([imageBytes]);
         const url = URL.createObjectURL(blob);
         const img = new Image();
+        const renderer = this;
 
         return new Promise(function (resolve) {
             img.onload = function () {
-                window.canvasRenderer.disableImageSmoothing(ctx);
-                ctx.clearRect(0, 0, width, height);
-                ctx.drawImage(img, 0, 0, width, height);
-                window.canvasRenderer.committedImageData = ctx.getImageData(0, 0, width, height);
+                renderer.drawLoadedImage(img);
                 URL.revokeObjectURL(url);
                 resolve();
             };
             img.onerror = function () {
-                window.canvasRenderer.disableImageSmoothing(ctx);
-                window.canvasRenderer.committedImageData = ctx.getImageData(0, 0, width, height);
+                renderer.drawLoadedImage(null);
                 URL.revokeObjectURL(url);
                 resolve();
             };
             img.src = url;
         });
+    },
+
+    loadImageFromUrl: function (imageUrl, sessionId) {
+        if (!this.ctx || !imageUrl) return Promise.resolve();
+
+        const headers = {};
+        if (sessionId) {
+            headers['Session-Id'] = sessionId;
+        }
+
+        const renderer = this;
+        return fetch(imageUrl, {
+            method: 'GET',
+            headers: headers,
+            credentials: 'include'
+        })
+            .then(function (response) {
+                if (!response.ok) {
+                    throw new Error(`Failed to fetch canvas image. Status ${response.status}`);
+                }
+
+                return response.blob();
+            })
+            .then(function (blob) {
+                const url = URL.createObjectURL(blob);
+                const img = new Image();
+
+                return new Promise(function (resolve) {
+                    img.onload = function () {
+                        renderer.drawLoadedImage(img);
+                        URL.revokeObjectURL(url);
+                        resolve();
+                    };
+
+                    img.onerror = function () {
+                        renderer.drawLoadedImage(null);
+                        URL.revokeObjectURL(url);
+                        resolve();
+                    };
+
+                    img.src = url;
+                });
+            });
     },
 
     filterNonWhitePixels: function (coordinates) {

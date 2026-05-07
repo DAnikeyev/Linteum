@@ -27,8 +27,7 @@ public sealed record QueuedCanvasSeedRequest(
 
 public class CanvasSeedQueueService : BackgroundService, ICanvasSeedQueue
 {
-    private const int PersistenceBatchSize = 1000;
-    private const int NotificationBatchSize = 500;
+    private const int SeedBatchSize = 500;
 
     private readonly Channel<QueuedCanvasSeedRequest> _queue = Channel.CreateUnbounded<QueuedCanvasSeedRequest>(
         new UnboundedChannelOptions
@@ -109,7 +108,7 @@ public class CanvasSeedQueueService : BackgroundService, ICanvasSeedQueue
             using var image = await Image.LoadAsync<Rgba32>(imageStream, stoppingToken);
             var grid = ImageConverter.ConvertImageToGrid(image, request.Width, request.Height, palette);
             var seedPrice = request.CanvasMode == CanvasMode.Economy ? 1L : 0L;
-            var seedPixels = BuildSeedPixels(grid, seedPrice).ToArray();
+            var seedBatches = BuildSeedBatches(grid, seedPrice).ToArray();
             var totalSeededPixels = 0;
             var shouldStop = false;
             var originalAutoDetectChanges = dbContext.ChangeTracker.AutoDetectChangesEnabled;
@@ -117,7 +116,7 @@ public class CanvasSeedQueueService : BackgroundService, ICanvasSeedQueue
 
             try
             {
-                foreach (var batch in seedPixels.Chunk(PersistenceBatchSize))
+                foreach (var batch in seedBatches)
                 {
                     stoppingToken.ThrowIfCancellationRequested();
 
@@ -140,38 +139,38 @@ public class CanvasSeedQueueService : BackgroundService, ICanvasSeedQueue
                             return;
                         }
 
-                        var existingCoordinates = await LoadExistingCoordinatesAsync(dbContext, request.CanvasId, batch, stoppingToken);
-                        var seedsToInsert = batch
-                            .Where(seed => !existingCoordinates.Contains((seed.X, seed.Y)))
+                        var existingCoordinates = await LoadExistingCoordinatesAsync(dbContext, request.CanvasId, batch.Coordinates, stoppingToken);
+                        var coordinatesToInsert = batch.Coordinates
+                            .Where(coordinate => !existingCoordinates.Contains((coordinate.X, coordinate.Y)))
                             .ToList();
 
-                        if (seedsToInsert.Count == 0)
+                        if (coordinatesToInsert.Count == 0)
                         {
                             dbContext.ChangeTracker.Clear();
                             return;
                         }
 
                         var timestamp = DateTime.UtcNow;
-                        var pixels = seedsToInsert.Select(seed => new Pixel
-                        {
-                            Id = seed.PixelId,
-                            CanvasId = request.CanvasId,
-                            X = seed.X,
-                            Y = seed.Y,
-                            ColorId = seed.ColorId,
-                            OwnerId = request.CreatorId,
-                            Price = seed.Price,
-                        }).ToList();
-
-                        var pixelChangedEvents = seedsToInsert.Select(seed => new PixelChangedEvent
+                        var pixels = coordinatesToInsert.Select(coordinate => new Pixel
                         {
                             Id = Guid.NewGuid(),
-                            PixelId = seed.PixelId,
+                            CanvasId = request.CanvasId,
+                            X = coordinate.X,
+                            Y = coordinate.Y,
+                            ColorId = batch.ColorId,
+                            OwnerId = request.CreatorId,
+                            Price = batch.Price,
+                        }).ToList();
+
+                        var pixelChangedEvents = pixels.Select(pixel => new PixelChangedEvent
+                        {
+                            Id = Guid.NewGuid(),
+                            PixelId = pixel.Id,
                             OldOwnerUserId = null,
                             OwnerUserId = request.CreatorId,
                             OldColorId = defaultColor.Id,
-                            NewColorId = seed.ColorId,
-                            NewPrice = seed.Price,
+                            NewColorId = pixel.ColorId,
+                            NewPrice = pixel.Price,
                             ChangedAt = timestamp,
                         }).ToList();
 
@@ -199,7 +198,7 @@ public class CanvasSeedQueueService : BackgroundService, ICanvasSeedQueue
                         break;
                     }
 
-                    foreach (var notificationBatch in changedPixels.Chunk(NotificationBatchSize))
+                    foreach (var notificationBatch in changedPixels.Chunk(SeedBatchSize))
                     {
                         await NotifySeedBatchSafelyAsync(notifier, request.CanvasName, notificationBatch);
                     }
@@ -239,23 +238,24 @@ public class CanvasSeedQueueService : BackgroundService, ICanvasSeedQueue
         }
     }
 
-    private static IEnumerable<SeedPixel> BuildSeedPixels(ColorDto[,] grid, long price)
+    private static IEnumerable<SeedBatch> BuildSeedBatches(ColorDto[,] grid, long price)
     {
-        for (var y = 0; y < grid.GetLength(1); y++)
+        var coordinatesByColor = ImageConverter.GroupCoordinatesByColor(grid);
+
+        foreach (var colorGroup in coordinatesByColor.OrderBy(group => group.Key))
         {
-            for (var x = 0; x < grid.GetLength(0); x++)
+            foreach (var coordinateBatch in colorGroup.Value.Chunk(SeedBatchSize))
             {
-                var color = grid[x, y];
-                yield return new SeedPixel(Guid.NewGuid(), x, y, color.Id, price);
+                yield return new SeedBatch(colorGroup.Key, price, coordinateBatch.ToList());
             }
         }
     }
 
-    private static async Task<HashSet<(int X, int Y)>> LoadExistingCoordinatesAsync(AppDbContext dbContext, Guid canvasId, IReadOnlyCollection<SeedPixel> seeds, CancellationToken cancellationToken)
+    private static async Task<HashSet<(int X, int Y)>> LoadExistingCoordinatesAsync(AppDbContext dbContext, Guid canvasId, IReadOnlyCollection<CoordinateDto> coordinates, CancellationToken cancellationToken)
     {
-        var xCoords = seeds.Select(seed => seed.X).Distinct().ToList();
-        var yCoords = seeds.Select(seed => seed.Y).Distinct().ToList();
-        var seedCoordinates = seeds.Select(seed => (seed.X, seed.Y)).ToHashSet();
+        var xCoords = coordinates.Select(coordinate => coordinate.X).Distinct().ToList();
+        var yCoords = coordinates.Select(coordinate => coordinate.Y).Distinct().ToList();
+        var requestedCoordinates = coordinates.Select(coordinate => (coordinate.X, coordinate.Y)).ToHashSet();
 
         var existingPixels = await dbContext.Pixels
             .AsNoTracking()
@@ -266,7 +266,7 @@ public class CanvasSeedQueueService : BackgroundService, ICanvasSeedQueue
 
         return existingPixels
             .Select(pixel => (pixel.X, pixel.Y))
-            .Where(seedCoordinates.Contains)
+            .Where(requestedCoordinates.Contains)
             .ToHashSet();
     }
 
@@ -282,6 +282,6 @@ public class CanvasSeedQueueService : BackgroundService, ICanvasSeedQueue
         }
     }
 
-    private sealed record SeedPixel(Guid PixelId, int X, int Y, int ColorId, long Price);
+    private sealed record SeedBatch(int ColorId, long Price, IReadOnlyCollection<CoordinateDto> Coordinates);
 }
 

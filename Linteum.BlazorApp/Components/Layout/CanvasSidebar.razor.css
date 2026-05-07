@@ -305,6 +305,7 @@
         min-width: 280px;
         height: 100dvh;
         min-height: 100dvh;
+        z-index: 1060;
         padding-bottom: env(safe-area-inset-bottom);
         box-shadow: 20px 0 40px rgba(0, 0, 0, 0.25);
     }
@@ -313,7 +314,7 @@
         display: block;
         position: fixed;
         inset: 0;
-        z-index: 999;
+        z-index: 1059;
         background: rgba(0, 0, 0, 0.32);
         backdrop-filter: blur(2px);
         animation: fadeIn 0.2s ease;
@@ -325,9 +326,10 @@
     }
 
     .sidebar-collapse-btn {
-        top: 10px;
+        top: calc(env(safe-area-inset-top, 0px) + 78px);
         left: 10px;
         transform: none;
+        z-index: 1061;
         width: 40px;
         height: 40px;
         border-radius: 12px;

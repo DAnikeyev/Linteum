@@ -6,6 +6,7 @@ using Linteum.Shared;
 using Linteum.Shared.DTO;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
+using System.Security.Cryptography;
 
 namespace Linteum.Infrastructure;
 
@@ -109,34 +110,7 @@ public class UserRepository : IUserRepository
                 _context.Users.Add(newUser);
                 await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
-                var mainCanvas = _context.Canvases.AsNoTracking().FirstOrDefault(x => x.Name == _defaultsConfig.DefaultCanvasName);
-                if (mainCanvas == null)
-                {
-                    throw new InvalidOperationException($"Main canvas with name '{_defaultsConfig.DefaultCanvasName}' not found.");
-                }
-
-                await _subscriptionRepository.Subscribe(newUser.Id, mainCanvas.Id, null);
-
-                foreach (var secondaryName in _defaultsConfig.SecondaryDefaultCanvasNames)
-                {
-                    var secondaryCanvas = await _context.Canvases.AsNoTracking()
-                        .FirstOrDefaultAsync(x => x.Name == secondaryName);
-                    if (secondaryCanvas != null)
-                    {
-                        try
-                        {
-                            await _subscriptionRepository.Subscribe(newUser.Id, secondaryCanvas.Id, null);
-                        }
-                        catch (Exception ex)
-                        {
-                            _logger.LogDebug(ex, "Could not auto-subscribe new user {UserId} to secondary canvas '{CanvasName}'", newUser.Id, secondaryName);
-                        }
-                    }
-                    else
-                    {
-                        _logger.LogDebug("Secondary canvas '{CanvasName}' not found, skipping auto-subscription for user {UserId}", secondaryName, newUser.Id);
-                    }
-                }
+                await SubscribeUserToDefaultCanvasesAsync(newUser.Id, passwordDto.LoginMethod == LoginMethod.Guest);
             }
 
             var userInDb = await GetByEmailAsync(userDto.Email);
@@ -151,6 +125,119 @@ public class UserRepository : IUserRepository
             _logger.LogError(ex, "Error in AddOrUpdateUserAsync for user: {Email}", userDto.Email);
             await transaction.RollbackAsync();
             return null;
+        }
+    }
+
+    public async Task<UserDto?> CreateGuestUserAsync()
+    {
+        const int maxAttempts = 32;
+
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
+        {
+            var userName = $"{GuestUserHelper.GuestUserNamePrefix}{RandomNumberGenerator.GetInt32(0, 100_000_000):D8}";
+            var email = GuestUserHelper.BuildGuestEmail(userName);
+
+            if (await _context.Users.AsNoTracking().AnyAsync(user => user.UserName == userName || user.Email == email))
+            {
+                continue;
+            }
+
+            await using var transaction = await _context.Database.BeginTransactionAsync();
+            try
+            {
+                var newUser = new User
+                {
+                    Id = Guid.NewGuid(),
+                    UserName = userName,
+                    Email = email,
+                    LoginMethod = LoginMethod.Guest,
+                    PasswordHashOrKey = SecurityHelper.HashPassword(Guid.NewGuid().ToString("N")),
+                    CreatedAt = DateTime.UtcNow,
+                };
+
+                _context.Users.Add(newUser);
+                await _context.SaveChangesAsync();
+                await transaction.CommitAsync();
+
+                await SubscribeUserToDefaultCanvasesAsync(newUser.Id, isGuest: true);
+                return _mapper.Map<UserDto>(newUser);
+            }
+            catch (DbUpdateException ex)
+            {
+                await transaction.RollbackAsync();
+                _logger.LogDebug(ex, "Guest user creation attempt {Attempt} collided on username/email {UserName}", attempt, userName);
+            }
+            catch (Exception ex)
+            {
+                await transaction.RollbackAsync();
+                _logger.LogError(ex, "Error creating guest user during attempt {Attempt}", attempt);
+                return null;
+            }
+        }
+
+        _logger.LogError("Failed to create a unique guest user after {AttemptCount} attempts.", maxAttempts);
+        return null;
+    }
+
+    public async Task<int> DeleteExpiredGuestUsersAsync(DateTime cutoffUtc, CancellationToken cancellationToken = default)
+    {
+        var guestUserIds = await _context.Users
+            .AsNoTracking()
+            .Where(user => user.LoginMethod == LoginMethod.Guest && user.CreatedAt <= cutoffUtc)
+            .Select(user => user.Id)
+            .ToListAsync(cancellationToken);
+
+        if (guestUserIds.Count == 0)
+        {
+            return 0;
+        }
+
+        await using var transaction = await _context.Database.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            var guestCanvasIds = await _context.Canvases
+                .Where(canvas => guestUserIds.Contains(canvas.CreatorId))
+                .Select(canvas => canvas.Id)
+                .ToListAsync(cancellationToken);
+
+            if (guestCanvasIds.Count > 0)
+            {
+                await _context.Canvases
+                    .Where(canvas => guestCanvasIds.Contains(canvas.Id))
+                    .ExecuteDeleteAsync(cancellationToken);
+            }
+
+            var guestOwnedPixelIds = await _context.Pixels
+                .Where(pixel => pixel.OwnerId.HasValue && guestUserIds.Contains(pixel.OwnerId.Value))
+                .Select(pixel => pixel.Id)
+                .ToListAsync(cancellationToken);
+
+            await _context.PixelChangedEvents
+                .Where(pixelEvent =>
+                    guestUserIds.Contains(pixelEvent.OwnerUserId)
+                    || (pixelEvent.OldOwnerUserId.HasValue && guestUserIds.Contains(pixelEvent.OldOwnerUserId.Value))
+                    || guestOwnedPixelIds.Contains(pixelEvent.PixelId))
+                .ExecuteDeleteAsync(cancellationToken);
+
+            if (guestOwnedPixelIds.Count > 0)
+            {
+                await _context.Pixels
+                    .Where(pixel => guestOwnedPixelIds.Contains(pixel.Id))
+                    .ExecuteDeleteAsync(cancellationToken);
+            }
+
+            var deletedUserCount = await _context.Users
+                .Where(user => guestUserIds.Contains(user.Id))
+                .ExecuteDeleteAsync(cancellationToken);
+
+            await transaction.CommitAsync(cancellationToken);
+            return deletedUserCount;
+        }
+        catch (Exception ex)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+            _logger.LogError(ex, "Error deleting expired guest users older than {CutoffUtc}", cutoffUtc);
+            return 0;
         }
     }
 
@@ -172,6 +259,42 @@ public class UserRepository : IUserRepository
         .Where(u => u.Email == userDto.Email && u.PasswordHashOrKey == userPaswordDto.PasswordHashOrKey && u.LoginMethod == userPaswordDto.LoginMethod)
         .ProjectTo<UserDto>(_mapper.ConfigurationProvider)
         .FirstOrDefaultAsync();
+    }
+
+    private async Task SubscribeUserToDefaultCanvasesAsync(Guid userId, bool isGuest)
+    {
+        var mainCanvas = await _context.Canvases
+            .AsNoTracking()
+            .FirstOrDefaultAsync(canvas => canvas.Name == _defaultsConfig.DefaultCanvasName);
+
+        if (mainCanvas == null)
+        {
+            throw new InvalidOperationException($"Main canvas with name '{_defaultsConfig.DefaultCanvasName}' not found.");
+        }
+
+        await _subscriptionRepository.Subscribe(userId, mainCanvas.Id, null);
+
+        foreach (var secondaryName in _defaultsConfig.SecondaryDefaultCanvasNames)
+        {
+            var secondaryCanvas = await _context.Canvases
+                .AsNoTracking()
+                .FirstOrDefaultAsync(canvas => canvas.Name == secondaryName);
+            if (secondaryCanvas != null)
+            {
+                try
+                {
+                    await _subscriptionRepository.Subscribe(userId, secondaryCanvas.Id, null);
+                }
+                catch (Exception ex)
+                {
+                    _logger.LogDebug(ex, "Could not auto-subscribe new user {UserId} to secondary canvas '{CanvasName}'", userId, secondaryName);
+                }
+            }
+            else
+            {
+                _logger.LogDebug("Secondary canvas '{CanvasName}' not found, skipping auto-subscription for user {UserId}", secondaryName, userId);
+            }
+        }
     }
 }
 

@@ -38,6 +38,7 @@ internal class TextDrawQueueServiceTests : SyntheticDataTest
         var sessionService = new SessionService(new Config(), NullLogger<SessionService>.Instance);
         var sessionId = sessionService.CreateSession(user.Id.Value);
         var queue = new CapturingTextDrawQueue();
+        var config = new Config();
         var controller = new PixelsController(
             RepoManager,
             sessionService,
@@ -45,7 +46,8 @@ internal class TextDrawQueueServiceTests : SyntheticDataTest
             Channel.CreateUnbounded<PixelDto>(),
             new StubPixelChangeCounter(),
             queue,
-            new SimplePixelNotifier())
+            new SimplePixelNotifier(),
+            config)
         {
             ControllerContext = new ControllerContext
             {
@@ -91,6 +93,7 @@ internal class TextDrawQueueServiceTests : SyntheticDataTest
         var sessionService = new SessionService(new Config(), NullLogger<SessionService>.Instance);
         var sessionId = sessionService.CreateSession(user.Id.Value);
         var queue = new CapturingTextDrawQueue();
+        var config = new Config();
         var controller = new PixelsController(
             RepoManager,
             sessionService,
@@ -98,7 +101,8 @@ internal class TextDrawQueueServiceTests : SyntheticDataTest
             Channel.CreateUnbounded<PixelDto>(),
             new StubPixelChangeCounter(),
             queue,
-            new SimplePixelNotifier())
+            new SimplePixelNotifier(),
+            config)
         {
             ControllerContext = new ControllerContext
             {
@@ -140,6 +144,7 @@ internal class TextDrawQueueServiceTests : SyntheticDataTest
         var sessionService = new SessionService(new Config(), NullLogger<SessionService>.Instance);
         var sessionId = sessionService.CreateSession(user.Id.Value);
         var queue = new CapturingTextDrawQueue();
+        var config = new Config();
         var controller = new PixelsController(
             RepoManager,
             sessionService,
@@ -147,7 +152,8 @@ internal class TextDrawQueueServiceTests : SyntheticDataTest
             Channel.CreateUnbounded<PixelDto>(),
             new StubPixelChangeCounter(),
             queue,
-            new SimplePixelNotifier())
+            new SimplePixelNotifier(),
+            config)
         {
             ControllerContext = new ControllerContext
             {

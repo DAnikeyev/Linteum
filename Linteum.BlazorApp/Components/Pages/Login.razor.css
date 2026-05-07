@@ -184,6 +184,19 @@
     font-weight: 700;
 }
 
+.google-login-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.google-login-icon {
+    width: 18px;
+    height: 18px;
+    object-fit: contain;
+}
+
 .login-actions .btn-primary {
     margin-top: 0;
 }
@@ -197,6 +210,8 @@
 
 .auth-switch {
     margin-top: 0.24rem !important;
+    font-size: 1rem !important;
+    line-height: 1.45;
 }
 
 .login-container a {
@@ -208,6 +223,29 @@
 .login-container a:hover {
     color: #133d89;
     text-decoration: underline;
+}
+
+.auth-inline-link {
+    display: inline;
+    border: 0;
+    background: none;
+    color: #1f56b5;
+    font-size: 1rem;
+    font-weight: 700;
+    line-height: inherit;
+    text-decoration: none;
+    vertical-align: baseline;
+}
+
+.auth-inline-link:hover {
+    color: #133d89;
+    text-decoration: underline;
+}
+
+.auth-inline-link:focus-visible {
+    outline: 2px solid rgba(45, 114, 221, 0.35);
+    outline-offset: 2px;
+    border-radius: 4px;
 }
 
 .fixed-width {

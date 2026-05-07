@@ -218,11 +218,21 @@ public partial class PixelManager
             return;
         }
 
+        if (IsEconomyCanvas && !CanPaintEconomyCanvas)
+        {
+            await NotifyAsync(new CustomNotification
+            {
+                Message = "Guest accounts cannot paint on economy canvases.",
+                Type = NotificationType.Info,
+            });
+            return;
+        }
+
         if (IsNormalCanvas && !HasRemainingNormalQuota)
         {
             await NotifyAsync(new CustomNotification
             {
-                Message = "Normal mode allows up to 100 successful pixel changes per day on this canvas.",
+                Message = $"Normal mode allows up to {_normalModeQuota?.DailyLimit ?? 0} successful pixel changes per day on this canvas.",
                 Type = NotificationType.Info,
             });
             return;

@@ -94,6 +94,7 @@ public partial class PixelManager : ComponentBase
     private bool _isTextForegroundMenuOpen;
     private bool _isTextBackgroundMenuOpen;
     private Guid? _currentUserId;
+    private LoginMethod _currentLoginMethod = LoginMethod.Password;
     private bool _isManagingCanvas;
     private CanvasManagementAction _pendingCanvasAction;
     private string _economyBidText = string.Empty;
@@ -112,9 +113,11 @@ public partial class PixelManager : ComponentBase
     private bool IsEconomyCanvas => Canvas?.CanvasMode == CanvasMode.Economy;
     private bool IsNormalCanvas => Canvas?.CanvasMode == CanvasMode.Normal;
     private bool IsFreeDrawCanvas => Canvas?.CanvasMode == CanvasMode.FreeDraw;
+    private bool IsGuestUser => GuestUserHelper.IsGuest(_currentLoginMethod);
     private bool IsCreator => Canvas != null && _currentUserId.HasValue && Canvas.CreatorId == _currentUserId.Value;
     private bool CanEraseCanvas => Canvas != null && (IsCreator || IsFreeDrawCanvas);
     private bool CanDeleteCanvas => IsCreator;
+    private bool CanPaintEconomyCanvas => !IsEconomyCanvas || !IsGuestUser;
     private bool IsTextToolActive => IsFreeDrawCanvas && _activeTool == DrawingTool.Text;
     private bool BrushToggleDisabled => Canvas == null || IsTextToolActive || !IsFreeDrawCanvas || SelectedColor == null;
     private bool EraserToggleDisabled => Canvas == null || !IsFreeDrawCanvas || IsTextToolActive;
@@ -138,7 +141,12 @@ public partial class PixelManager : ComponentBase
             ? "Eraser is available only on FreeDraw canvases."
             : "Eraser is unavailable while the text tool is active."
         : $"Hold the left mouse button on the canvas to erase with the {SelectedEraserSize} x {SelectedEraserSize} eraser. Use the middle mouse button at any time to pan the canvas.";
-    private int NormalModeRemainingToday => _normalModeQuota?.RemainingToday ?? 0;
+    private int NormalModeDailyLimitDisplay => _normalModeQuota?.DailyLimit ?? (IsGuestUser ? 10 : 100);
+    private int NormalModeUsedToday => _normalModeQuota?.UsedToday ?? 0;
+    private string NormalModeUsageSummary => $"{NormalModeUsedToday}/{NormalModeDailyLimitDisplay}";
+    private string NormalModeDescription => IsGuestUser
+        ? "Normal mode is single-pixel only. Log in to increase your daily limit to 100 on this canvas."
+        : "Normal mode is single-pixel only. Brush and text tools are available on FreeDraw canvases.";
     private static readonly int[] EraserSizes = [1, 3, 7];
     private bool HasPendingCanvasAction => _pendingCanvasAction != CanvasManagementAction.None;
     private bool HasCanvasMaintenanceProgress => Canvas != null && MaintenanceProgress != null && string.Equals(Canvas.Name, MaintenanceProgress.CanvasName, StringComparison.OrdinalIgnoreCase);
@@ -172,7 +180,7 @@ public partial class PixelManager : ComponentBase
                 : "pm-maintenance-badge-queued";
     private bool HasValidEconomyBid => !IsEconomyCanvas || (ClickedPixel.HasValue && TryGetEconomyBid(out var bid) && bid >= MinimumBid && bid <= Gold);
     private bool HasRemainingNormalQuota => !IsNormalCanvas || _normalModeQuota == null || _normalModeQuota.RemainingToday > 0;
-    private bool PaintDisabled => SelectedColor == null || !ClickedPixel.HasValue || !HasValidEconomyBid || !HasRemainingNormalQuota;
+    private bool PaintDisabled => SelectedColor == null || !ClickedPixel.HasValue || !CanPaintEconomyCanvas || !HasValidEconomyBid || !HasRemainingNormalQuota;
     private bool PaintTextDisabled => SelectedTextForegroundColor == null || !ClickedPixel.HasValue || string.IsNullOrWhiteSpace(_textContent);
     private string PaintButtonText => IsEconomyCanvas ? "Place Bid" : "Paint";
     private const int DefaultTextFontSize = 16;
@@ -211,6 +219,7 @@ public partial class PixelManager : ComponentBase
     protected override async Task OnInitializedAsync()
     {
         _currentUserId = await ApiClient.GetCurrentUserIdAsync();
+        _currentLoginMethod = await ApiClient.GetCurrentLoginMethodAsync();
         var colors = await ApiClient.GetColorsAsync();
         if (colors == null)
         {
@@ -227,6 +236,8 @@ public partial class PixelManager : ComponentBase
         {
             _currentUserId = await ApiClient.GetCurrentUserIdAsync();
         }
+
+        _currentLoginMethod = await ApiClient.GetCurrentLoginMethodAsync();
 
         if (Canvas == null
             || (_pendingCanvasAction == CanvasManagementAction.Erase && !CanEraseCanvas)

@@ -42,6 +42,18 @@ internal class DbSeederTests : SyntheticDataTest
     }
 
     [Test]
+    public void GetNonUnsubscribableCanvasNames_IncludesOnlyDefaultCanvasName()
+    {
+        var nonUnsubscribableCanvasNames = DefaultConfig.GetNonUnsubscribableCanvasNames();
+
+        Assert.That(nonUnsubscribableCanvasNames, Does.Contain(DefaultConfig.DefaultCanvasName));
+        Assert.That(nonUnsubscribableCanvasNames, Does.Not.Contain("home_FreeDraw"));
+        Assert.That(nonUnsubscribableCanvasNames, Does.Not.Contain("home_Economy"));
+        Assert.That(nonUnsubscribableCanvasNames, Does.Not.Contain("VanGogh"));
+        Assert.That(nonUnsubscribableCanvasNames, Does.Not.Contain("Thailand"));
+    }
+
+    [Test]
     public async Task SeedDefaults_ReassignsRemovedColorsToDefaultBeforeDeletingThem()
     {
         var user = await DbHelper.AddDefaultUser("CleanupUser");

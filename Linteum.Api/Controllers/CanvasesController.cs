@@ -72,6 +72,8 @@ namespace Linteum.Api.Controllers
                 return NotFound();
             }
 
+            await TryAutoSubscribeAsync(userId.Value, canvas);
+
             _logger.LogInformation("Canvas {CanvasName} returned successfully for user {UserId}.", name, userId.Value);
             return Ok(canvas);
         }
@@ -105,6 +107,12 @@ namespace Linteum.Api.Controllers
             {
                 _logger.LogWarning("Unauthorized access attempt: Session-Id header missing or invalid.");
                 return Unauthorized("Session-Id header missing or invalid.");
+            }
+
+            if (await IsGuestUserAsync(userId.Value))
+            {
+                _logger.LogWarning("Guest user {UserId} attempted to create canvas {CanvasName}.", userId.Value, canvas.Name);
+                return BadRequest("Guest accounts cannot create canvases.");
             }
 
             if (!IsCanvasSizeValid(canvas))
@@ -145,6 +153,12 @@ namespace Linteum.Api.Controllers
             {
                 _logger.LogWarning("Unauthorized access attempt: Session-Id header missing or invalid.");
                 return Unauthorized("Session-Id header missing or invalid.");
+            }
+
+            if (await IsGuestUserAsync(userId.Value))
+            {
+                _logger.LogWarning("Guest user {UserId} attempted to create image-backed canvas {CanvasName}.", userId.Value, request.Name);
+                return BadRequest("Guest accounts cannot create canvases.");
             }
 
             if (string.IsNullOrWhiteSpace(request.Name))
@@ -304,9 +318,9 @@ namespace Linteum.Api.Controllers
         [HttpPost("unsubscribe")]
         public async Task<IActionResult> UnsubscribeFromCanvas([FromBody] CanvasDto canvasDto)
         {
-            if (_config.GetProtectedCanvasNames().Contains(canvasDto.Name, StringComparer.OrdinalIgnoreCase))
+            if (_config.GetNonUnsubscribableCanvasNames().Contains(canvasDto.Name, StringComparer.OrdinalIgnoreCase))
             {
-                _logger.LogWarning("Cannot unsubscribe from protected seeded canvas {CanvasName}.", canvasDto.Name);
+                _logger.LogWarning("Cannot unsubscribe from required canvas {CanvasName}.", canvasDto.Name);
                 return BadRequest("Cannot unsubscribe from a built-in canvas.");
             }
             var userId = _sessionService.ProcessHeader(HttpContext.Request.Headers);
@@ -504,10 +518,11 @@ namespace Linteum.Api.Controllers
                 }
             }
 
-            await using var ms = new MemoryStream();
+            var ms = new MemoryStream();
             await image.SaveAsPngAsync(ms);
+            ms.Position = 0;
             _logger.LogInformation("Canvas image for {CanvasName} generated successfully for user {UserId}.", name, userId.Value);
-            return File(ms.ToArray(), "image/png");
+            return File(ms, "image/png");
         }
 
         
@@ -530,6 +545,41 @@ namespace Linteum.Api.Controllers
             var canvases = (await _repoManager.CanvasRepository.GetByUserIdAsync(userId.Value)).ToList();
             _logger.LogInformation("Subscribed canvases returned successfully for user {UserId}. Count={Count}", userId.Value, canvases.Count);
             return Ok(canvases);
+        }
+
+        private async Task<bool> IsGuestUserAsync(Guid userId)
+        {
+            var user = await _repoManager.UserRepository.GetByIdAsync(userId);
+            return GuestUserHelper.IsGuest(user);
+        }
+
+        private async Task TryAutoSubscribeAsync(Guid userId, CanvasDto canvas)
+        {
+            if (canvas.IsPasswordProtected)
+            {
+                return;
+            }
+
+            var existingSubscriptions = await _repoManager.SubscriptionRepository.GetByUserIdAsync(userId);
+            if (existingSubscriptions.Any(subscription => subscription.CanvasId == canvas.Id))
+            {
+                _logger.LogDebug("Auto-subscribe skipped for user {UserId} on canvas {CanvasName} because the subscription already exists.", userId, canvas.Name);
+                return;
+            }
+
+            try
+            {
+                await _repoManager.SubscriptionRepository.Subscribe(userId, canvas.Id, null);
+                _logger.LogInformation("Auto-subscribed user {UserId} to public canvas {CanvasName}.", userId, canvas.Name);
+            }
+            catch (UserAlreadySubscribedException)
+            {
+                _logger.LogDebug("Auto-subscribe skipped for user {UserId} on canvas {CanvasName} because the subscription already exists.", userId, canvas.Name);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Auto-subscribe skipped for user {UserId} on canvas {CanvasName}.", userId, canvas.Name);
+            }
         }
     }
 }

@@ -453,8 +453,9 @@ h1:focus {
     /* Override JS-created coordinates element positioning on mobile */
     .canvas-coordinates {
         right: 10px !important;
-        top: auto !important;
-        bottom: 10px !important;
+        top: calc(env(safe-area-inset-top, 0px) + 30px) !important;
+        bottom: auto !important;
+        left: auto !important;
         font-size: 0.68rem !important;
     }
 }

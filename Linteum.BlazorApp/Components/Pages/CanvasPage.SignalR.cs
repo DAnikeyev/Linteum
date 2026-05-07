@@ -9,6 +9,21 @@ public partial class CanvasPage
 {
     protected override async Task OnInitializedAsync()
     {
+        _brushFlushLoopTask = RunBrushFlushLoopAsync(_brushFlushLoopCts.Token);
+        _eraseFlushLoopTask = RunEraseFlushLoopAsync(_eraseFlushLoopCts.Token);
+        _confirmedPlaybackLoopTask = RunConfirmedPlaybackLoopAsync(_confirmedPlaybackLoopCts.Token);
+        await Task.CompletedTask;
+    }
+
+    private async Task EnsureInteractiveReadyAsync()
+    {
+        if (_interactiveReady || _interactiveInitializationInProgress || IsDisposed)
+        {
+            return;
+        }
+
+        _interactiveInitializationInProgress = true;
+
         try
         {
             var apiBase = Configuration["ApiBaseUrl"];
@@ -20,6 +35,7 @@ public partial class CanvasPage
 
             var hubUrl = $"{apiBase.TrimEnd('/')}/canvashub";
             var sessionId = await LocalStorageService.GetItemAsync<string>(LocalStorageKey.SessionId);
+            _currentSessionId = sessionId;
             _currentUserId = await LocalStorageService.GetItemAsync<Guid?>(LocalStorageKey.UserId);
             _currentUserName = await LocalStorageService.GetItemAsync<string>(LocalStorageKey.UserName);
 
@@ -121,10 +137,11 @@ public partial class CanvasPage
         {
             _nlog.Error(ex, "Failed to start SignalR connection");
         }
-
-        _brushFlushLoopTask = RunBrushFlushLoopAsync(_brushFlushLoopCts.Token);
-        _eraseFlushLoopTask = RunEraseFlushLoopAsync(_eraseFlushLoopCts.Token);
-        _confirmedPlaybackLoopTask = RunConfirmedPlaybackLoopAsync(_confirmedPlaybackLoopCts.Token);
+        finally
+        {
+            _interactiveReady = true;
+            _interactiveInitializationInProgress = false;
+        }
     }
 
     private async Task HandleSessionExpiredAsync()

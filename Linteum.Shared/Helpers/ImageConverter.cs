@@ -37,6 +37,28 @@ public class ImageConverter
         return grid;
     }
 
+    public static IReadOnlyDictionary<int, List<CoordinateDto>> GroupCoordinatesByColor(ColorDto[,] grid)
+    {
+        var coordinatesByColor = new Dictionary<int, List<CoordinateDto>>();
+
+        for (var y = 0; y < grid.GetLength(1); y++)
+        {
+            for (var x = 0; x < grid.GetLength(0); x++)
+            {
+                var colorId = grid[x, y].Id;
+                if (!coordinatesByColor.TryGetValue(colorId, out var coordinates))
+                {
+                    coordinates = [];
+                    coordinatesByColor[colorId] = coordinates;
+                }
+
+                coordinates.Add(new CoordinateDto(x, y));
+            }
+        }
+
+        return coordinatesByColor;
+    }
+
     private static ColorDto GetClosestColor(Rgba32 target, List<ColorDto> palette)
     {
         if (palette == null || palette.Count == 0)

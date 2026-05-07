@@ -74,4 +74,49 @@ internal class HourlyCanvasIncomeProcessorTest : SyntheticDataTest
         Assert.That(ownerEvents.First().Reason, Is.EqualTo(BalanceChangedReason.HourlyIncome));
         Assert.That(subscriberEvents.First().Reason, Is.EqualTo(BalanceChangedReason.HourlyIncome));
     }
+
+    [Test]
+    public async Task ProcessAsync_DoesNotPayGuestUsersSubscribedToEconomyCanvas()
+    {
+        var canvasRepo = RepoManager.CanvasRepository;
+        var subscriptionRepo = RepoManager.SubscriptionRepository;
+        var balanceRepo = RepoManager.BalanceChangedEventRepository;
+
+        var owner = await DbHelper.AddDefaultUser("IncomeOwner");
+        var subscriber = await DbHelper.AddDefaultUser("IncomeSubscriber");
+        var guest = await RepoManager.UserRepository.CreateGuestUserAsync();
+        Assert.That(owner?.Id, Is.Not.Null);
+        Assert.That(subscriber?.Id, Is.Not.Null);
+        Assert.That(guest?.Id, Is.Not.Null);
+
+        var canvas = await canvasRepo.TryAddCanvas(new CanvasDto
+        {
+            CreatorId = owner!.Id!.Value,
+            Name = "Guest Excluded Hourly Income Canvas",
+            Width = 10,
+            Height = 10,
+            CanvasMode = CanvasMode.Economy,
+        }, "testpassword");
+        Assert.That(canvas, Is.Not.Null);
+
+        await subscriptionRepo.Subscribe(owner.Id.Value, canvas!.Id, "testpassword");
+        await subscriptionRepo.Subscribe(subscriber!.Id!.Value, canvas.Id, "testpassword");
+        await subscriptionRepo.Subscribe(guest!.Id!.Value, canvas.Id, "testpassword");
+
+        var processor = new HourlyCanvasIncomeProcessor(
+            DbContext,
+            RepoManager,
+            DbHelper.LoggerFactoryInterface.CreateLogger<HourlyCanvasIncomeProcessor>());
+
+        var batches = await processor.ProcessAsync();
+        var batch = batches.Single(x => x.CanvasId == canvas.Id);
+
+        Assert.That(batch.Updates.Count, Is.EqualTo(2));
+        Assert.That(batch.Updates.Any(x => x.UserName == owner.UserName), Is.True);
+        Assert.That(batch.Updates.Any(x => x.UserName == subscriber.UserName), Is.True);
+        Assert.That(batch.Updates.Any(x => x.UserName == guest.UserName), Is.False);
+
+        var guestEvents = (await balanceRepo.GetByUserAndCanvasIdAsync(guest.Id.Value, canvas.Id)).ToList();
+        Assert.That(guestEvents.Count(x => x.Reason == BalanceChangedReason.HourlyIncome), Is.EqualTo(0));
+    }
 }

@@ -169,7 +169,7 @@ function CanvasViewportController(dotNetRef, viewportEl, rendererEl, coordsEl, c
         }
 
         var renderedClickPixel = self.brushEnabled ? null : self.clickedPx;
-        var clickPreviewMode = 'blink-negative';
+        var clickPreviewMode = 'blink-contrast';
         var clickPreviewColor = null;
         if (renderedClickPixel) {
             if (self.eraserEnabled) {

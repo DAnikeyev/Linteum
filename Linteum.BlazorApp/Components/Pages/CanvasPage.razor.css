@@ -148,9 +148,10 @@
     }
 
     .canvas-coordinates {
+        top: calc(env(safe-area-inset-top, 0px) + 30px);
+        right: 8px !important;
+        left: auto !important;
         bottom: auto;
-        top: 8px;
-        left: 8px !important;
         font-size: 0.68rem;
         padding: 0.24rem 0.58rem;
     }

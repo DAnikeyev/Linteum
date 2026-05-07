@@ -55,7 +55,9 @@
         }
         else
         {
-            <small class="text-muted">Password is managed by your Google account and cannot be changed here.</small>
+            <small class="text-muted">@( _loginMethod == LoginMethod.Guest
+                ? "Guest accounts do not have a password. Sign up or log in to keep your work permanently."
+                : "Password is managed by your Google account and cannot be changed here.")</small>
         }
     </section>
 
@@ -128,7 +130,9 @@
         {
             await NotificationService.NotifyAsync(new CustomNotification
             {
-                Message = "Password is managed by your Google account.",
+                Message = _loginMethod == LoginMethod.Guest
+                    ? "Guest accounts do not have a password."
+                    : "Password is managed by your Google account.",
                 Type = NotificationType.Error
             });
             return;

@@ -18,8 +18,9 @@ public class PixelsController : ControllerBase
     private readonly ITextDrawQueue _textDrawQueue;
     private readonly SessionService _sessionService;
     private readonly IPixelNotifier _pixelNotifier;
+    private readonly Config _config;
 
-    public PixelsController(RepositoryManager repoManager, SessionService sessionService, ILogger<PixelsController> logger, Channel<PixelDto> changedPixelsChannel, IPixelChangeCounter pixelChangeCounter, ITextDrawQueue textDrawQueue, IPixelNotifier pixelNotifier)
+    public PixelsController(RepositoryManager repoManager, SessionService sessionService, ILogger<PixelsController> logger, Channel<PixelDto> changedPixelsChannel, IPixelChangeCounter pixelChangeCounter, ITextDrawQueue textDrawQueue, IPixelNotifier pixelNotifier, Config config)
     {
         _sessionService = sessionService;
         _repoManager = repoManager;
@@ -28,6 +29,7 @@ public class PixelsController : ControllerBase
         _pixelChangeCounter = pixelChangeCounter;
         _textDrawQueue = textDrawQueue;
         _pixelNotifier = pixelNotifier;
+        _config = config;
     }
 
     [HttpGet("canvases/{canvasId}")]
@@ -164,6 +166,13 @@ public class PixelsController : ControllerBase
             _logger.LogWarning("TryChangePixel failed: Canvas {CanvasName} not found.", canvasName);
             return NotFound("Canvas not found.");
         }
+
+        if (canvas.CanvasMode == CanvasMode.Economy && await IsGuestUserAsync(userId.Value))
+        {
+            _logger.LogWarning("Guest user {UserId} attempted to paint on economy canvas {CanvasName}.", userId.Value, canvasName);
+            return BadRequest("Guest accounts cannot paint on economy canvases.");
+        }
+
         pixel.CanvasId = canvas.Id;
         if (ShouldLogZeroPriceFreeDrawAtDebug(canvas.CanvasMode, false, [pixel]))
         {
@@ -181,7 +190,7 @@ public class PixelsController : ControllerBase
             var message = canvas.CanvasMode == CanvasMode.Economy
                 ? "Could not change pixel. Check bid amount and gold balance."
                 : canvas.CanvasMode == CanvasMode.Normal
-                    ? "Could not change pixel. Normal mode allows up to 100 successful pixel changes per day on each canvas."
+                    ? $"Could not change pixel. Normal mode allows up to {GetNormalModeDailyPixelLimit(await IsGuestUserAsync(userId.Value))} successful pixel changes per day on each canvas."
                     : "Could not change pixel.";
             return BadRequest(message);
         }
@@ -234,6 +243,12 @@ public class PixelsController : ControllerBase
         }
 
         var useMasterOverride = IsValidMasterPassword(request.MasterPassword);
+        if (!useMasterOverride && canvas.CanvasMode == CanvasMode.Economy && await IsGuestUserAsync(userId.Value))
+        {
+            _logger.LogWarning("Guest user {UserId} attempted to batch paint on economy canvas {CanvasName}.", userId.Value, canvasName);
+            return BadRequest("Guest accounts cannot paint on economy canvases.");
+        }
+
         return await ExecuteBatchChangeAsync(canvasName, canvas.CanvasMode, userId.Value, request.Pixels, useMasterOverride);
     }
 
@@ -278,6 +293,12 @@ public class PixelsController : ControllerBase
             .ToList();
 
         var useMasterOverride = IsValidMasterPassword(request.MasterPassword);
+        if (!useMasterOverride && canvas.CanvasMode == CanvasMode.Economy && await IsGuestUserAsync(userId.Value))
+        {
+            _logger.LogWarning("Guest user {UserId} attempted to batch paint on economy canvas {CanvasName}.", userId.Value, canvasName);
+            return BadRequest("Guest accounts cannot paint on economy canvases.");
+        }
+
         return await ExecuteBatchChangeAsync(canvasName, canvas.CanvasMode, userId.Value, pixels, useMasterOverride, request.Playback, request.Coordinates);
     }
 
@@ -426,7 +447,7 @@ public class PixelsController : ControllerBase
 
             if (result.StoppedByNormalModeLimit)
             {
-                return BadRequest("Could not change pixels. Normal mode allows up to 100 successful pixel changes per day on each canvas.");
+                return BadRequest($"Could not change pixels. Normal mode allows up to {GetNormalModeDailyPixelLimit(await IsGuestUserAsync(userId))} successful pixel changes per day on each canvas.");
             }
 
             return BadRequest("Could not change any pixels.");
@@ -581,5 +602,14 @@ public class PixelsController : ControllerBase
         return !string.IsNullOrWhiteSpace(configuredMasterPassword)
                && string.Equals(configuredMasterPassword, providedMasterPassword, StringComparison.Ordinal);
     }
+
+    private async Task<bool> IsGuestUserAsync(Guid userId)
+    {
+        var user = await _repoManager.UserRepository.GetByIdAsync(userId);
+        return GuestUserHelper.IsGuest(user);
+    }
+
+    private int GetNormalModeDailyPixelLimit(bool isGuestUser) =>
+        isGuestUser ? _config.GuestNormalModeDailyPixelLimit : _config.NormalModeDailyPixelLimit;
 }
 

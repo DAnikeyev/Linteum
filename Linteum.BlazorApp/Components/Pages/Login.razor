@@ -5,6 +5,7 @@
 @implements IDisposable
 @using Linteum.BlazorApp.Components.Layout
 @using Linteum.Shared
+@using Microsoft.AspNetCore.WebUtilities
 @inject NavigationManager Navigation
 @inject MyApiClient ApiClient
 @inject Config Config
@@ -69,16 +70,17 @@
                 <!-- Buttons -->
                 <div class="d-flex gap-2 login-actions">
                     <button class="btn btn-primary flex-fill" type="submit">Login</button>
-                    <button class="btn btn-outline-primary flex-fill"
+                    <button class="btn btn-outline-primary flex-fill google-login-btn"
                             type="button"
                             @onclick="GoogleLoginAsync"
                             disabled="@(!_isGoogleEnabled)">
-                        Google Login
+                        <img src="/images/icons8-google-48.png" alt="" class="google-login-icon" />
+                        <span>Google</span>
                     </button>
                 </div>
             </form>
             <p class="auth-switch">
-                Don&#39;t have an account? <a href="/signup">Sign up</a>
+                Don&#39;t have an account? <a href="@BuildSignupLink()">Sign up</a> or <button type="button" class="auth-inline-link" @onclick="ContinueAsGuestAsync">Continue as guest</button>
             </p>
         </div>
     }
@@ -97,6 +99,8 @@
     private bool _isBusy = true;
     private string _busyTitle = "Checking session";
     private string _busyMessage = "Checking whether you are already signed in.";
+    private bool _autoGuestRequested;
+    private string? _returnUrl;
     private bool _isGoogleEnabled => !string.IsNullOrWhiteSpace(Config.GoogleClientId);
 
     private void ClearError()
@@ -187,6 +191,38 @@
         }
     }
 
+    private async Task ContinueAsGuestAsync()
+    {
+        ClearError();
+        SetBusyState("Starting guest session", "Creating a temporary guest account.");
+        try
+        {
+            var (user, sessionId) = await WithAuthTimeoutAsync(ApiClient.LoginAsGuestAsync(), "Guest login");
+            if (user != null && sessionId != null)
+            {
+                Navigation.NavigateTo(GetNavigationTarget(), replace: true);
+                return;
+            }
+
+            _error = "Could not start a guest session right now. Please try again.";
+        }
+        catch (TimeoutException ex)
+        {
+            Logger.LogWarning(ex, "Guest login timed out.");
+            _error = "Guest login timed out. Please try again.";
+        }
+        catch (Exception ex)
+        {
+            Logger.LogError(ex, "Guest login failed.");
+            _error = "Could not start a guest session right now. Please try again.";
+        }
+        finally
+        {
+            _isBusy = false;
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
     [JSInvokable]
     public async Task OnGoogleCodeReceived(string authCode)
     {
@@ -270,6 +306,7 @@
         if (firstRender)
         {
             Logger.LogInformation("Hello, login page!");
+            ReadNavigationState();
             var shouldRenderLogin = true;
             try
             {
@@ -286,9 +323,19 @@
 
                     if (user != null && validatedSessionId != null)
                     {
-                        Logger.LogInformation("Session validated successfully, redirecting to home page.");
-                        shouldRenderLogin = false;
-                        Navigation.NavigateTo(Config.DefaultPage, replace: true);
+                        var isGuestUser = GuestUserHelper.IsGuest(user);
+                        if (_autoGuestRequested && isGuestUser)
+                        {
+                            Logger.LogInformation("Guest session validated successfully, redirecting to requested page.");
+                            shouldRenderLogin = false;
+                            Navigation.NavigateTo(GetNavigationTarget(), replace: true);
+                        }
+                        else if (!isGuestUser)
+                        {
+                            Logger.LogInformation("Session validated successfully, redirecting to home page.");
+                            shouldRenderLogin = false;
+                            Navigation.NavigateTo(GetNavigationTarget(), replace: true);
+                        }
                     }
                     else
                     {
@@ -322,6 +369,11 @@
                     _isAuthResolved = true;
                     _isBusy = false;
                     await InvokeAsync(StateHasChanged);
+
+                    if (_autoGuestRequested)
+                    {
+                        await ContinueAsGuestAsync();
+                    }
                 }
             }
         }
@@ -358,6 +410,37 @@
         _busyTitle = title;
         _busyMessage = message;
         _isBusy = true;
+    }
+
+    private void ReadNavigationState()
+    {
+        var uri = Navigation.ToAbsoluteUri(Navigation.Uri);
+        var query = QueryHelpers.ParseQuery(uri.Query);
+        _autoGuestRequested = query.TryGetValue("guest", out var guestFlag)
+            && string.Equals(guestFlag.ToString(), "1", StringComparison.OrdinalIgnoreCase);
+        _returnUrl = query.TryGetValue("returnUrl", out var returnUrlValue)
+            ? NormalizeReturnUrl(returnUrlValue.ToString())
+            : null;
+    }
+
+    private string BuildSignupLink()
+    {
+        return string.IsNullOrWhiteSpace(_returnUrl)
+            ? "/signup"
+            : QueryHelpers.AddQueryString("/signup", "returnUrl", _returnUrl);
+    }
+
+    private string GetNavigationTarget() =>
+        string.IsNullOrWhiteSpace(_returnUrl) ? Config.DefaultPage : _returnUrl;
+
+    private static string? NormalizeReturnUrl(string? candidate)
+    {
+        if (string.IsNullOrWhiteSpace(candidate))
+        {
+            return null;
+        }
+
+        return candidate.StartsWith("/", StringComparison.Ordinal) ? candidate : null;
     }
 
     public void Dispose()

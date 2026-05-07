@@ -94,6 +94,8 @@ public class HourlyCanvasIncomeProcessor
             join canvas in _context.Canvases.AsNoTracking() on subscription.CanvasId equals canvas.Id
             join user in _context.Users.AsNoTracking() on subscription.UserId equals user.Id
             where canvas.CanvasMode == CanvasMode.Economy
+                && user.LoginMethod != LoginMethod.Guest
+                && (user.Email == null || !user.Email.EndsWith($"@{GuestUserHelper.GuestEmailDomain}"))
             join pixel in _context.Pixels.AsNoTracking()
                 on new { subscription.CanvasId, OwnerId = (Guid?)subscription.UserId }
                 equals new { pixel.CanvasId, pixel.OwnerId } into ownedPixels
