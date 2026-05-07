@@ -42,7 +42,8 @@
     .version-label {
         font-size: 10px;
         right: 8px;
-        bottom: 62px;
+        top: calc(env(safe-area-inset-top, 0px) + 8px);
+        bottom: auto;
     }
 }
 
