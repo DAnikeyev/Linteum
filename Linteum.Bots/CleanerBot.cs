@@ -7,7 +7,6 @@ public class CleanerBot : BotBase
 {
     private const int BatchSize = MaxPaintBatchSize;
     private const int MaxRetries = 5;
-    private const int RequestDelayMs = 1;
     private readonly string _targetCanvasName;
 
     public CleanerBot(string targetCanvasName) : base("cleaner@linteum.com", "CleanCanvas123!", "CleanerBot")
@@ -79,7 +78,6 @@ public class CleanerBot : BotBase
         for (int attempt = 1; attempt <= MaxRetries + 1; attempt++)
         {
             var result = await TryPaintCoordinatesAsync(canvas, coordinates, colorId, ct: ct);
-            await Task.Delay(RequestDelayMs, ct);
 
             if (result != null)
             {

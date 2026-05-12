@@ -167,6 +167,66 @@ internal class CanvasSeedQueueServiceTests : SyntheticDataTest
     }
 
     [Test]
+    public async Task CanvasSeedQueueService_RandomizedColorBatchesCanSeedLatePixelsBeforeTheFinalBatch()
+    {
+        var user = await DbHelper.AddDefaultUser("CanvasSeedRandomOrderUser");
+        var canvas = await RepoManager.CanvasRepository.TryAddCanvas(new CanvasDto
+        {
+            CreatorId = user!.Id!.Value,
+            Name = "Seed Random Order Canvas",
+            Width = 1000,
+            Height = 1,
+            CanvasMode = CanvasMode.FreeDraw,
+        }, passwordHash: null);
+
+        Assert.That(canvas, Is.Not.Null);
+
+        var notifier = new CapturingPixelNotifier();
+        var service = new CanvasSeedQueueService(new CanvasSeedScopeFactory(Options, notifier), NullLogger<CanvasSeedQueueService>.Instance, new CanvasWriteCoordinator());
+        var imageBytes = CreateJpegBytes(canvas!.Width, canvas.Height, (x, _) =>
+            x < 500 || x >= 900
+                ? new Rgba32(255, 0, 0)
+                : new Rgba32(0, 0, 255));
+
+        await service.StartAsync(CancellationToken.None);
+
+        try
+        {
+            await service.QueueAsync(new QueuedCanvasSeedRequest(
+                user.Id.Value,
+                user.UserName!,
+                canvas.Id,
+                canvas.Name,
+                canvas.CanvasMode,
+                canvas.Width,
+                canvas.Height,
+                imageBytes));
+
+            await WaitForAsync(async () =>
+                (await RepoManager.PixelRepository.GetByCanvasIdAsync(canvas.Id)).Count() == canvas.Width * canvas.Height,
+                TimeSpan.FromSeconds(5));
+
+            Assert.That(notifier.BatchCoordinates, Is.Not.Empty);
+            var batchIndexesContainingLatePixels = notifier.BatchCoordinates
+                .Select((coordinates, index) => new
+                {
+                    Index = index,
+                    HasLatePixels = coordinates.Any(coordinate => coordinate.X >= 900),
+                })
+                .Where(item => item.HasLatePixels)
+                .Select(item => item.Index)
+                .ToList();
+
+            Assert.That(batchIndexesContainingLatePixels, Is.Not.Empty);
+            Assert.That(batchIndexesContainingLatePixels.Min(), Is.LessThan(notifier.BatchCoordinates.Count - 1));
+        }
+        finally
+        {
+            await service.StopAsync(CancellationToken.None);
+        }
+    }
+
+    [Test]
     public async Task CanvasSeedQueueService_AllowsConcurrentPaintingWithoutOverwritingLaterSeedBatches()
     {
         var creator = await DbHelper.AddDefaultUser("CanvasSeedConcurrentCreator");
@@ -295,6 +355,7 @@ internal class CanvasSeedQueueServiceTests : SyntheticDataTest
     {
         public List<int> BatchSizes { get; } = [];
         public List<IReadOnlyCollection<int>> BatchColorIds { get; } = [];
+        public List<IReadOnlyCollection<CoordinateDto>> BatchCoordinates { get; } = [];
 
         public Task NotifyPixelChanged(string canvasName, PixelDto pixel)
         {
@@ -307,6 +368,7 @@ internal class CanvasSeedQueueServiceTests : SyntheticDataTest
         {
             BatchSizes.Add(pixels.Count);
             BatchColorIds.Add(pixels.Select(pixel => pixel.ColorId).ToList());
+            BatchCoordinates.Add(pixels.Select(pixel => new CoordinateDto(pixel.X, pixel.Y)).ToList());
             return Task.CompletedTask;
         }
 

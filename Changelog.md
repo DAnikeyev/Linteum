@@ -1,6 +1,7 @@
 # 0.2.2 - 2026/05/07
-- Added GuestMode
-- More small UI improvements and optimizations
+- Added GuestMode.
+- More small UI improvements and optimizations.
+- Added image exporting.
 
 # 0.2.1 - 2026/04/29
 

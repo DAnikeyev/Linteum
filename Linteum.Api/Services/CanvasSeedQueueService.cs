@@ -240,14 +240,63 @@ public class CanvasSeedQueueService : BackgroundService, ICanvasSeedQueue
 
     private static IEnumerable<SeedBatch> BuildSeedBatches(ColorDto[,] grid, long price)
     {
-        var coordinatesByColor = ImageConverter.GroupCoordinatesByColor(grid);
+        var random = Random.Shared;
+        var pixels = BuildShuffledPixels(grid.GetLength(0), grid.GetLength(1), random);
+        var pendingCoordinatesByColor = new Dictionary<int, List<CoordinateDto>>();
 
-        foreach (var colorGroup in coordinatesByColor.OrderBy(group => group.Key))
+        foreach (var (x, y) in pixels)
         {
-            foreach (var coordinateBatch in colorGroup.Value.Chunk(SeedBatchSize))
+            var colorId = grid[x, y].Id;
+            if (!pendingCoordinatesByColor.TryGetValue(colorId, out var batch))
             {
-                yield return new SeedBatch(colorGroup.Key, price, coordinateBatch.ToList());
+                batch = new List<CoordinateDto>(SeedBatchSize);
+                pendingCoordinatesByColor[colorId] = batch;
             }
+
+            batch.Add(new CoordinateDto(x, y));
+            if (batch.Count >= SeedBatchSize)
+            {
+                yield return new SeedBatch(colorId, price, batch.ToList());
+                batch.Clear();
+            }
+        }
+
+        var remainingColorIds = pendingCoordinatesByColor.Keys.ToList();
+        ShuffleInPlace(remainingColorIds, random);
+
+        foreach (var colorId in remainingColorIds)
+        {
+            var batch = pendingCoordinatesByColor[colorId];
+            if (batch.Count == 0)
+            {
+                continue;
+            }
+
+            yield return new SeedBatch(colorId, price, batch.ToList());
+        }
+    }
+
+    private static List<(int X, int Y)> BuildShuffledPixels(int width, int height, Random random)
+    {
+        var pixels = new List<(int X, int Y)>(width * height);
+        for (var y = 0; y < height; y++)
+        {
+            for (var x = 0; x < width; x++)
+            {
+                pixels.Add((x, y));
+            }
+        }
+
+        ShuffleInPlace(pixels, random);
+        return pixels;
+    }
+
+    private static void ShuffleInPlace<T>(IList<T> items, Random random)
+    {
+        for (var i = items.Count - 1; i > 0; i--)
+        {
+            var swapIndex = random.Next(i + 1);
+            (items[i], items[swapIndex]) = (items[swapIndex], items[i]);
         }
     }
 

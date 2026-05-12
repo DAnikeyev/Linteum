@@ -426,6 +426,57 @@ window.canvasRenderer = {
         return keep;
     },
 
+    downloadImage: function (fileName, mimeType, quality) {
+        if (!this.canvas) {
+            return Promise.resolve(false);
+        }
+
+        var exportCanvas = document.createElement('canvas');
+        exportCanvas.width = this.width || this.canvas.width;
+        exportCanvas.height = this.height || this.canvas.height;
+
+        var exportContext = exportCanvas.getContext('2d');
+        if (!exportContext) {
+            throw new Error('Could not create an export canvas context.');
+        }
+
+        exportContext.fillStyle = '#ffffff';
+        exportContext.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+        exportContext.drawImage(this.canvas, 0, 0);
+
+        var downloadName = typeof fileName === 'string' && fileName.trim()
+            ? fileName.trim()
+            : 'canvas.jpg';
+        var exportMimeType = typeof mimeType === 'string' && mimeType.trim()
+            ? mimeType.trim()
+            : 'image/jpeg';
+        var exportQuality = typeof quality === 'number' && quality >= 0 && quality <= 1
+            ? quality
+            : 0.92;
+
+        return new Promise(function (resolve, reject) {
+            exportCanvas.toBlob(function (blob) {
+                if (!blob) {
+                    reject(new Error('Browser failed to generate the export image.'));
+                    return;
+                }
+
+                var objectUrl = URL.createObjectURL(blob);
+                var link = document.createElement('a');
+                link.href = objectUrl;
+                link.download = downloadName;
+                link.style.display = 'none';
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                setTimeout(function () {
+                    URL.revokeObjectURL(objectUrl);
+                }, 0);
+                resolve(true);
+            }, exportMimeType, exportQuality);
+        });
+    },
+
     getCommittedPixelData: function (x, y) {
         const index = (y * this.width + x) * 4;
         const data = this.committedImageData.data;

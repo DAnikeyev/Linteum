@@ -6,6 +6,7 @@ using Linteum.Shared.DTO;
 using Linteum.Shared.Helpers;
 using Microsoft.AspNetCore.Components;
 using NLog;
+using System.IO;
 using System.Globalization;
 
 namespace Linteum.BlazorApp.Components.Pages;
@@ -124,8 +125,11 @@ public partial class PixelManager : ComponentBase
     private long CurrentPixelPrice => IsEconomyCanvas ? ClickedPixelData?.Price ?? 0 : 0;
     private long MinimumBid => CurrentPixelPrice + 1;
     private string DrawingSectionTitle => IsTextToolActive ? "Text Drawing" : "Pixel Drawing";
-    private string SelectedPixelSummary => ClickedPixel.HasValue
-        ? $"Selected pixel: {ClickedPixel.Value.X}, {ClickedPixel.Value.Y}"
+    private string SelectedPixelCoordinatesValue => ClickedPixel.HasValue
+        ? $"{ClickedPixel.Value.X}, {ClickedPixel.Value.Y}"
+        : string.Empty;
+    private string SelectedPixelCoordinatesLabel => ClickedPixel.HasValue
+        ? $"Selected pixel: {SelectedPixelCoordinatesValue}"
         : "No pixel selected";
     private string BrushToggleTitle => BrushToggleDisabled
         ? IsEconomyCanvas
@@ -182,6 +186,7 @@ public partial class PixelManager : ComponentBase
     private bool HasRemainingNormalQuota => !IsNormalCanvas || _normalModeQuota == null || _normalModeQuota.RemainingToday > 0;
     private bool PaintDisabled => SelectedColor == null || !ClickedPixel.HasValue || !CanPaintEconomyCanvas || !HasValidEconomyBid || !HasRemainingNormalQuota;
     private bool PaintTextDisabled => SelectedTextForegroundColor == null || !ClickedPixel.HasValue || string.IsNullOrWhiteSpace(_textContent);
+    private bool CanExportCanvasImage => Canvas != null && CanvasRenderer != null;
     private string PaintButtonText => IsEconomyCanvas ? "Place Bid" : "Paint";
     private const int DefaultTextFontSize = 16;
     private static readonly int[] TextFontSizes = [16, 24];
@@ -478,6 +483,59 @@ public partial class PixelManager : ComponentBase
         {
             _nlog.Warn(ex, "NotificationService.Writer.WriteAsync failed in PixelManager");
         }
+    }
+
+    private async Task ExportCanvasImageAsync()
+    {
+        if (Canvas == null || CanvasRenderer == null)
+        {
+            await NotifyAsync(new CustomNotification
+            {
+                Message = "Canvas export is not ready yet.",
+                Type = NotificationType.Info,
+            });
+            return;
+        }
+
+        try
+        {
+            var downloaded = await CanvasRenderer.DownloadImageAsync(GetCanvasExportFileName());
+            if (!downloaded)
+            {
+                await NotifyAsync(new CustomNotification
+                {
+                    Message = "Canvas export is not ready yet.",
+                    Type = NotificationType.Info,
+                });
+                return;
+            }
+
+            await NotifyAsync(new CustomNotification
+            {
+                Message = $"Downloaded {GetCanvasExportFileName()}.",
+                Type = NotificationType.Success,
+            });
+        }
+        catch (Exception ex)
+        {
+            _nlog.Error(ex, "Error exporting canvas image for {CanvasName}", Canvas.Name);
+            await NotifyAsync(new CustomNotification
+            {
+                Message = $"Error exporting canvas image: {ex.Message}",
+                Type = NotificationType.Error,
+            });
+        }
+    }
+
+    private string GetCanvasExportFileName()
+    {
+        var canvasName = string.IsNullOrWhiteSpace(Canvas?.Name) ? "canvas" : Canvas.Name.Trim();
+        foreach (var invalidFileNameChar in Path.GetInvalidFileNameChars())
+        {
+            canvasName = canvasName.Replace(invalidFileNameChar, '_');
+        }
+
+        return $"{canvasName}.jpg";
     }
 
     private enum CanvasManagementAction

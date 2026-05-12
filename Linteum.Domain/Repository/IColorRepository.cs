@@ -8,4 +8,3 @@ public interface IColorRepository
     
     public Task<ColorDto?> GetDefautColor();
 }
-
