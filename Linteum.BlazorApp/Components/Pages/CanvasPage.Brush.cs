@@ -887,9 +887,29 @@ public partial class CanvasPage
 
     private bool ShouldAnimateRemoteRipple(PixelDto pixel)
     {
-        return pixel.OwnerId.HasValue
-            && _currentUserId.HasValue
-            && pixel.OwnerId.Value != _currentUserId.Value;
+        if (!pixel.OwnerId.HasValue)
+        {
+            return false;
+        }
+
+        if (!_currentUserId.HasValue)
+        {
+            return true;
+        }
+
+        if (pixel.OwnerId.Value != _currentUserId.Value)
+        {
+            return true;
+        }
+
+        return !IsSelfRippleSuppressedByActiveTool();
+    }
+
+    private bool IsSelfRippleSuppressedByActiveTool()
+    {
+        return _isBrushEnabled
+            || _isEraserBrushEnabled
+            || _isTextSelectionPersistenceEnabled;
     }
 }
 

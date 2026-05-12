@@ -2,25 +2,46 @@
     <div class="pm-header" @onclick="ToggleMobilePanel">
         @if (Canvas == null)
         {
-            <span class="pm-title">Canvas not loaded</span>
+            <div class="pm-header-main">
+                <span class="pm-title">Canvas not loaded</span>
+                @if (IsMobileLayout)
+                {
+                    <button class="pm-mobile-toggle" @onclick="ToggleMobilePanel" @onclick:stopPropagation="true"
+                            title="@(_isMobileExpanded ? "Collapse panel" : "Expand panel")">
+                        @(_isMobileExpanded ? "▾" : "▴")
+                    </button>
+                }
+            </div>
         }
         else
         {
-            <div class="pm-canvas-summary">
+            <div class="pm-header-main">
                 <div class="pm-canvas-primary">
-                    <span class="pm-title">@Canvas.Name</span>
-                    <span class="pm-canvas-meta">Size: @Canvas.Width × @Canvas.Height</span>
+                    <div class="pm-canvas-title-row">
+                        <span class="pm-title">@Canvas.Name</span>
+                        <span class="pm-summary-chip pm-summary-chip-size">Size: @Canvas.Width × @Canvas.Height</span>
+                    </div>
+                    <span class="pm-canvas-meta">Current canvas</span>
                 </div>
-                <span class="pm-selected-chip @(ClickedPixel.HasValue ? string.Empty : "pm-selected-chip-empty")">@SelectedPixelSummary</span>
+                @if (IsMobileLayout)
+                {
+                    <button class="pm-mobile-toggle" @onclick="ToggleMobilePanel" @onclick:stopPropagation="true"
+                            title="@(_isMobileExpanded ? "Collapse panel" : "Expand panel")">
+                        @(_isMobileExpanded ? "▾" : "▴")
+                    </button>
+                }
             </div>
+
         }
-        @if (IsMobileLayout)
-        {
-            <button class="pm-mobile-toggle" @onclick="ToggleMobilePanel" @onclick:stopPropagation="true"
-                    title="@(_isMobileExpanded ? "Collapse panel" : "Expand panel")">
-                @(_isMobileExpanded ? "▾" : "▴")
-            </button>
-        }
+    </div>
+
+    <div class="pm-header-actions">
+        <button type="button"
+                class="btn pm-export-btn"
+                @onclick="ExportCanvasImageAsync"
+                disabled="@(!CanExportCanvasImage)">
+            Export as image
+        </button>
     </div>
 
     <div class="pm-content @(_isMobileExpanded ? "" : "pm-content-collapsed")">
@@ -77,7 +98,14 @@
         }
 
         <div class="pm-drawing">
-            <h6>@DrawingSectionTitle</h6>
+            <div class="pm-drawing-heading">
+                <h6>@DrawingSectionTitle</h6>
+                <div class="pm-selected-coords @(ClickedPixel.HasValue ? string.Empty : "pm-selected-coords-muted")"
+                     aria-label="@SelectedPixelCoordinatesLabel"
+                     title="@SelectedPixelCoordinatesLabel">
+                    @SelectedPixelCoordinatesValue
+                </div>
+            </div>
 
             @if (IsFreeDrawCanvas)
             {

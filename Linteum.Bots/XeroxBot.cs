@@ -9,8 +9,6 @@ public class XeroxBot : BotBase
 {
     private const int BatchSize = MaxPaintBatchSize;
     private const int MaxRetries = 5;
-    private const int RequestDelayMs = 1;
-
     private readonly string _canvasName;
     private readonly string _imageName;
 
@@ -170,8 +168,6 @@ public class XeroxBot : BotBase
         for (int attempt = 1; attempt <= MaxRetries + 1; attempt++)
         {
             var result = await TryPaintCoordinatesAsync(canvas, coordinates, colorId, ct: ct);
-            await Task.Delay(RequestDelayMs, ct);
-
             if (result != null)
                 return result.ChangedPixels.Count;
         }

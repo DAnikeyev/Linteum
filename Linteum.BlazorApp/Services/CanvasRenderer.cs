@@ -98,6 +98,23 @@ public class CanvasRenderer : IAsyncDisposable
         }
     }
 
+    public async Task<bool> DownloadImageAsync(string fileName, string mimeType = "image/jpeg", double quality = 0.92)
+    {
+        if (!_initialized || IsDisposed)
+        {
+            return false;
+        }
+
+        try
+        {
+            return await _js.InvokeAsync<bool>("canvasRenderer.downloadImage", fileName, mimeType, quality);
+        }
+        catch (Exception ex) when (IsShuttingDown(ex))
+        {
+            return false;
+        }
+    }
+
     public void EnqueuePixel(int x, int y, string color, bool suppressRipple = false)
     {
         if (!_initialized || IsDisposed)
