@@ -15,7 +15,7 @@ internal class UserRepositoryDeleteTests : SyntheticDataTest
             UserName = "TestUser",
             LoginMethod = LoginMethod.Password,
         };
-        var passwordDto = new UserPaswordDto
+        var passwordDto = new UserPasswordDto
         {
             PasswordHashOrKey = "hash",
             LoginMethod = LoginMethod.Password,

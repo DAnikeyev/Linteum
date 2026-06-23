@@ -8,7 +8,7 @@ public class VanGoghBot : BotBase
 {
     private const int BatchSize = 100;
 
-    public VanGoghBot() : base("vangogh@linteum.com", "SecurePassword123!", "VanGoghBot")
+    public VanGoghBot() : base("vangogh@linteum.com", "VanGoghBot")
     {
     }
 
@@ -28,7 +28,7 @@ public class VanGoghBot : BotBase
                 Height = 80, 
                 CanvasMode = CanvasMode.FreeDraw
             };
-            var response = await HttpClient.PostAsJsonAsync($"Canvases/Add?passwordHash=", newCanvas);
+            var response = await HttpClient.PostAsJsonAsync("Canvases/Add", new CreateCanvasRequestDto { Canvas = newCanvas, Password = null });
             if (response.IsSuccessStatusCode)
             {
                 return await response.Content.ReadFromJsonAsync<CanvasDto>();

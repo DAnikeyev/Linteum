@@ -18,9 +18,13 @@ public class PixelChangedEvent
     public long NewPrice { get; set; }
     
     public Pixel? Pixel { get; set; }
-    
+
     public User? OldOwnerUser { get; set; }
-    
+
     public User? User { get; set; }
+
+    public Color? OldColor { get; set; }
+
+    public Color? NewColor { get; set; }
 
 }

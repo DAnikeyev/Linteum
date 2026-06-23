@@ -1,4 +1,5 @@
 using Linteum.BlazorApp;
+using Linteum.BlazorApp.Api;
 using Linteum.BlazorApp.Components;
 using Linteum.BlazorApp.Components.Notification;
 using Linteum.BlazorApp.Services;
@@ -53,6 +54,22 @@ try
         GoogleClientId = Environment.GetEnvironmentVariable("GOOGLE_CLIENT_ID") ?? string.Empty,
     });
     builder.Services.AddScoped(sp => sp.GetRequiredService<IHttpClientFactory>().CreateClient("ApiClient"));
+
+    // API gateway collaborators (P‑MAIN‑03): MyApiClient is now a thin facade over these focused,
+    // single-responsibility services — one HTTP client, a cache manager, a session store, and one
+    // repository per resource. All are scoped (one instance per circuit), so the caches stay
+    // per-circuit exactly as before.
+    builder.Services.AddScoped<ApiHttp>();
+    builder.Services.AddScoped<PixelCacheManager>();
+    builder.Services.AddScoped<SessionStore>();
+    builder.Services.AddScoped<ColorsRepository>();
+    builder.Services.AddScoped<CanvasesRepository>();
+    builder.Services.AddScoped<SubscriptionsRepository>();
+    builder.Services.AddScoped<CanvasChatRepository>();
+    builder.Services.AddScoped<PixelsRepository>();
+    builder.Services.AddScoped<HistoryRepository>();
+    builder.Services.AddScoped<BalanceRepository>();
+    builder.Services.AddScoped<AccountRepository>();
     builder.Services.AddScoped<MyApiClient>();
     builder.Services.AddDataProtection()
         .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(builder.Environment.ContentRootPath, "keys")))

@@ -15,7 +15,7 @@ internal class UserRepositoryUpdateTest : SyntheticDataTest
             UserName = "TestUser",
             LoginMethod = LoginMethod.Password,
         };
-        var passwordDto = new UserPaswordDto
+        var passwordDto = new UserPasswordDto
         {
             PasswordHashOrKey = "hash",
             LoginMethod = LoginMethod.Password,
@@ -28,7 +28,7 @@ internal class UserRepositoryUpdateTest : SyntheticDataTest
         newUser.LoginMethod = LoginMethod.Google;
         newUser.UserName = "NewCoolUserName";
 
-        var newPasswordDto = new UserPaswordDto
+        var newPasswordDto = new UserPasswordDto
         {
             PasswordHashOrKey = "hash2",
             LoginMethod = LoginMethod.Google,

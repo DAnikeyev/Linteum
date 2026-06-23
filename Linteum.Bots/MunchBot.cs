@@ -8,7 +8,7 @@ public class MunchBot : BotBase
 {
     private const int BatchSize = 100;
 
-    public MunchBot() : base("munch@linteum.com", "Scream123!", "MunchBot")
+    public MunchBot() : base("munch@linteum.com", "MunchBot")
     {
     }
 
@@ -28,7 +28,7 @@ public class MunchBot : BotBase
                 Height = 127, 
                 CanvasMode = CanvasMode.FreeDraw
             };
-            var response = await HttpClient.PostAsJsonAsync($"Canvases/Add?passwordHash=", newCanvas);
+            var response = await HttpClient.PostAsJsonAsync("Canvases/Add", new CreateCanvasRequestDto { Canvas = newCanvas, Password = null });
             if (response.IsSuccessStatusCode)
             {
                 return await response.Content.ReadFromJsonAsync<CanvasDto>();

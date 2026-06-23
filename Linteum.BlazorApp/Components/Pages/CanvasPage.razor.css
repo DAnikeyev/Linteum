@@ -12,10 +12,115 @@
     position: absolute;
     inset: 0;
     display: flex;
+    flex-direction: column;
     align-items: center;
     justify-content: center;
+    gap: 0.75rem;
     z-index: 20;
     pointer-events: none;
+}
+
+.canvas-loading-countdown {
+    margin-top: 0.6rem;
+    font-family: "JetBrains Mono", "Consolas", monospace;
+    font-size: 0.8rem;
+    font-weight: 700;
+    color: #1e4f9d;
+    opacity: 0.85;
+}
+
+.canvas-loading-retry {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.6rem;
+    pointer-events: auto;
+    padding: 0.9rem 1.1rem;
+    border-radius: 10px;
+    background: rgba(244, 249, 255, 0.95);
+    border: 1px solid rgba(45, 114, 221, 0.4);
+    box-shadow: 0 4px 14px rgba(29, 83, 169, 0.18);
+    color: #1e4f9d;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-align: center;
+    max-width: 80%;
+}
+
+.canvas-retry-button {
+    pointer-events: auto;
+    border: 1px solid rgba(45, 114, 221, 0.55);
+    border-radius: 8px;
+    background: #1e4f9d;
+    color: #fff;
+    font-size: 0.82rem;
+    font-weight: 700;
+    padding: 0.4rem 0.9rem;
+    cursor: pointer;
+    transition: background 0.15s ease;
+}
+
+    .canvas-retry-button:hover:not(:disabled) {
+        background: #2a63bd;
+    }
+
+    .canvas-retry-button:disabled {
+        opacity: 0.55;
+        cursor: default;
+    }
+
+.canvas-connection-banner {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 25;
+    display: flex;
+    align-items: center;
+    gap: 0.7rem;
+    padding: 0.4rem 0.8rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: #5a4500;
+    background: rgba(255, 244, 214, 0.96);
+    border: 1px solid rgba(204, 150, 0, 0.55);
+    box-shadow: 0 4px 14px rgba(120, 90, 0, 0.18);
+    backdrop-filter: blur(6px);
+    pointer-events: auto;
+}
+
+    .canvas-connection-banner.disconnected {
+        color: #7a1f1f;
+        background: rgba(255, 232, 232, 0.96);
+        border-color: rgba(190, 40, 40, 0.55);
+        box-shadow: 0 4px 14px rgba(150, 30, 30, 0.2);
+    }
+
+.canvas-connection-banner-text {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+}
+
+.canvas-connection-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #cc9600;
+    box-shadow: 0 0 0 0 rgba(204, 150, 0, 0.6);
+    animation: canvas-connection-pulse 1.2s ease-in-out infinite;
+}
+
+.canvas-connection-banner.disconnected .canvas-connection-dot {
+    background: #be2828;
+    animation: none;
+}
+
+@keyframes canvas-connection-pulse {
+    0% { box-shadow: 0 0 0 0 rgba(204, 150, 0, 0.55); }
+    70% { box-shadow: 0 0 0 7px rgba(204, 150, 0, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(204, 150, 0, 0); }
 }
 
 .canvas-shell {
@@ -98,7 +203,6 @@
 }
 
 .canvas-coordinates {
-    display: none;
     position: fixed;
     bottom: 12px;
     z-index: 11000;

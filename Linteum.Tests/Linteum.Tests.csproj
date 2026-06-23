@@ -28,6 +28,11 @@
     </ItemGroup>
 
     <ItemGroup>
+      <FrameworkReference Include="Microsoft.AspNetCore.App" />
+    </ItemGroup>
+
+    <ItemGroup>
+      <ProjectReference Include="..\Linteum.Api\Linteum.Api.csproj" />
       <ProjectReference Include="..\Linteum.BlazorApp\Linteum.BlazorApp.csproj" />
       <ProjectReference Include="..\Linteum.Shared\Linteum.Shared.csproj" />
     </ItemGroup>

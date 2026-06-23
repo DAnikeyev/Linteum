@@ -368,25 +368,39 @@ public class CanvasRepository : ICanvasRepository
         return await TryDeleteCanvasGraduallyAsync(canvas.Id, cancellationToken);
     }
 
-    public async Task<bool> CheckPassword(CanvasDto canvas, string? passwordHash)
+    public async Task<bool> CheckPassword(CanvasDto canvas, string? password)
     {
         var canvasInDb = await _context.Canvases
             .AsNoTracking()
             .FirstOrDefaultAsync(c => c.Id == canvas.Id);
-        
+
         if (canvasInDb == null)
         {
             _logger.LogDebug("Canvas with ID {CanvasId} not found for password check.", canvas.Id);
             return false; // Canvas not found
         }
-        
-        if (canvasInDb.PasswordHash == null && passwordHash == null)
-            return true; // No password set, no password provided
-        
-        if (canvasInDb.PasswordHash == null || passwordHash == null)
-            return false; // One is set, the other is not
-        
-        return canvasInDb.PasswordHash == passwordHash; // Both are set, check equality
+
+        if (string.IsNullOrEmpty(canvasInDb.PasswordHash))
+        {
+            return string.IsNullOrEmpty(password); // Public canvas: no password required
+        }
+
+        if (string.IsNullOrEmpty(password))
+        {
+            return false; // Canvas is protected but no password supplied
+        }
+
+        var (valid, needsRehash) = SecurityHelper.VerifyPassword(password, canvasInDb.PasswordHash);
+        if (valid && needsRehash)
+        {
+            // Lazy migration of legacy canvas-password hashes to the PBKDF2 scheme.
+            await _context.Canvases
+                .Where(c => c.Id == canvasInDb.Id)
+                .ExecuteUpdateAsync(s => s.SetProperty(c => c.PasswordHash, SecurityHelper.HashPassword(password)));
+            _logger.LogInformation("Migrated legacy canvas password hash to PBKDF2 for canvas {CanvasId}.", canvasInDb.Id);
+        }
+
+        return valid; // Verified in constant time
     }
 
     public async Task<CanvasDto?> TryAddCanvas(CanvasDto canvas, string? passwordHash)
@@ -394,7 +408,7 @@ public class CanvasRepository : ICanvasRepository
         
         var newCanvas = _mapper.Map<Canvas>(canvas);
         newCanvas.Id = Guid.NewGuid();
-        newCanvas.PasswordHash = passwordHash;
+        newCanvas.PasswordHash = string.IsNullOrEmpty(passwordHash) ? null : SecurityHelper.HashPassword(passwordHash);
         var now = DateTime.UtcNow;
         newCanvas.CreatedAt = now;
         newCanvas.UpdatedAt = now;

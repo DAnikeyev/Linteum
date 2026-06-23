@@ -1,3 +1,4 @@
+using Linteum.Api.Attributes;
 using Linteum.Infrastructure;
 using Linteum.Shared.DTO;
 using Microsoft.AspNetCore.Mvc;
@@ -18,6 +19,7 @@ public class PixelChangedEventsController : ControllerBase
     }
 
     [HttpGet("user/{userId}")]
+    [DisabledEndpoint]
     public async Task<IActionResult> GetByUserId(Guid userId)
     {
         var events = (await _repoManager.PixelChangedEventRepository.GetByUserIdAsync(userId)).ToList();
@@ -41,6 +43,7 @@ public class PixelChangedEventsController : ControllerBase
     }
 
     [HttpGet("canvas/{canvasId}")]
+    [DisabledEndpoint]
     public async Task<IActionResult> GetByCanvasId(Guid canvasId, [FromQuery] DateTime? startDate, [FromQuery] int limit = 1000)
     {
         // Limit to 10000 to prevent OOM on large canvases/active history
@@ -53,6 +56,7 @@ public class PixelChangedEventsController : ControllerBase
     }
 
     [HttpPost]
+    [DisabledEndpoint]
     public async Task<IActionResult> AddPixelChangedEvent([FromBody] PixelChangedEventDto pixelChangedEventDto)
     {
         var result = await _repoManager.PixelChangedEventRepository.AddPixelChangedEvent(pixelChangedEventDto);

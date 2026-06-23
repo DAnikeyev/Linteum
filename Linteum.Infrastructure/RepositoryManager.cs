@@ -24,9 +24,9 @@ public class RepositoryManager
         BalanceChangedEventRepository = new BalanceChangedEventRepository(context, mapper, loggerFactory.CreateLogger<BalanceChangedEventRepository>(), canvasWriteCoordinator);
         CanvasRepository = new CanvasRepository(context, mapper, loggerFactory.CreateLogger<CanvasRepository>(), config, cache, canvasWriteCoordinator);
         ColorRepository = new ColorRepository(context, mapper, config, loggerFactory.CreateLogger<ColorRepository>());
-        SubscriptionRepository = new SubscriptionRepository(context, mapper, BalanceChangedEventRepository, loggerFactory.CreateLogger<SubscriptionRepository>());
+        SubscriptionRepository = new SubscriptionRepository(context, mapper, BalanceChangedEventRepository, canvasWriteCoordinator, loggerFactory.CreateLogger<SubscriptionRepository>());
         UserRepository = new UserRepository(context, mapper, BalanceChangedEventRepository, SubscriptionRepository, config, loggerFactory.CreateLogger<UserRepository>());
         PixelChangedEventRepository = new PixelChangedEventRepository(context, mapper, loggerFactory.CreateLogger<PixelChangedEventRepository>());
-        PixelRepository = new PixelRepository(context, mapper, loggerFactory.CreateLogger<PixelRepository>(), pixelNotifier, ColorRepository, config, canvasWriteCoordinator);
+        PixelRepository = new PixelRepository(context, mapper, loggerFactory.CreateLogger<PixelRepository>(), pixelNotifier, ColorRepository, BalanceChangedEventRepository, config, canvasWriteCoordinator);
     }
 }

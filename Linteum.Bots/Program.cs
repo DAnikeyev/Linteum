@@ -7,7 +7,8 @@ public class Program
         if (args.Length == 0)
         {
             Console.WriteLine("Usage: dotnet run <bot-name> [options]");
-            Console.WriteLine("Optional env: BOT_MASTER_PASSWORD to bypass Economy and Normal limits through batch painting.");
+            Console.WriteLine("Required env: BOT_PASSWORD (bot account password).");
+            Console.WriteLine("Optional env: BOT_SERVICE_TOKEN to bypass Economy and Normal limits through batch painting.");
             Console.WriteLine("Available bots: Cleaner, Munch, VanGogh, VanGogh2, or Xerox");
             Console.WriteLine("  Cleaner: dotnet run cleaner [canvas-name]");
             Console.WriteLine("  Xerox:   dotnet run xerox <canvas-name> <image-file>");

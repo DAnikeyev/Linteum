@@ -92,10 +92,12 @@ Set up your `.env` file or environment variables as described in `docker-compose
 
 ## Bots
 
-The repo includes a few bot clients:
+The repo includes several bot clients:
 
 - `CleanerBot` for clearing or tidying up a canvas.
-- `XeroxBot` for drawing an image onto a canvas.
+- `MunchBot` for painting `The Scream` onto a canvas.
+- `VanGoghBot` and `VanGogh2Bot` for painting `Starry Night` onto their respective canvases.
+- `XeroxBot` for drawing an arbitrary image onto a canvas.
 
 For bot commands and Docker examples, see `DockerCheatsheet.md`.
 

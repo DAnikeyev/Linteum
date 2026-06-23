@@ -18,6 +18,8 @@ public class Pixel
     public long Price { get; set; }
     
     public User? Owner { get; set; }
-    
+
     public Canvas? Canvas { get; set; }
+
+    public Color? Color { get; set; }
 }

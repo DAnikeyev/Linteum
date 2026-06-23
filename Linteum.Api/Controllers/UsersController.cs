@@ -1,5 +1,7 @@
 using System.Globalization;
 using Google.Apis.Auth;
+using Linteum.Api.Attributes;
+using Linteum.Api.Middleware;
 using Linteum.Api.Services;
 using Linteum.Infrastructure;
 using Linteum.Shared;
@@ -31,6 +33,7 @@ public class UsersController : ControllerBase
     }
 
     [HttpGet("email/{email}")]
+    [DisabledEndpoint]
     public async Task<IActionResult> GetByEmail(string email)
     {
         var user = await _repoManager.UserRepository.GetByEmailAsync(email);
@@ -45,6 +48,7 @@ public class UsersController : ControllerBase
     }
 
     [HttpGet("username/{userName}")]
+    [DisabledEndpoint]
     public async Task<IActionResult> GetByUserName(string userName)
     {
         var user = await _repoManager.UserRepository.GetByUserNameAsync(userName);
@@ -59,6 +63,7 @@ public class UsersController : ControllerBase
     }
 
     [HttpGet("id/{id}")]
+    [DisabledEndpoint]
     public async Task<IActionResult> GetById(Guid id)
     {
         var user = await _repoManager.UserRepository.GetByIdAsync(id);
@@ -73,9 +78,10 @@ public class UsersController : ControllerBase
     }
 
     [HttpPost("add-or-update")]
+    [DisabledEndpoint]
     public async Task<IActionResult> AddOrUpdateUser([FromBody] UserDto userDto, [FromQuery] string? passwordHashOrKey, [FromQuery] int loginMethod = 0)
     {
-        var passwordDto = new UserPaswordDto { PasswordHashOrKey = passwordHashOrKey, LoginMethod = (LoginMethod)loginMethod };
+        var passwordDto = new UserPasswordDto { PasswordHashOrKey = passwordHashOrKey, LoginMethod = (LoginMethod)loginMethod };
         var result = await _repoManager.UserRepository.AddOrUpdateUserAsync(userDto, passwordDto);
         if (result == null)
         {
@@ -88,6 +94,7 @@ public class UsersController : ControllerBase
     }
 
     [HttpDelete]
+    [DisabledEndpoint]
     public async Task<IActionResult> DeleteUser([FromBody] UserDto userDto)
     {
         var result = await _repoManager.UserRepository.DeleteUserAsync(userDto);
@@ -102,32 +109,35 @@ public class UsersController : ControllerBase
     }
 
     [HttpPost("login")]
-    public async Task<IActionResult> Login([FromBody] UserDto userDto, [FromQuery] string? passwordHashOrKey)
+    [PublicEndpoint]
+    public async Task<IActionResult> Login([FromBody] LoginRequestDto request)
     {
-        var passwordDto = new UserPaswordDto { PasswordHashOrKey = passwordHashOrKey, LoginMethod = userDto.LoginMethod };
+        var userDto = new UserDto { Email = request.Email, LoginMethod = LoginMethod.Password };
+        var passwordDto = new UserPasswordDto { PasswordHashOrKey = request.Password, LoginMethod = LoginMethod.Password };
         var result = await _repoManager.UserRepository.TryLogin(userDto, passwordDto);
 
         if (result == null)
         {
-            _logger.LogWarning("Login failed for user: {Email}", userDto.Email);
+            _logger.LogWarning("Login failed for user: {Email}", request.Email);
             return Unauthorized();
         }
 
         if (!result.Id.HasValue)
         {
-            _logger.LogError("Login succeeded but user ID is null for user: {Email}", userDto.Email);
+            _logger.LogError("Login succeeded but user ID is null for user: {Email}", request.Email);
             return BadRequest("Can't retrieve user ID after login.");
         }
 
         var sessionId = _sessionService.CreateSession(result.Id.Value);
-        await TryAddLoginEventAsync(result.Id.Value, userDto.LoginMethod);
+        await TryAddLoginEventAsync(result.Id.Value, LoginMethod.Password);
 
-        _logger.LogInformation("Login succeeded for user {Email}. UserId={UserId}, SessionId={SessionId}", userDto.Email, result.Id.Value, sessionId);
+        _logger.LogInformation("Login succeeded for user {Email}. UserId={UserId}, SessionId={SessionId}", request.Email, result.Id.Value, sessionId);
 
         return Ok(new LoginResponse { User = result, SessionId = sessionId });
     }
 
     [HttpPost("login-guest")]
+    [PublicEndpoint]
     public async Task<IActionResult> LoginGuest()
     {
         var result = await _repoManager.UserRepository.CreateGuestUserAsync();
@@ -145,6 +155,7 @@ public class UsersController : ControllerBase
     }
 
     [HttpPost("login-google-code")]
+    [PublicEndpoint]
     public async Task<IActionResult> LoginWithGoogleCode([FromBody] GoogleLoginCodeRequestDto request)
     {
         if (string.IsNullOrWhiteSpace(request.Code))
@@ -193,6 +204,7 @@ public class UsersController : ControllerBase
     }
 
     [HttpPost("login-google")]
+    [DisabledEndpoint]
     public async Task<IActionResult> LoginWithGoogle([FromBody] GoogleLoginRequestDto request)
     {
         if (string.IsNullOrWhiteSpace(request.IdToken))
@@ -211,6 +223,7 @@ public class UsersController : ControllerBase
     }
     
     [HttpPost("validate")]
+    [PublicEndpoint]
     public async Task<IActionResult> Validate([FromBody] Guid sessionId)
     {
         var userId = _sessionService.GetUserIdAndUpdateTimeLimit(sessionId);
@@ -232,38 +245,41 @@ public class UsersController : ControllerBase
     }
     
     [HttpPost("add")]
-    public async Task<IActionResult> Add([FromBody] UserDto userDto, [FromQuery] string? passwordHashOrKey)
+    [PublicEndpoint]
+    public async Task<IActionResult> Add([FromBody] SignupRequestDto request)
     {
-        var passwordDto = new UserPaswordDto { PasswordHashOrKey = passwordHashOrKey, LoginMethod = userDto.LoginMethod };
-        var userWithEmail = await _repoManager.UserRepository.GetByEmailAsync(userDto.Email);
-        
-        if(userDto.UserName is null || userDto.UserName.Length < 4)
+        var userDto = new UserDto { Email = request.Email, UserName = request.UserName, LoginMethod = LoginMethod.Password };
+        var userWithEmail = await _repoManager.UserRepository.GetByEmailAsync(request.Email);
+
+        if(request.UserName is null || request.UserName.Length < 4)
         {
-            _logger.LogWarning("Invalid username length for user: {Email}", userDto.Email);
+            _logger.LogWarning("Invalid username length for user: {Email}", request.Email);
             return BadRequest("Username must be at least 4 characters long.");
         }
-        
+
         if (userWithEmail != null)
         {
-            _logger.LogWarning("User already exists: {Email}", userDto.Email);
+            _logger.LogWarning("User already exists: {Email}", request.Email);
             return BadRequest("User already exists.");
         }
-        
-        var userWithUserName = await _repoManager.UserRepository.GetByUserNameAsync(userDto.UserName);
-        
+
+        var userWithUserName = await _repoManager.UserRepository.GetByUserNameAsync(request.UserName);
+
         if (userWithUserName != null)
         {
-            _logger.LogWarning("Username already taken: {UserName}", userDto.UserName);
+            _logger.LogWarning("Username already taken: {UserName}", request.UserName);
             return BadRequest("Username already taken.");
         }
+
+        var passwordDto = new UserPasswordDto { PasswordHashOrKey = request.Password, LoginMethod = LoginMethod.Password };
         var result = await _repoManager.UserRepository.AddOrUpdateUserAsync(userDto, passwordDto);
-        
+
         if (result == null)
         {
-            _logger.LogError("Failed to create user: {Email}", userDto.Email);
+            _logger.LogError("Failed to create user: {Email}", request.Email);
             return BadRequest("Could not create user.");
         }
-        
+
         var sessionId = _sessionService.CreateSession(result.Id!.Value);
         _logger.LogInformation("Sign up succeeded for user {Email}. UserId={UserId}, SessionId={SessionId}", result.Email, result.Id.Value, sessionId);
 
@@ -273,7 +289,7 @@ public class UsersController : ControllerBase
     [HttpPost("changeName")]
     public async Task<IActionResult> ChangeUsername([FromBody] UserDto userDto)
     {
-        var userId = _sessionService.ProcessHeader(HttpContext.Request.Headers);
+        var userId = HttpContext.GetSessionUserId();
         if (!userId.HasValue)
         {
             _logger.LogWarning("Unauthorized username change attempt");
@@ -302,12 +318,12 @@ public class UsersController : ControllerBase
     }
 
     [HttpPost("changePassword")]
-    public async Task<IActionResult> ChangePassword([FromQuery] string passwordHashOrKey, [FromQuery] int loginMethod = (int)LoginMethod.Password)
+    public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequestDto request)
     {
-        var userId = _sessionService.ProcessHeader(HttpContext.Request.Headers);
+        var userId = HttpContext.GetSessionUserId();
         if (!userId.HasValue)
         {
-            _logger.LogWarning("Unauthorized username change attempt");
+            _logger.LogWarning("Unauthorized password change attempt");
             return Unauthorized();
         }
 
@@ -318,17 +334,21 @@ public class UsersController : ControllerBase
             return NotFound();
         }
 
-        var parsedLoginMethod = (LoginMethod)loginMethod;
-        if (user.LoginMethod != LoginMethod.Password || parsedLoginMethod != LoginMethod.Password)
+        if (user.LoginMethod != LoginMethod.Password)
         {
             _logger.LogWarning("Password change blocked for user {UserId} with login method {LoginMethod}.", userId.Value, user.LoginMethod);
             return BadRequest("Password can only be changed for password-based accounts.");
         }
 
-        var passwordDto = new UserPaswordDto
+        if (string.IsNullOrWhiteSpace(request.NewPassword))
         {
-            PasswordHashOrKey = Uri.EscapeDataString(passwordHashOrKey),
-            LoginMethod = parsedLoginMethod,
+            return BadRequest("Password cannot be empty.");
+        }
+
+        var passwordDto = new UserPasswordDto
+        {
+            PasswordHashOrKey = request.NewPassword,
+            LoginMethod = LoginMethod.Password,
         };
 
         var result = await _repoManager.UserRepository.AddOrUpdateUserAsync(user, passwordDto);
@@ -373,7 +393,7 @@ public class UsersController : ControllerBase
 
         var email = payload.Email.Trim();
         var googleKey = payload.Subject.Trim();
-        var passwordDto = new UserPaswordDto
+        var passwordDto = new UserPasswordDto
         {
             PasswordHashOrKey = googleKey,
             LoginMethod = LoginMethod.Google,

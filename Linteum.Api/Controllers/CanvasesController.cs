@@ -1,4 +1,6 @@
 using Linteum.Api.Configuration;
+using Linteum.Api.Attributes;
+using Linteum.Api.Middleware;
 using Linteum.Shared.Exceptions;
 using Linteum.Infrastructure;
 using Linteum.Shared.DTO;
@@ -21,7 +23,6 @@ namespace Linteum.Api.Controllers
     public class CanvasesController : ControllerBase
     {
         private readonly RepositoryManager _repoManager;
-        private readonly SessionService _sessionService;
         private readonly ILogger<CanvasesController> _logger;
         private readonly CanvasSizeOptions _canvasSizeOptions;
         private readonly Config _config;
@@ -29,18 +30,18 @@ namespace Linteum.Api.Controllers
         private readonly ICanvasMaintenanceQueue _canvasMaintenanceQueue;
         private const long MaxCanvasImageUploadBytes = 20 * 1024 * 1024;
 
-        public CanvasesController(RepositoryManager repoManager, SessionService sessionService, ILogger<CanvasesController> logger, IOptions<CanvasSizeOptions> canvasSizeOptions, Config config, ICanvasSeedQueue canvasSeedQueue, ICanvasMaintenanceQueue canvasMaintenanceQueue)
+        public CanvasesController(RepositoryManager repoManager, ILogger<CanvasesController> logger, IOptions<CanvasSizeOptions> canvasSizeOptions, Config config, ICanvasSeedQueue canvasSeedQueue, ICanvasMaintenanceQueue canvasMaintenanceQueue)
         {
             _logger = logger;
             _canvasSizeOptions = canvasSizeOptions.Value;
             _repoManager = repoManager;
-            _sessionService = sessionService;
             _config = config;
             _canvasSeedQueue = canvasSeedQueue;
             _canvasMaintenanceQueue = canvasMaintenanceQueue;
         }
 
         [HttpGet]
+        [DisabledEndpoint]
         public async Task<IActionResult> GetAll([FromQuery] bool includePrivate = true)
         {
             var canvases = (await _repoManager.CanvasRepository.GetAllAsync(includePrivate)).ToList();
@@ -49,6 +50,7 @@ namespace Linteum.Api.Controllers
         }
 
         [HttpGet("user/{userId}")]
+        [DisabledEndpoint]
         public async Task<IActionResult> GetByUserId(Guid userId)
         {
             var canvases = (await _repoManager.CanvasRepository.GetByUserIdAsync(userId)).ToList();
@@ -59,7 +61,7 @@ namespace Linteum.Api.Controllers
         [HttpGet("name/{name}")]
         public async Task<IActionResult> GetByName(string name)
         {
-            var userId = _sessionService.ProcessHeader(HttpContext.Request.Headers);
+            var userId = HttpContext.GetSessionUserId();
             if (userId == null)
             {
                 _logger.LogWarning("Unauthorized access attempt: Session-Id header missing or invalid.");
@@ -100,14 +102,16 @@ namespace Linteum.Api.Controllers
         }
 
         [HttpPost("Add")]
-        public async Task<IActionResult> AddCanvas([FromBody] CanvasDto canvas, [FromQuery] string? passwordHash)
+        public async Task<IActionResult> AddCanvas([FromBody] CreateCanvasRequestDto request)
         {
-            var userId = _sessionService.ProcessHeader(HttpContext.Request.Headers);
+            var userId = HttpContext.GetSessionUserId();
             if (userId == null)
             {
                 _logger.LogWarning("Unauthorized access attempt: Session-Id header missing or invalid.");
                 return Unauthorized("Session-Id header missing or invalid.");
             }
+
+            var canvas = request.Canvas;
 
             if (await IsGuestUserAsync(userId.Value))
             {
@@ -129,13 +133,13 @@ namespace Linteum.Api.Controllers
             }
 
             canvas.CreatorId = userId.Value;
-            var result = await _repoManager.CanvasRepository.TryAddCanvas(canvas, passwordHash);
+            var result = await _repoManager.CanvasRepository.TryAddCanvas(canvas, request.Password);
             if (result == null)
             {
                 _logger.LogError("Canvas creation failed for user {UserId} with name {CanvasName}", userId, canvas.Name);
                 return BadRequest("Canvas could not be created.");
             }
-            var sub = await _repoManager.SubscriptionRepository.Subscribe(userId.Value, result.Id, passwordHash);
+            var sub = await _repoManager.SubscriptionRepository.Subscribe(userId.Value, result.Id, request.Password);
             if (sub == null)
             {
                 _logger.LogError("Subscription failed for user {UserId} on canvas {CanvasName}", userId, canvas.Name);
@@ -148,7 +152,7 @@ namespace Linteum.Api.Controllers
         [HttpPost("add-with-image")]
         public async Task<IActionResult> AddCanvasWithImage([FromForm] CanvasImageUploadForm request)
         {
-            var userId = _sessionService.ProcessHeader(HttpContext.Request.Headers);
+            var userId = HttpContext.GetSessionUserId();
             if (userId == null)
             {
                 _logger.LogWarning("Unauthorized access attempt: Session-Id header missing or invalid.");
@@ -242,14 +246,14 @@ namespace Linteum.Api.Controllers
                 return Conflict("A canvas with this name already exists.");
             }
 
-            var result = await _repoManager.CanvasRepository.TryAddCanvas(canvas, request.PasswordHash);
+            var result = await _repoManager.CanvasRepository.TryAddCanvas(canvas, request.Password);
             if (result == null)
             {
                 _logger.LogError("Canvas creation from image failed for user {UserId} with name {CanvasName}", userId, canvas.Name);
                 return BadRequest("Canvas could not be created.");
             }
 
-            var sub = await _repoManager.SubscriptionRepository.Subscribe(userId.Value, result.Id, request.PasswordHash);
+            var sub = await _repoManager.SubscriptionRepository.Subscribe(userId.Value, result.Id, request.Password);
             if (sub == null)
             {
                 _logger.LogError("Subscription failed for user {UserId} on canvas {CanvasName}", userId, canvas.Name);
@@ -274,7 +278,7 @@ namespace Linteum.Api.Controllers
         [HttpPost("subscribe")]
         public async Task<IActionResult> SubscribeToCanvas([FromBody] SubscribeCanvasRequestDto subscribeCanvasRequestDto)
         {
-            var userId = _sessionService.ProcessHeader(HttpContext.Request.Headers);
+            var userId = HttpContext.GetSessionUserId();
             if (userId == null)
             {
                 _logger.LogWarning("Unauthorized access attempt: Session-Id header missing or invalid.");
@@ -289,7 +293,7 @@ namespace Linteum.Api.Controllers
 
             try
             {
-                var subscription = await _repoManager.SubscriptionRepository.Subscribe(userId.Value, canvas.Id, subscribeCanvasRequestDto.Password.PasswordHash);
+                var subscription = await _repoManager.SubscriptionRepository.Subscribe(userId.Value, canvas.Id, subscribeCanvasRequestDto.Password);
                 _logger.LogInformation("User {UserId} subscribed successfully to canvas {CanvasName}.", userId.Value, subscribeCanvasRequestDto.Canvas.Name);
                 return Ok(subscription);
             }
@@ -323,7 +327,7 @@ namespace Linteum.Api.Controllers
                 _logger.LogWarning("Cannot unsubscribe from required canvas {CanvasName}.", canvasDto.Name);
                 return BadRequest("Cannot unsubscribe from a built-in canvas.");
             }
-            var userId = _sessionService.ProcessHeader(HttpContext.Request.Headers);
+            var userId = HttpContext.GetSessionUserId();
             if (userId == null)
             {
                 _logger.LogWarning("Unauthorized access attempt: Session-Id header missing or invalid.");
@@ -363,7 +367,7 @@ namespace Linteum.Api.Controllers
         public async Task<IActionResult> EraseCanvas(string name)
         {
             _logger.LogInformation("EraseCanvas requested for {CanvasName}.", name);
-            var userId = _sessionService.ProcessHeader(HttpContext.Request.Headers);
+            var userId = HttpContext.GetSessionUserId();
             if (userId == null)
             {
                 _logger.LogWarning("Unauthorized access attempt: Session-Id header missing or invalid.");
@@ -420,7 +424,7 @@ namespace Linteum.Api.Controllers
         public async Task<IActionResult> DeleteCanvas(string name)
         {
             _logger.LogInformation("DeleteCanvas requested for {CanvasName}.", name);
-            var userId = _sessionService.ProcessHeader(HttpContext.Request.Headers);
+            var userId = HttpContext.GetSessionUserId();
             if (userId == null)
             {
                 _logger.LogWarning("Unauthorized access attempt: Session-Id header missing or invalid.");
@@ -472,6 +476,7 @@ namespace Linteum.Api.Controllers
         }
 
         [HttpPost("check-password")]
+        [DisabledEndpoint]
         public async Task<IActionResult> CheckPassword([FromBody] CanvasDto canvas, [FromQuery] string? passwordHash)
         {
             var result = await _repoManager.CanvasRepository.CheckPassword(canvas, passwordHash);
@@ -482,17 +487,11 @@ namespace Linteum.Api.Controllers
         [HttpGet("image/{name}")]
         public async Task<IActionResult> GetImage(string name)
         {
-            if (!Request.Headers.TryGetValue(CustomHeaders.SessionId, out var sessionIdStr) || !Guid.TryParse(sessionIdStr, out var sessionId))
+            var userId = HttpContext.GetSessionUserId();
+            if (userId == null)
             {
                 _logger.LogWarning("Canvas image request failed for {CanvasName}: Session-Id header missing or invalid.", name);
                 return Unauthorized("Session-Id header missing or invalid.");
-            }
-
-            var userId = _sessionService.GetUserIdAndUpdateTimeLimit(sessionId);
-            if (userId == null)
-            {
-                _logger.LogWarning("Canvas image request failed for {CanvasName}: invalid session {SessionId}.", name, sessionId);
-                return Unauthorized("Invalid session.");
             }
 
             var canvas = await _repoManager.CanvasRepository.GetByNameAsync(name);
@@ -502,16 +501,21 @@ namespace Linteum.Api.Controllers
                 return NotFound("Canvas not found.");
             }
 
-            var pixels = await _repoManager.PixelRepository.GetByCanvasIdAsync(canvas.Id);
+            var pixels = _repoManager.PixelRepository.StreamPixelsForCanvasAsync(canvas.Id);
             var colors = await _repoManager.ColorRepository.GetAllAsync();
             var colorMap = colors.ToDictionary(c => c.Id, c => Color.ParseHex(c.HexValue));
-            
+
             using var image = new Image<SixLabors.ImageSharp.PixelFormats.Rgba32>(canvas.Width, canvas.Height);
-            
+
             image.Mutate(x => x.Fill(Color.White));
 
-            foreach (var pixel in pixels)
+            // Stream pixels straight into the raster instead of materializing the whole canvas
+            // into a List<PixelDto> first (P-PERF-01). The PNG raster buffer itself is unavoidable
+            // for an image export; this removes the additional multi-million-object buffer.
+            var cancellationToken = HttpContext.RequestAborted;
+            await foreach (var pixel in pixels)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 if (colorMap.TryGetValue(pixel.ColorId, out var color))
                 {
                     image[pixel.X, pixel.Y] = color;
@@ -529,17 +533,11 @@ namespace Linteum.Api.Controllers
         [HttpGet("subscribed")]
         public async Task<IActionResult> GetImage()
         {
-            if (!Request.Headers.TryGetValue(CustomHeaders.SessionId, out var sessionIdStr) || !Guid.TryParse(sessionIdStr, out var sessionId))
+            var userId = HttpContext.GetSessionUserId();
+            if (userId == null)
             {
                 _logger.LogWarning("Subscribed canvases request failed: Session-Id header missing or invalid.");
                 return Unauthorized("Session-Id header missing or invalid.");
-            }
-
-            var userId = _sessionService.GetUserIdAndUpdateTimeLimit(sessionId);
-            if (userId == null)
-            {
-                _logger.LogWarning("Subscribed canvases request failed: invalid session {SessionId}.", sessionId);
-                return Unauthorized("Invalid session.");
             }
 
             var canvases = (await _repoManager.CanvasRepository.GetByUserIdAsync(userId.Value)).ToList();

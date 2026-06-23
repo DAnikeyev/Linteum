@@ -1,4 +1,6 @@
 using System.Threading.Channels;
+using Linteum.Api.Attributes;
+using Linteum.Api.Middleware;
 using Linteum.Api.Services;
 using Linteum.Infrastructure;
 using Linteum.Shared;
@@ -16,13 +18,11 @@ public class PixelsController : ControllerBase
     private readonly Channel<PixelDto> _changedPixelsChannel;
     private readonly IPixelChangeCounter _pixelChangeCounter;
     private readonly ITextDrawQueue _textDrawQueue;
-    private readonly SessionService _sessionService;
     private readonly IPixelNotifier _pixelNotifier;
     private readonly Config _config;
 
-    public PixelsController(RepositoryManager repoManager, SessionService sessionService, ILogger<PixelsController> logger, Channel<PixelDto> changedPixelsChannel, IPixelChangeCounter pixelChangeCounter, ITextDrawQueue textDrawQueue, IPixelNotifier pixelNotifier, Config config)
+    public PixelsController(RepositoryManager repoManager, ILogger<PixelsController> logger, Channel<PixelDto> changedPixelsChannel, IPixelChangeCounter pixelChangeCounter, ITextDrawQueue textDrawQueue, IPixelNotifier pixelNotifier, Config config)
     {
-        _sessionService = sessionService;
         _repoManager = repoManager;
         _logger = logger;
         _changedPixelsChannel = changedPixelsChannel;
@@ -33,6 +33,7 @@ public class PixelsController : ControllerBase
     }
 
     [HttpGet("canvases/{canvasId}")]
+    [DisabledEndpoint]
     public async Task<IActionResult> GetByCanvasId(Guid canvasId)
     {
         // WARNING: This can return millions of pixels and cause OOM.
@@ -52,17 +53,11 @@ public class PixelsController : ControllerBase
     [HttpGet("getpixel/{canvasName}")]
     public async Task<IActionResult> GetByPixelDto(string canvasName, [FromBody]PixelDto pixelDto)
     {
-        if (!Request.Headers.TryGetValue(CustomHeaders.SessionId, out var sessionIdStr) || !Guid.TryParse(sessionIdStr, out var sessionId))
+        var userId = HttpContext.GetSessionUserId();
+        if (userId == null)
         {
             _logger.LogWarning("GetByPixelDto failed: Session-Id header missing or invalid.");
             return Unauthorized("Session-Id header missing or invalid.");
-        }
-
-        var userId = _sessionService.GetUserIdAndUpdateTimeLimit(sessionId);
-        if (userId == null)
-        {
-            _logger.LogWarning("GetByPixelDto failed: Invalid session for sessionId: {SessionId}", sessionId);
-            return Unauthorized("Invalid session.");
         }
 
         var canvas = await _repoManager.CanvasRepository.GetByNameAsync(canvasName);
@@ -91,7 +86,7 @@ public class PixelsController : ControllerBase
 
     private async Task<PixelDto> GetDefaultPixel(PixelDto pixelDtoReq)
     {
-        var defaultColor = await _repoManager.ColorRepository.GetDefautColor();
+        var defaultColor = await _repoManager.ColorRepository.GetDefaultColor();
         if (defaultColor == null)
         {
             throw new InvalidOperationException("Default color is not configured.");
@@ -110,6 +105,7 @@ public class PixelsController : ControllerBase
     }
 
     [HttpGet("owner/{ownerId}")]
+    [DisabledEndpoint]
     public async Task<IActionResult> GetByOwnerId(Guid ownerId)
     {
         var pixels = (await _repoManager.PixelRepository.GetByOwnerIdAsync(ownerId)).ToList();
@@ -120,17 +116,11 @@ public class PixelsController : ControllerBase
     [HttpGet("quota/{canvasName}")]
     public async Task<IActionResult> GetNormalModeQuota(string canvasName)
     {
-        if (!Request.Headers.TryGetValue(CustomHeaders.SessionId, out var sessionIdStr) || !Guid.TryParse(sessionIdStr, out var sessionId))
+        var userId = HttpContext.GetSessionUserId();
+        if (userId == null)
         {
             _logger.LogWarning("GetNormalModeQuota failed: Session-Id header missing or invalid.");
             return Unauthorized("Session-Id header missing or invalid.");
-        }
-
-        var userId = _sessionService.GetUserIdAndUpdateTimeLimit(sessionId);
-        if (userId == null)
-        {
-            _logger.LogWarning("GetNormalModeQuota failed: Invalid session for sessionId: {SessionId}", sessionId);
-            return Unauthorized("Invalid session.");
         }
 
         var canvas = await _repoManager.CanvasRepository.GetByNameAsync(canvasName);
@@ -147,17 +137,11 @@ public class PixelsController : ControllerBase
     [HttpPost("change/{canvasName}")]
     public async Task<IActionResult> TryChangePixel(string canvasName, [FromBody] PixelDto pixel)
     {
-        if (!Request.Headers.TryGetValue(CustomHeaders.SessionId, out var sessionIdStr) || !Guid.TryParse(sessionIdStr, out var sessionId))
+        var userId = HttpContext.GetSessionUserId();
+        if (userId == null)
         {
             _logger.LogWarning("TryChangePixel failed: Session-Id header missing or invalid.");
             return Unauthorized("Session-Id header missing or invalid.");
-        }
-
-        var userId = _sessionService.GetUserIdAndUpdateTimeLimit(sessionId);
-        if (userId == null)
-        {
-            _logger.LogWarning("TryChangePixel failed: Invalid session for sessionId: {SessionId}", sessionId);
-            return Unauthorized("Invalid session.");
         }
         
         var canvas = await _repoManager.CanvasRepository.GetByNameAsync(canvasName);
@@ -211,17 +195,11 @@ public class PixelsController : ControllerBase
     [HttpPost("change-batch/{canvasName}")]
     public async Task<IActionResult> TryChangePixelsBatch(string canvasName, [FromBody] PixelBatchChangeRequestDto request)
     {
-        if (!Request.Headers.TryGetValue(CustomHeaders.SessionId, out var sessionIdStr) || !Guid.TryParse(sessionIdStr, out var sessionId))
+        var userId = HttpContext.GetSessionUserId();
+        if (userId == null)
         {
             _logger.LogWarning("TryChangePixelsBatch failed: Session-Id header missing or invalid.");
             return Unauthorized("Session-Id header missing or invalid.");
-        }
-
-        var userId = _sessionService.GetUserIdAndUpdateTimeLimit(sessionId);
-        if (userId == null)
-        {
-            _logger.LogWarning("TryChangePixelsBatch failed: Invalid session for sessionId: {SessionId}", sessionId);
-            return Unauthorized("Invalid session.");
         }
 
         if (request.Pixels.Count == 0)
@@ -242,7 +220,8 @@ public class PixelsController : ControllerBase
             pixel.CanvasId = canvas.Id;
         }
 
-        var useMasterOverride = IsValidMasterPassword(request.MasterPassword);
+        var useMasterOverride = IsValidMasterPassword(request.MasterPassword)
+            || IsValidServiceToken(request.ServiceToken, canvas.Name);
         if (!useMasterOverride && canvas.CanvasMode == CanvasMode.Economy && await IsGuestUserAsync(userId.Value))
         {
             _logger.LogWarning("Guest user {UserId} attempted to batch paint on economy canvas {CanvasName}.", userId.Value, canvasName);
@@ -255,17 +234,11 @@ public class PixelsController : ControllerBase
     [HttpPost("change-batch-coordinates/{canvasName}")]
     public async Task<IActionResult> TryChangePixelsBatch(string canvasName, [FromBody] PixelBatchDto request)
     {
-        if (!Request.Headers.TryGetValue(CustomHeaders.SessionId, out var sessionIdStr) || !Guid.TryParse(sessionIdStr, out var sessionId))
+        var userId = HttpContext.GetSessionUserId();
+        if (userId == null)
         {
             _logger.LogWarning("TryChangePixelsBatch failed: Session-Id header missing or invalid.");
             return Unauthorized("Session-Id header missing or invalid.");
-        }
-
-        var userId = _sessionService.GetUserIdAndUpdateTimeLimit(sessionId);
-        if (userId == null)
-        {
-            _logger.LogWarning("TryChangePixelsBatch failed: Invalid session for sessionId: {SessionId}", sessionId);
-            return Unauthorized("Invalid session.");
         }
 
         if (request.Coordinates.Count == 0)
@@ -292,7 +265,8 @@ public class PixelsController : ControllerBase
             })
             .ToList();
 
-        var useMasterOverride = IsValidMasterPassword(request.MasterPassword);
+        var useMasterOverride = IsValidMasterPassword(request.MasterPassword)
+            || IsValidServiceToken(request.ServiceToken, canvas.Name);
         if (!useMasterOverride && canvas.CanvasMode == CanvasMode.Economy && await IsGuestUserAsync(userId.Value))
         {
             _logger.LogWarning("Guest user {UserId} attempted to batch paint on economy canvas {CanvasName}.", userId.Value, canvasName);
@@ -305,17 +279,11 @@ public class PixelsController : ControllerBase
     [HttpPost("delete-batch/{canvasName}")]
     public async Task<IActionResult> TryDeletePixelsBatch(string canvasName, [FromBody] PixelBatchDeleteRequestDto request)
     {
-        if (!Request.Headers.TryGetValue(CustomHeaders.SessionId, out var sessionIdStr) || !Guid.TryParse(sessionIdStr, out var sessionId))
+        var userId = HttpContext.GetSessionUserId();
+        if (userId == null)
         {
             _logger.LogWarning("TryDeletePixelsBatch failed: Session-Id header missing or invalid.");
             return Unauthorized("Session-Id header missing or invalid.");
-        }
-
-        var userId = _sessionService.GetUserIdAndUpdateTimeLimit(sessionId);
-        if (userId == null)
-        {
-            _logger.LogWarning("TryDeletePixelsBatch failed: Invalid session for sessionId: {SessionId}", sessionId);
-            return Unauthorized("Invalid session.");
         }
 
         if (request.Coordinates.Count == 0)
@@ -521,17 +489,11 @@ public class PixelsController : ControllerBase
     [HttpPost("text/{canvasName}")]
     public async Task<IActionResult> QueueTextDraw(string canvasName, [FromBody] TextDrawRequestDto request)
     {
-        if (!Request.Headers.TryGetValue(CustomHeaders.SessionId, out var sessionIdStr) || !Guid.TryParse(sessionIdStr, out var sessionId))
+        var userId = HttpContext.GetSessionUserId();
+        if (userId == null)
         {
             _logger.LogWarning("QueueTextDraw failed: Session-Id header missing or invalid.");
             return Unauthorized("Session-Id header missing or invalid.");
-        }
-
-        var userId = _sessionService.GetUserIdAndUpdateTimeLimit(sessionId);
-        if (userId == null)
-        {
-            _logger.LogWarning("QueueTextDraw failed: Invalid session for sessionId: {SessionId}", sessionId);
-            return Unauthorized("Invalid session.");
         }
 
         if (string.IsNullOrWhiteSpace(request.Text))
@@ -593,14 +555,51 @@ public class PixelsController : ControllerBase
 
     private static bool IsValidMasterPassword(string? providedMasterPassword)
     {
-        if (string.IsNullOrWhiteSpace(providedMasterPassword))
+        var configuredMasterPassword = Environment.GetEnvironmentVariable("MASTER_PASSWORD");
+        if (string.IsNullOrWhiteSpace(providedMasterPassword) || string.IsNullOrWhiteSpace(configuredMasterPassword))
         {
             return false;
         }
 
-        var configuredMasterPassword = Environment.GetEnvironmentVariable("MASTER_PASSWORD");
-        return !string.IsNullOrWhiteSpace(configuredMasterPassword)
-               && string.Equals(configuredMasterPassword, providedMasterPassword, StringComparison.Ordinal);
+        // Constant-time comparison (P-SEC-03); avoids leaking the master password via timing.
+        return SecurityHelper.FixedTimeEqualsString(providedMasterPassword, configuredMasterPassword);
+    }
+
+    /// <summary>
+    /// Validates a dedicated bot/service token (P-SEC-11). This is a separate secret from the
+    /// API <c>MASTER_PASSWORD</c>: a leaked bot token cannot perform admin operations or delete
+    /// pixels, and can be rotated independently. It grants the same painting quota/balance
+    /// override on the two batch-paint endpoints only (never on delete-batch). If
+    /// <c>BOT_ALLOWED_CANVASES</c> is configured, the override is further restricted to those
+    /// canvases; otherwise it is honoured on any canvas (so Xerox/Cleaner ad-hoc targets and
+    /// newly created bot canvases keep working).
+    /// </summary>
+    private static bool IsValidServiceToken(string? providedServiceToken, string canvasName)
+    {
+        var configuredServiceToken = Environment.GetEnvironmentVariable("BOT_SERVICE_TOKEN");
+        if (string.IsNullOrWhiteSpace(providedServiceToken) || string.IsNullOrWhiteSpace(configuredServiceToken))
+        {
+            return false;
+        }
+
+        if (!SecurityHelper.FixedTimeEqualsString(providedServiceToken, configuredServiceToken))
+        {
+            return false;
+        }
+
+        return IsCanvasAllowedForServiceToken(canvasName);
+    }
+
+    private static bool IsCanvasAllowedForServiceToken(string canvasName)
+    {
+        var allowed = Environment.GetEnvironmentVariable("BOT_ALLOWED_CANVASES");
+        if (string.IsNullOrWhiteSpace(allowed))
+        {
+            return true;
+        }
+
+        var allowedNames = allowed.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return allowedNames.Any(name => string.Equals(name, canvasName, StringComparison.OrdinalIgnoreCase));
     }
 
     private async Task<bool> IsGuestUserAsync(Guid userId)

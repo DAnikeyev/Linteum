@@ -28,7 +28,7 @@ public class Canvas
     public string? PasswordHash { get; set; }  // Null if no password, hashed if protected
     
     public User Creator { get; set; }
-    public ICollection<Pixel> Pixels { get; set; }
+    public ICollection<Pixel> Pixels { get; set; } = new List<Pixel>();
 
     public ICollection<Subscription> Subscriptions { get; set; } = new List<Subscription>();
 }

@@ -1,6 +1,7 @@
 using AutoMapper;
+using Linteum.Infrastructure;
 
-namespace Linteum.Infrastructure;
+namespace Linteum.Tests.Db;
 
 public class TestMapper
 {

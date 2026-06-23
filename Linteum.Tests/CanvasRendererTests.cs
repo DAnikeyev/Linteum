@@ -16,11 +16,11 @@ public class CanvasRendererTests
 
         renderer.EnqueuePixel(1, 2, "#123456", suppressRipple: true);
 
-        var firstRenderAt = await jsRuntime.WaitForInvocationAsync("canvasRenderer.renderBatch");
+        var firstRenderAt = await jsRuntime.WaitForInvocationAsync("canvasRenderer.renderBatchTyped");
 
         renderer.EnqueuePixel(3, 4, "#654321", suppressRipple: true);
 
-        var secondRenderAt = await jsRuntime.WaitForInvocationAsync("canvasRenderer.renderBatch", skip: 1);
+        var secondRenderAt = await jsRuntime.WaitForInvocationAsync("canvasRenderer.renderBatchTyped", skip: 1);
 
         Assert.That(secondRenderAt - firstRenderAt, Is.LessThan(TimeSpan.FromMilliseconds(25)));
     }
@@ -36,7 +36,7 @@ public class CanvasRendererTests
         renderer.EnqueuePixel(5, 6, "#111111", suppressRipple: true);
         renderer.EnqueuePixel(5, 6, "#222222", suppressRipple: true);
 
-        await jsRuntime.WaitForInvocationAsync("canvasRenderer.renderBatch");
+        await jsRuntime.WaitForInvocationAsync("canvasRenderer.renderBatchTyped");
 
         var batch = jsRuntime.GetLastRenderBatch();
 
@@ -95,22 +95,25 @@ public class CanvasRendererTests
         {
             lock (_invocations)
             {
-                var invocation = _invocations.Last(item => item.Identifier == "canvasRenderer.renderBatch");
-                var rawBatch = AssertAndGetBatch(invocation.Arguments);
-                return rawBatch
-                    .Select(item => new RecordedPixelUpdate(
-                        (int)(item.GetType().GetProperty("X")?.GetValue(item) ?? 0),
-                        (int)(item.GetType().GetProperty("Y")?.GetValue(item) ?? 0),
-                        item.GetType().GetProperty("Color")?.GetValue(item)?.ToString()))
-                    .ToList();
-            }
-        }
+                var invocation = _invocations.Last(item => item.Identifier == "canvasRenderer.renderBatchTyped");
+                var args = invocation.Arguments;
+                Assert.That(args, Is.Not.Null.And.Length.EqualTo(4));
 
-        private static IEnumerable<object> AssertAndGetBatch(object?[]? args)
-        {
-            Assert.That(args, Is.Not.Null.And.Length.EqualTo(1));
-            Assert.That(args![0], Is.InstanceOf<IEnumerable<PixelUpdate>>());
-            return ((IEnumerable<PixelUpdate>)args[0]!).Cast<object>();
+                var xs = (int[])args![0];
+                var ys = (int[])args![1];
+                var rgbs = (int[])args![2];
+                var flags = (byte[])args![3];
+
+                var result = new List<RecordedPixelUpdate>(xs.Length);
+                for (var i = 0; i < xs.Length; i++)
+                {
+                    // Packed RGB -> "#RRGGBB"; clear-flagged pixels carry no color (P-PERF-07).
+                    var color = (flags[i] & 1) != 0 ? null : "#" + rgbs[i].ToString("X6");
+                    result.Add(new RecordedPixelUpdate(xs[i], ys[i], color));
+                }
+
+                return result;
+            }
         }
     }
 

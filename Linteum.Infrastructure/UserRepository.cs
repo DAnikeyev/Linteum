@@ -72,7 +72,7 @@ public class UserRepository : IUserRepository
             .ToArray();
     }
 
-    public async Task<UserDto?> AddOrUpdateUserAsync(UserDto userDto, UserPaswordDto? passwordDto = null)
+    public async Task<UserDto?> AddOrUpdateUserAsync(UserDto userDto, UserPasswordDto? passwordDto = null)
     {
         await using var transaction = await _context.Database.BeginTransactionAsync();
         try
@@ -90,7 +90,7 @@ public class UserRepository : IUserRepository
                     throw new InvalidDataException($"User name is required for user: {userDto.Email}");
                 }
                 existingUser.UserName = userDto.UserName;
-                existingUser.PasswordHashOrKey = passwordDto?.PasswordHashOrKey ?? existingUser.PasswordHashOrKey;
+                existingUser.PasswordHashOrKey = ResolveStoredSecret(passwordDto, existingUser.LoginMethod) ?? existingUser.PasswordHashOrKey;
                 existingUser.LoginMethod = passwordDto?.LoginMethod ?? existingUser.LoginMethod;
                 _context.Users.Update(existingUser);
                 await _context.SaveChangesAsync();
@@ -103,14 +103,15 @@ public class UserRepository : IUserRepository
                     throw new InvalidDataException($"Password hash or key is required for new user: {userDto.Email}");
                 }
                 var newUser = _mapper.Map<User>(userDto);
-                newUser.PasswordHashOrKey = passwordDto.PasswordHashOrKey;
+                newUser.PasswordHashOrKey = ResolveStoredSecret(passwordDto, null) ?? throw new InvalidDataException($"Password hash or key is required for new user: {userDto.Email}");
                 newUser.LoginMethod = passwordDto.LoginMethod;
                 newUser.Id = Guid.NewGuid();
                 newUser.CreatedAt = DateTime.UtcNow;
                 _context.Users.Add(newUser);
                 await _context.SaveChangesAsync();
+                await SubscribeUserToMainCanvasAsync(newUser.Id);
                 await transaction.CommitAsync();
-                await SubscribeUserToDefaultCanvasesAsync(newUser.Id, passwordDto.LoginMethod == LoginMethod.Guest);
+                await SubscribeUserToSecondaryCanvasesAsync(newUser.Id);
             }
 
             var userInDb = await GetByEmailAsync(userDto.Email);
@@ -157,9 +158,10 @@ public class UserRepository : IUserRepository
 
                 _context.Users.Add(newUser);
                 await _context.SaveChangesAsync();
+                await SubscribeUserToMainCanvasAsync(newUser.Id);
                 await transaction.CommitAsync();
 
-                await SubscribeUserToDefaultCanvasesAsync(newUser.Id, isGuest: true);
+                await SubscribeUserToSecondaryCanvasesAsync(newUser.Id);
                 return _mapper.Map<UserDto>(newUser);
             }
             catch (DbUpdateException ex)
@@ -252,16 +254,80 @@ public class UserRepository : IUserRepository
         return _mapper.Map<UserDto>(user);
     }
 
-    public Task<UserDto?> TryLogin(UserDto userDto, UserPaswordDto userPaswordDto)
+    public async Task<UserDto?> TryLogin(UserDto userDto, UserPasswordDto userPaswordDto)
     {
-        return _context.Users
-        .AsNoTracking()
-        .Where(u => u.Email == userDto.Email && u.PasswordHashOrKey == userPaswordDto.PasswordHashOrKey && u.LoginMethod == userPaswordDto.LoginMethod)
-        .ProjectTo<UserDto>(_mapper.ConfigurationProvider)
-        .FirstOrDefaultAsync();
+        var user = await _context.Users
+            .FirstOrDefaultAsync(u => u.Email == userDto.Email && u.LoginMethod == userPaswordDto.LoginMethod);
+
+        if (user == null)
+        {
+            return null;
+        }
+
+        var supplied = userPaswordDto.PasswordHashOrKey;
+
+        if (user.LoginMethod == LoginMethod.Password)
+        {
+            if (string.IsNullOrEmpty(supplied) || string.IsNullOrEmpty(user.PasswordHashOrKey))
+            {
+                return null;
+            }
+
+            var (valid, needsRehash) = SecurityHelper.VerifyPassword(supplied, user.PasswordHashOrKey);
+            if (!valid)
+            {
+                return null;
+            }
+
+            // Lazy migration: upgrade legacy SHA-256 / plaintext hashes to the PBKDF2 scheme.
+            if (needsRehash)
+            {
+                user.PasswordHashOrKey = SecurityHelper.HashPassword(supplied);
+                await _context.SaveChangesAsync();
+                _logger.LogInformation("Migrated legacy password hash to PBKDF2 for user {UserId}.", user.Id);
+            }
+        }
+        else
+        {
+            // Google key / guest token: constant-time equality against the stored secret.
+            if (!SecurityHelper.FixedTimeEqualsString(supplied, user.PasswordHashOrKey))
+            {
+                return null;
+            }
+        }
+
+        return _mapper.Map<UserDto>(user);
     }
 
-    private async Task SubscribeUserToDefaultCanvasesAsync(Guid userId, bool isGuest)
+    /// <summary>
+    /// Decides what to persist for <c>PasswordHashOrKey</c>. Password-method secrets are
+    /// hashed server-side with the KDF; Google subjects / guest tokens are stored verbatim.
+    /// Returns null when no secret was supplied (caller keeps the existing value).
+    /// </summary>
+    private static string? ResolveStoredSecret(UserPasswordDto? passwordDto, LoginMethod? existingLoginMethod)
+    {
+        var secret = passwordDto?.PasswordHashOrKey;
+        if (secret == null)
+        {
+            return null;
+        }
+
+        var loginMethod = passwordDto!.LoginMethod == default && existingLoginMethod.HasValue
+            ? existingLoginMethod.Value
+            : passwordDto.LoginMethod;
+
+        return loginMethod == LoginMethod.Password
+            ? SecurityHelper.HashPassword(secret)
+            : secret;
+    }
+
+    /// <summary>
+    /// Subscribes a brand-new user to the main canvas INSIDE the caller's ambient transaction, so the user
+    /// row, its subscription, and the +1 balance credit commit atomically (P-CON-01). A new user has no
+    /// prior balance and no concurrent writer for its balance rows, so the guarded core can run without the
+    /// canvas write-coordinator lock. The core's <c>SaveChanges</c> also flushes the subscription row.
+    /// </summary>
+    private async Task SubscribeUserToMainCanvasAsync(Guid userId)
     {
         var mainCanvas = await _context.Canvases
             .AsNoTracking()
@@ -272,8 +338,25 @@ public class UserRepository : IUserRepository
             throw new InvalidOperationException($"Main canvas with name '{_defaultsConfig.DefaultCanvasName}' not found.");
         }
 
-        await _subscriptionRepository.Subscribe(userId, mainCanvas.Id, null);
+        var alreadySubscribed = await _context.Subscriptions
+            .AsNoTracking()
+            .AnyAsync(s => s.UserId == userId && s.CanvasId == mainCanvas.Id);
+        if (alreadySubscribed)
+        {
+            return;
+        }
 
+        _context.Subscriptions.Add(new Subscription { UserId = userId, CanvasId = mainCanvas.Id });
+        await _balanceChangedEventRepository.TryChangeBalanceCoreAsync(userId, mainCanvas.Id, 1, BalanceChangedReason.Subscription);
+    }
+
+    /// <summary>
+    /// Best-effort subscription to secondary default canvases. Each <see cref="ISubscriptionRepository.Subscribe"/>
+    /// call owns its own transaction and runs after the user-creation transaction has committed, so a failure
+    /// here cannot corrupt the user/main-subscription write.
+    /// </summary>
+    private async Task SubscribeUserToSecondaryCanvasesAsync(Guid userId)
+    {
         foreach (var secondaryName in _defaultsConfig.SecondaryDefaultCanvasNames)
         {
             var secondaryCanvas = await _context.Canvases

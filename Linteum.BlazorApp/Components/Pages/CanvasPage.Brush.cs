@@ -911,5 +911,26 @@ public partial class CanvasPage
             || _isEraserBrushEnabled
             || _isTextSelectionPersistenceEnabled;
     }
+
+    private sealed class ConfirmedPlaybackWorkItem
+    {
+        public List<PixelDto> Pixels { get; init; } = [];
+        public List<CoordinateDto> Coordinates { get; init; } = [];
+        public bool IsDeletion { get; init; }
+        public int DurationMs { get; init; }
+
+        public static ConfirmedPlaybackWorkItem FromPixels(ConfirmedPixelPlaybackBatchDto playbackBatch) => new()
+        {
+            Pixels = playbackBatch.Pixels,
+            DurationMs = playbackBatch.DurationMs,
+        };
+
+        public static ConfirmedPlaybackWorkItem FromDeletes(ConfirmedPixelDeletionPlaybackBatchDto playbackBatch) => new()
+        {
+            Coordinates = playbackBatch.Coordinates,
+            IsDeletion = true,
+            DurationMs = playbackBatch.DurationMs,
+        };
+    }
 }
 

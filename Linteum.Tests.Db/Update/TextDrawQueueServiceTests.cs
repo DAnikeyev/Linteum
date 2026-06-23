@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Reflection;
 using System.Threading.Channels;
 using Linteum.Api.Controllers;
+using Linteum.Api.Middleware;
 using Linteum.Api.Services;
 using Linteum.Infrastructure;
 using Linteum.Shared;
@@ -35,13 +36,10 @@ internal class TextDrawQueueServiceTests : SyntheticDataTest
         Assert.That(canvas, Is.Not.Null);
 
         var black = (await RepoManager.ColorRepository.GetAllAsync()).First(color => color.Name == "Black");
-        var sessionService = new SessionService(new Config(), NullLogger<SessionService>.Instance);
-        var sessionId = sessionService.CreateSession(user.Id.Value);
         var queue = new CapturingTextDrawQueue();
         var config = new Config();
         var controller = new PixelsController(
             RepoManager,
-            sessionService,
             NullLogger<PixelsController>.Instance,
             Channel.CreateUnbounded<PixelDto>(),
             new StubPixelChangeCounter(),
@@ -55,7 +53,9 @@ internal class TextDrawQueueServiceTests : SyntheticDataTest
             },
         };
 
-        controller.HttpContext.Request.Headers[CustomHeaders.SessionId] = sessionId.ToString();
+        // SessionAuthMiddleware normally resolves the user; in this direct-invoke test we
+        // populate the same HttpContext.Items slot the middleware writes to.
+        controller.HttpContext.Items[SessionAuthMiddleware.SessionUserIdItemKey] = user.Id.Value;
 
         var result = await controller.QueueTextDraw(canvas!.Name, new TextDrawRequestDto
         {
@@ -90,13 +90,10 @@ internal class TextDrawQueueServiceTests : SyntheticDataTest
         Assert.That(canvas, Is.Not.Null);
 
         var black = (await RepoManager.ColorRepository.GetAllAsync()).First(color => color.Name == "Black");
-        var sessionService = new SessionService(new Config(), NullLogger<SessionService>.Instance);
-        var sessionId = sessionService.CreateSession(user.Id.Value);
         var queue = new CapturingTextDrawQueue();
         var config = new Config();
         var controller = new PixelsController(
             RepoManager,
-            sessionService,
             NullLogger<PixelsController>.Instance,
             Channel.CreateUnbounded<PixelDto>(),
             new StubPixelChangeCounter(),
@@ -110,7 +107,9 @@ internal class TextDrawQueueServiceTests : SyntheticDataTest
             },
         };
 
-        controller.HttpContext.Request.Headers[CustomHeaders.SessionId] = sessionId.ToString();
+        // SessionAuthMiddleware normally resolves the user; in this direct-invoke test we
+        // populate the same HttpContext.Items slot the middleware writes to.
+        controller.HttpContext.Items[SessionAuthMiddleware.SessionUserIdItemKey] = user.Id.Value;
 
         var result = await controller.QueueTextDraw(canvas!.Name, new TextDrawRequestDto
         {
@@ -141,13 +140,10 @@ internal class TextDrawQueueServiceTests : SyntheticDataTest
         Assert.That(canvas, Is.Not.Null);
 
         var black = (await RepoManager.ColorRepository.GetAllAsync()).First(color => color.Name == "Black");
-        var sessionService = new SessionService(new Config(), NullLogger<SessionService>.Instance);
-        var sessionId = sessionService.CreateSession(user.Id.Value);
         var queue = new CapturingTextDrawQueue();
         var config = new Config();
         var controller = new PixelsController(
             RepoManager,
-            sessionService,
             NullLogger<PixelsController>.Instance,
             Channel.CreateUnbounded<PixelDto>(),
             new StubPixelChangeCounter(),
@@ -161,7 +157,9 @@ internal class TextDrawQueueServiceTests : SyntheticDataTest
             },
         };
 
-        controller.HttpContext.Request.Headers[CustomHeaders.SessionId] = sessionId.ToString();
+        // SessionAuthMiddleware normally resolves the user; in this direct-invoke test we
+        // populate the same HttpContext.Items slot the middleware writes to.
+        controller.HttpContext.Items[SessionAuthMiddleware.SessionUserIdItemKey] = user.Id.Value;
 
         var result = await controller.QueueTextDraw(canvas!.Name, new TextDrawRequestDto
         {

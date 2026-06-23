@@ -13,7 +13,7 @@ public class XeroxBot : BotBase
     private readonly string _imageName;
 
     public XeroxBot(string canvasName, string imageName)
-        : base("xerox@linteum.com", "XeroxCopy123!", "XeroxBot")
+        : base("xerox@linteum.com", "XeroxBot")
     {
         _canvasName = canvasName;
         _imageName = imageName;
@@ -62,7 +62,7 @@ public class XeroxBot : BotBase
             };
 
             Console.WriteLine($"Creating canvas '{_canvasName}' ({newCanvas.Width}x{newCanvas.Height})...");
-            var createResponse = await HttpClient.PostAsJsonAsync("Canvases/Add?passwordHash=", newCanvas);
+            var createResponse = await HttpClient.PostAsJsonAsync("Canvases/Add", new CreateCanvasRequestDto { Canvas = newCanvas, Password = null });
             if (createResponse.IsSuccessStatusCode)
             {
                 return await createResponse.Content.ReadFromJsonAsync<CanvasDto>();

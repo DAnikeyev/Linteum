@@ -9,12 +9,14 @@ public class SignalRPixelNotifier : IPixelNotifier
 {
     private readonly IHubContext<CanvasHub> _hubContext;
     private readonly IConnectionTracker _tracker;
+    private readonly ICanvasEventBuffer _eventBuffer;
     private readonly ILogger<SignalRPixelNotifier> _logger;
 
-    public SignalRPixelNotifier(IHubContext<CanvasHub> hubContext, IConnectionTracker tracker, ILogger<SignalRPixelNotifier> logger)
+    public SignalRPixelNotifier(IHubContext<CanvasHub> hubContext, IConnectionTracker tracker, ICanvasEventBuffer eventBuffer, ILogger<SignalRPixelNotifier> logger)
     {
         _hubContext = hubContext;
         _tracker = tracker;
+        _eventBuffer = eventBuffer;
         _logger = logger;
     }
 
@@ -37,6 +39,11 @@ public class SignalRPixelNotifier : IPixelNotifier
         {
             return;
         }
+
+        // Record into the expirable buffer right before broadcasting so the on-the-wire order and
+        // the buffer order match. A client that missed this broadcast (loaded a snapshot just
+        // before, or reconnecting just after) can then fetch it by sequence and replay it.
+        _eventBuffer.Record(canvasName, new CanvasChangeEntryDto { Pixels = pixels.ToList() });
 
         if (pixels.Count == 1)
         {
@@ -63,6 +70,8 @@ public class SignalRPixelNotifier : IPixelNotifier
             return;
         }
 
+        _eventBuffer.Record(canvasName, new CanvasChangeEntryDto { DeletedCoordinates = coordinates.ToList() });
+
         await _hubContext.Clients.Group(canvasName).SendAsync(CanvasHub.PixelsDeletedEventName, coordinates);
     }
 
@@ -81,6 +90,10 @@ public class SignalRPixelNotifier : IPixelNotifier
             return;
         }
 
+        // Confirmed-playback strokes are normalized to plain pixels in the buffer: reconcile only
+        // cares about the final committed state, not the playback animation.
+        _eventBuffer.Record(canvasName, new CanvasChangeEntryDto { Pixels = playbackBatch.Pixels });
+
         await _hubContext.Clients.Group(canvasName).SendAsync(CanvasHub.ReceiveConfirmedPixelPlaybackBatchEventName, playbackBatch);
     }
 
@@ -98,6 +111,8 @@ public class SignalRPixelNotifier : IPixelNotifier
         {
             return;
         }
+
+        _eventBuffer.Record(canvasName, new CanvasChangeEntryDto { DeletedCoordinates = playbackBatch.Coordinates });
 
         await _hubContext.Clients.Group(canvasName).SendAsync(CanvasHub.ReceiveConfirmedPixelDeletionPlaybackBatchEventName, playbackBatch);
     }

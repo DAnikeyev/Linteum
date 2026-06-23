@@ -111,10 +111,8 @@ public class DbSeeder
                 {
                     logger.LogInformation("Secondary default canvas {CanvasName} has no subscriptions. Subscribing all users.", configuredCanvas.Name);
                     var allUserIds = await context.Users.Select(u => u.Id).ToListAsync();
-                    foreach (var userId in allUserIds)
-                    {
-                        await repositoryManager.SubscriptionRepository.Subscribe(userId, existingCanvas.Id, null);
-                    }
+                    var subscribedCount = await repositoryManager.SubscriptionRepository.SubscribeAllAsync(existingCanvas.Id, allUserIds);
+                    logger.LogInformation("Subscribed {Count} users to secondary default canvas {CanvasName}.", subscribedCount, configuredCanvas.Name);
                 }
             }
         }
@@ -159,10 +157,8 @@ public class DbSeeder
 
         logger.LogInformation("Found {Count} colors in DB but not in config: {Colors}", colorsToRemove.Count, colorLog);
         logger.LogWarning(
-            "Cleaning up colors missing from config in 10 seconds. PixelChangedEvents and Pixels will be reassigned to default color {DefaultColorHexValue} before deletion.",
+            "Cleaning up colors missing from config. PixelChangedEvents and Pixels will be reassigned to default color {DefaultColorHexValue} before deletion.",
             DefaultColorHexValue);
-
-        await Task.Delay(TimeSpan.FromSeconds(10));
 
         var colorIdsToRemove = colorsToRemove.Select(color => color.Id).ToArray();
 

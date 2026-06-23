@@ -7,9 +7,9 @@ namespace Linteum.Bots;
 public class VanGogh2Bot : BotBase
 {
     private const int BatchSize = 100;
-    private readonly string CanvasName = "VanGogh";
+    private const string CanvasName = "VanGogh2";
 
-    public VanGogh2Bot() : base("vangogh2@linteum.com", "SecurePassword123!", "VanGogh2Bot")
+    public VanGogh2Bot() : base("vangogh2@linteum.com", "VanGogh2Bot")
     {
     }
 
@@ -30,7 +30,7 @@ public class VanGogh2Bot : BotBase
                 CanvasMode = CanvasMode.FreeDraw
             };
 
-            var response = await HttpClient.PostAsJsonAsync("Canvases/Add?passwordHash=", newCanvas);
+            var response = await HttpClient.PostAsJsonAsync("Canvases/Add", new CreateCanvasRequestDto { Canvas = newCanvas, Password = null });
             if (response.IsSuccessStatusCode)
             {
                 return await response.Content.ReadFromJsonAsync<CanvasDto>();

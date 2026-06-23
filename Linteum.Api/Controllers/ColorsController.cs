@@ -1,3 +1,4 @@
+using Linteum.Api.Attributes;
 using Linteum.Infrastructure;
 using Microsoft.AspNetCore.Mvc;
 
@@ -17,6 +18,7 @@ namespace Linteum.Api.Controllers
         }
 
         [HttpGet]
+        [PublicEndpoint]
         public async Task<IActionResult> GetColors()
         {
             var colors = (await _repoManager.ColorRepository.GetAllAsync()).ToList();

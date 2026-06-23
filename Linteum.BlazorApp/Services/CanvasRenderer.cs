@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Globalization;
 using Linteum.Shared.DTO;
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
@@ -176,7 +177,7 @@ public class CanvasRenderer : IAsyncDisposable
 
                     try
                     {
-                        await _js.InvokeVoidAsync("canvasRenderer.renderBatch", batch);
+                        await RenderBatchAsync(batch);
                     }
                     catch (Exception ex) when (IsShuttingDown(ex))
                     {
@@ -212,6 +213,72 @@ public class CanvasRenderer : IAsyncDisposable
         }
 
         return latestUpdates.Values.ToList();
+    }
+
+    private async Task RenderBatchAsync(List<PixelUpdate> batch)
+    {
+        // Typed parallel arrays cut serialization cost on the hot pixel path (P-PERF-07). Fall back to
+        // the object form if anything goes wrong (e.g. a stale cached script without renderBatchTyped).
+        try
+        {
+            var xs = new int[batch.Count];
+            var ys = new int[batch.Count];
+            var rgbs = new int[batch.Count];
+            var flags = new byte[batch.Count];
+
+            for (var i = 0; i < batch.Count; i++)
+            {
+                var pixel = batch[i];
+                xs[i] = pixel.X;
+                ys[i] = pixel.Y;
+
+                var flag = 0;
+                if (pixel.SuppressRipple)
+                {
+                    flag |= 2;
+                }
+
+                if (pixel.Clear)
+                {
+                    flag |= 1;
+                    rgbs[i] = 0;
+                }
+                else if (TryParseHexRgb(pixel.Color, out var rgb))
+                {
+                    rgbs[i] = rgb;
+                }
+                else
+                {
+                    flag |= 4; // invalid color — JS skips this pixel (matches renderBatch's silent return)
+                    rgbs[i] = 0;
+                }
+
+                flags[i] = (byte)flag;
+            }
+
+            await _js.InvokeVoidAsync("canvasRenderer.renderBatchTyped", xs, ys, rgbs, flags);
+        }
+        catch (Exception)
+        {
+            await _js.InvokeVoidAsync("canvasRenderer.renderBatch", batch);
+        }
+    }
+
+    private static bool TryParseHexRgb(string? hex, out int rgb)
+    {
+        rgb = 0;
+        if (string.IsNullOrEmpty(hex))
+        {
+            return false;
+        }
+
+        var span = hex.AsSpan().Trim();
+        if (span.Length > 0 && span[0] == '#')
+        {
+            span = span[1..];
+        }
+
+        return span.Length == 6 && int.TryParse(span, NumberStyles.HexNumber, CultureInfo.InvariantCulture, out rgb);
     }
 
     public async ValueTask DisposeAsync()

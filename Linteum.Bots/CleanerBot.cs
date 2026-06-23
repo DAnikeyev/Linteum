@@ -9,7 +9,7 @@ public class CleanerBot : BotBase
     private const int MaxRetries = 5;
     private readonly string _targetCanvasName;
 
-    public CleanerBot(string targetCanvasName) : base("cleaner@linteum.com", "CleanCanvas123!", "CleanerBot")
+    public CleanerBot(string targetCanvasName) : base("cleaner@linteum.com", "CleanerBot")
     {
         _targetCanvasName = targetCanvasName;
     }

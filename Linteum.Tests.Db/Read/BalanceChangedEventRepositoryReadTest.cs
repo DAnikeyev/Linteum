@@ -1,6 +1,6 @@
 using Linteum.Shared;
 
-namespace Linteum.Tests.Db.Create;
+namespace Linteum.Tests.Db.Read;
 
 internal class BalanceChangedEventRepositoryReadTest : SyntheticDataTest
 {

@@ -1,5 +1,6 @@
 using Linteum.Api.Configuration;
 using Linteum.Api.Hubs;
+using Linteum.Api.Middleware;
 using Linteum.Api.Services;
 using Linteum.Infrastructure;
 using NLog;
@@ -41,6 +42,7 @@ try
     
     builder.Services.AddSingleton<IConnectionTracker, ConnectionTracker>();
     builder.Services.AddSingleton<ICanvasChatBroadcaster, CanvasChatBroadcaster>();
+    builder.Services.AddSingleton<ICanvasEventBuffer, CanvasEventBuffer>();
     builder.Services.AddScoped<IPixelNotifier, SignalRPixelNotifier>();
     builder.Services.Configure<CanvasSizeOptions>(builder.Configuration.GetSection("CanvasSize"));
     builder.Services.AddApplicationServices(builder.Configuration);
@@ -64,7 +66,9 @@ try
     {
         app.UseHttpsRedirection();
     }
+    app.UseRouting();
     app.UseCors("AllowBlazorApp");
+    app.UseMiddleware<SessionAuthMiddleware>();
     app.MapControllers();
     app.MapHub<CanvasHub>("/canvashub");
     
@@ -80,3 +84,7 @@ finally
 {
     NLog.LogManager.Shutdown();
 }
+
+// Exposes the implicit top-level Program class so API integration tests can use
+// WebApplicationFactory<Program> (P‑TEST‑02).
+public partial class Program { }

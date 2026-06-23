@@ -7,12 +7,12 @@ services:
     deploy:
       resources:
         limits:
-          memory: 512M
+          memory: 1G
     command: >
       postgres
       -c shared_buffers=256MB
       -c work_mem=4MB
-      -c effective_cache_size=512MB
+      -c effective_cache_size=768MB
       -c wal_buffers=16MB
       -c checkpoint_completion_target=0.9
       -c max_connections=100
@@ -21,7 +21,12 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     ports:
-      - "${DB_HOST_PORT}:${DB_CONTAINER_PORT}"
+      # V-NET-04: bind to loopback so the DB is NOT published to the internet. Docker-published
+      # ports bypass ufw (DNAT in nat/PREROUTING → FORWARD), so a host firewall cannot close them;
+      # binding to 127.0.0.1 is the only reliable way. The API and bots reach the DB over the
+      # linteum_prod1 network (Host=linteum-db), not via this host port; loopback keeps local-dev
+      # access (localhost:${DB_HOST_PORT}) working.
+      - "127.0.0.1:${DB_HOST_PORT}:${DB_CONTAINER_PORT}"
     networks:
       - linteum_prod1
     volumes:
@@ -59,6 +64,15 @@ services:
       - linteum_prod1
     volumes:
       - db_backups:/backups
+    # P-OPS-07: surface stale/failed backups. Healthy = a successful dump within the last 25h
+    # (24h cycle + slack); a persistently failing pg_dump lets .last-success age past this window
+    # and the container reports unhealthy. start_period covers the initial delay + first dump.
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /backups/.last-success && find /backups -name .last-success -mmin -1500 -print -quit | grep -q ."]
+      interval: 5m
+      timeout: 10s
+      retries: 2
+      start_period: 300s
     entrypoint: [ "/bin/bash", "-c" ]
     command:
       - |
@@ -71,8 +85,11 @@ services:
               cp -a /backups/daily.dump /backups/weekly.new.dump
               mv -f /backups/weekly.new.dump /backups/weekly.dump
             fi
+            rm -f /backups/.last-failure
+            date -u +%Y-%m-%dT%H:%M:%SZ > /backups/.last-success
           else
             rm -f /backups/backup_in_progress.dump
+            date -u +%Y-%m-%dT%H:%M:%SZ > /backups/.last-failure
           fi
           sleep 86400 & wait $!
         done
@@ -88,12 +105,18 @@ services:
         limits:
           memory: 2048M
     ports:
-      - "${API_HOST_PORT}:${API_CONTAINER_PORT}"
+      # V-NET-03: bind to loopback so the API is NOT published to the internet (Docker bypasses ufw
+      # for published ports — see the note on linteum-db). nginx does not proxy /api; the Blazor
+      # replicas and bots reach the API over linteum_prod1 (http://linteum-api:8080). Loopback keeps
+      # local-dev access (localhost:${API_HOST_PORT}) working.
+      - "127.0.0.1:${API_HOST_PORT}:${API_CONTAINER_PORT}"
     environment:
       - ConnectionStrings__DefaultConnection=Host=${DB_CONTAINER_NAME};Database=${POSTGRES_DB};Username=${POSTGRES_USER};Password=${POSTGRES_PASSWORD};Maximum Pool Size=40;Minimum Pool Size=4;Timeout=30;Command Timeout=30
       - MASTER_PASSWORD=${MASTER_PASSWORD}
       - MASTER_USER=${MASTER_USER}
       - MASTER_EMAIL=${MASTER_EMAIL}
+      - BOT_SERVICE_TOKEN=${BOT_SERVICE_TOKEN}
+      - BOT_ALLOWED_CANVASES=${BOT_ALLOWED_CANVASES}
       - PASSWORD_SALT=${PASSWORD_SALT}
       - GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID}
       - GOOGLE_CLIENT_SECRET=${GOOGLE_CLIENT_SECRET}
@@ -128,7 +151,11 @@ services:
       - ASPNETCORE_HTTP_PORTS=${BLAZOR_CONTAINER_PORT}
       - ApiBaseUrl=http://${API_CONTAINER_NAME}:${API_CONTAINER_PORT}
     ports:
-      - "5010-5012:${BLAZOR_CONTAINER_PORT}"
+      # V-NET: bind to loopback. nginx reverse-proxies to 127.0.0.1:5010-5012 (it needs loopback
+      # only); publishing on 0.0.0.0 exposed the replicas directly, bypassing TLS/sticky routing
+      # (and ufw, which Docker bypasses for published ports). Loopback keeps local-dev access
+      # (localhost:5010-5012) working.
+      - "127.0.0.1:5010-5012:${BLAZOR_CONTAINER_PORT}"
     depends_on:
       - linteum-api
     networks:
@@ -142,14 +169,18 @@ services:
       context: .
       dockerfile: Linteum.Bots/Dockerfile
     container_name: linteum-bots
-    restart: unless-stopped
+    # P-OPS-05: on-failure, not unless-stopped. With no default command the entrypoint prints
+    # usage and exits 0; on-failure avoids the restart loop that unless-stopped caused, while a
+    # bot that crashes (non-zero) still restarts. Run bots one-shot: `docker compose run --rm`.
+    restart: "on-failure"
     deploy:
       resources:
         limits:
           memory: 256M
     environment:
       - BOT_API_URL=http://${API_CONTAINER_NAME}:${API_CONTAINER_PORT}
-      - BOT_MASTER_PASSWORD=${MASTER_PASSWORD}
+      - BOT_PASSWORD=${BOT_PASSWORD}
+      - BOT_SERVICE_TOKEN=${BOT_SERVICE_TOKEN}
       - BOT_TIMEOUT_MINUTES=10
     depends_on:
       - linteum-api

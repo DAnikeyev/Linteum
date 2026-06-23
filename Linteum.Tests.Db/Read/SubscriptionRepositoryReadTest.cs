@@ -1,6 +1,6 @@
 using Linteum.Shared.DTO;
 
-namespace Linteum.Tests.Db.Delete
+namespace Linteum.Tests.Db.Read
 {
     internal class SubscriptionRepositoryReadTest : SyntheticDataTest
     {

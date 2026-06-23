@@ -83,29 +83,21 @@ public class PixelChangedEventRepository : IPixelChangedEventRepository
                 return 0;
             }
 
-            var candidateEvents = await _context.PixelChangedEvents
-                .AsNoTracking()
-                .Where(e => pixelIds.Contains(e.PixelId))
-                .Select(e => new { e.Id, e.PixelId, e.ChangedAt })
-                .ToListAsync();
-
-            var eventIdsToDelete = candidateEvents
-                .GroupBy(e => e.PixelId)
-                .SelectMany(g => g
-                    .OrderByDescending(e => e.ChangedAt)
-                    .ThenByDescending(e => e.Id)
-                    .Skip(maxHistoryEntries)
-                    .Select(e => e.Id))
-                .ToList();
-
-            if (eventIdsToDelete.Count == 0)
-            {
-                return 0;
-            }
-
-            return await _context.PixelChangedEvents
-                .Where(e => eventIdsToDelete.Contains(e.Id))
-                .ExecuteDeleteAsync();
+            // Delete everything past the newest `maxHistoryEntries` per pixel, computed entirely
+            // server-side via ROW_NUMBER(), so the history is never materialized into memory (P-PERF-02).
+            // The existing IX on PixelId serves the PARTITION BY scan. Returns rows deleted.
+            var pixelIdArray = pixelIds as Guid[] ?? pixelIds.ToArray();
+            return await _context.Database.ExecuteSqlInterpolatedAsync($@"
+DELETE FROM ""PixelChangedEvents""
+WHERE ""Id"" IN (
+    SELECT ""Id"" FROM (
+        SELECT ""Id"",
+               ROW_NUMBER() OVER (PARTITION BY ""PixelId"" ORDER BY ""ChangedAt"" DESC, ""Id"" DESC) AS rn
+        FROM ""PixelChangedEvents""
+        WHERE ""PixelId"" = ANY({pixelIdArray})
+    ) AS ranked
+    WHERE ranked.rn > {maxHistoryEntries}
+)");
         }
         catch (Exception ex)
         {

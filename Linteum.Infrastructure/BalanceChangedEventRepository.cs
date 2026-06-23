@@ -53,33 +53,15 @@ public class BalanceChangedEventRepository : IBalanceChangedEventRepository
             await using var transaction = await _context.Database.BeginTransactionAsync();
             try
             {
-                var lastEntry = await _context.BalanceChangedEvents
-                    .Where(e => e.UserId == userId && e.CanvasId == canvasId)
-                    .OrderByDescending(e => e.ChangedAt)
-                    .ThenByDescending(e => e.Id)
-                    .FirstOrDefaultAsync();
-
-                var newBalance = lastEntry?.NewBalance + delta ?? delta;
-                if (newBalance < 0)
+                var result = await TryChangeBalanceCoreAsync(userId, canvasId, delta, reason);
+                if (result == null)
                 {
                     await transaction.RollbackAsync();
                     return null;
                 }
 
-                var newEvent = new BalanceChangedEvent
-                {
-                    Id = Guid.NewGuid(),
-                    UserId = userId,
-                    CanvasId = canvasId,
-                    ChangedAt = DateTime.UtcNow,
-                    NewBalance = newBalance,
-                    OldBalance = lastEntry?.NewBalance ?? 0,
-                    Reason = reason,
-                };
-                await _context.BalanceChangedEvents.AddAsync(newEvent);
-                await _context.SaveChangesAsync();
                 await transaction.CommitAsync();
-                return _mapper.Map<BalanceChangedEventDto>(newEvent);
+                return result;
             }
             catch (DbUpdateException ex)
             {
@@ -88,5 +70,34 @@ public class BalanceChangedEventRepository : IBalanceChangedEventRepository
                 return null;
             }
         });
+    }
+
+    public async Task<BalanceChangedEventDto?> TryChangeBalanceCoreAsync(Guid userId, Guid canvasId, long delta, BalanceChangedReason reason)
+    {
+        var lastEntry = await _context.BalanceChangedEvents
+            .Where(e => e.UserId == userId && e.CanvasId == canvasId)
+            .OrderByDescending(e => e.ChangedAt)
+            .ThenByDescending(e => e.Id)
+            .FirstOrDefaultAsync();
+
+        var newBalance = (lastEntry?.NewBalance ?? 0) + delta;
+        if (newBalance < 0)
+        {
+            return null;
+        }
+
+        var newEvent = new BalanceChangedEvent
+        {
+            Id = Guid.NewGuid(),
+            UserId = userId,
+            CanvasId = canvasId,
+            ChangedAt = DateTime.UtcNow,
+            NewBalance = newBalance,
+            OldBalance = lastEntry?.NewBalance ?? 0,
+            Reason = reason,
+        };
+        await _context.BalanceChangedEvents.AddAsync(newEvent);
+        await _context.SaveChangesAsync();
+        return _mapper.Map<BalanceChangedEventDto>(newEvent);
     }
 }

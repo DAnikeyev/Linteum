@@ -1,3 +1,4 @@
+using Linteum.Api.Attributes;
 using Linteum.Infrastructure;
 using Microsoft.AspNetCore.Mvc;
 
@@ -5,6 +6,7 @@ namespace Linteum.Api.Controllers;
 
 [ApiController]
 [Route("[controller]")]
+[DisabledEndpoint]
 public class SubscriptionsController : ControllerBase
 {
     private readonly RepositoryManager _repoManager;

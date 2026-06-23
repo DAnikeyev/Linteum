@@ -67,45 +67,28 @@ public partial class CanvasPage : ComponentBase, IAsyncDisposable
     private string? _connectedGroup;
     private List<string> _onlineUsers = [];
 
-    private ElementReference _canvasRef;
-    private ElementReference _overlayRef;
-    private CanvasRenderer? _renderer;
-
-    private ElementReference _viewportHostRef;
-    private ElementReference _viewportRef;
-    private ElementReference _rendererRef;
-    private ElementReference _coordsDisplayRef;
-
-    private double ViewportWidth { get; set; } = 900;
-    private double ViewportHeight { get; set; } = 600;
+    // Realtime connection / reconcile state (P-RT-02/03/04 + load-gap fix).
+    private HubConnectionStatus _connectionStatus = HubConnectionStatus.Connecting;
+    private long _lastReconciledSeq;
+    private bool _reconcileInProgress;
 
     private bool _hasRendered;
     private bool _canvasReady;
     private string _lastSidebarMargin = "0px";
-    private bool _isMobileLayout;
     private List<ColorDto>? _colors;
-    private TextCaretPreviewState _textCaretPreview = TextCaretPreviewState.Hidden;
     private DotNetObjectReference<CanvasPage>? _objRef;
     private string? _resizeListenerId;
     private int _canvasLoadVersion;
-    private bool _jsViewportInitialized;
-    private bool _pendingViewportRefresh = true;
-    private bool _rendererInitializationInProgress;
-    private bool _interactiveReady;
-    private bool _interactiveInitializationInProgress;
-    private bool _pendingCanvasLoad = true;
     private int _disposeState;
-    private CancellationTokenSource? _canvasInitializationTimeoutCts;
-    private bool _isBrushEnabled;
-    private bool _isEraserBrushEnabled;
-    private bool _isTextSelectionPersistenceEnabled;
-    private int _selectedEraserSize = 1;
-    private string? _selectedBrushColorHex;
     private CanvasMaintenanceProgressDto? _maintenanceProgress;
     private bool _suppressNextEraseNotification;
     private bool _suppressNextDeleteNotification;
     private bool _isHandlingCanvasErase;
     private bool _isHandlingCanvasDelete;
+
+    // Brush / eraser flush plumbing — owned here because the lifecycle methods
+    // (OnParametersSetAsync / OnInitializedAsync / DisposeAsync) set up and tear
+    // it down. The brush/eraser *behavior* lives in CanvasPage.Brush.cs.
     private readonly HashSet<(int X, int Y)> _brushStrokePixels = [];
     private readonly List<(int X, int Y, int ColorId, string ColorHex)> _pendingBrushPixels = [];
     private readonly HashSet<(int X, int Y)> _pendingErasePixels = [];
@@ -135,7 +118,6 @@ public partial class CanvasPage : ComponentBase, IAsyncDisposable
     private const string CanvasMaintenanceProgressEventName = "CanvasMaintenanceProgress";
     private const string ReceiveConfirmedPixelPlaybackBatchEventName = "ReceiveConfirmedPixelPlaybackBatch";
     private const string ReceiveConfirmedPixelDeletionPlaybackBatchEventName = "ReceiveConfirmedPixelDeletionPlaybackBatch";
-    private static readonly TimeSpan CanvasInitializationTimeout = TimeSpan.FromSeconds(20);
     private static readonly TimeSpan BrushFlushInterval = TimeSpan.FromMilliseconds(75);
     private static readonly TimeSpan EraseFlushInterval = TimeSpan.FromMilliseconds(200);
     private Task? _brushFlushLoopTask;
@@ -143,10 +125,21 @@ public partial class CanvasPage : ComponentBase, IAsyncDisposable
     private Task? _confirmedPlaybackLoopTask;
 
     private PixelManager? _pixelManager;
-    private bool IsDragToolEnabled => _isBrushEnabled || _isEraserBrushEnabled;
-    private bool ShowTextCaret => _canvas?.CanvasMode == CanvasMode.FreeDraw && _clickedPixel.HasValue && _textCaretPreview.IsVisible;
     private CanvasChatLobbyState CurrentChatState => CanvasChatState.GetState(_canvas?.Name ?? canvasName);
     private bool IsDisposed => Volatile.Read(ref _disposeState) != 0;
+
+    private enum HubConnectionStatus { Connecting, Connected, Reconnecting, Disconnected }
+
+    private bool IsCurrentCanvasByName(string canvasNameValue)
+    {
+        if (IsDisposed)
+        {
+            return false;
+        }
+
+        var current = _canvas?.Name ?? canvasName;
+        return string.Equals(current, canvasNameValue, StringComparison.Ordinal);
+    }
 
     private bool IsCurrentCanvasLoad(int loadVersion, CanvasDto? canvasSnapshot = null)
     {
@@ -170,11 +163,6 @@ public partial class CanvasPage : ComponentBase, IAsyncDisposable
         return ex.Message.Contains("is not found", StringComparison.OrdinalIgnoreCase);
     }
 
-    private string GetCanvasImageUrl(string canvasNameValue)
-    {
-        return $"{NavigationManager.BaseUri.TrimEnd('/')}/_canvas-image/{Uri.EscapeDataString(canvasNameValue)}";
-    }
-
     private async Task RequestRenderAsync()
     {
         if (IsDisposed)
@@ -185,76 +173,6 @@ public partial class CanvasPage : ComponentBase, IAsyncDisposable
         try
         {
             await InvokeAsync(StateHasChanged);
-        }
-        catch (Exception ex) when (IsExpectedUiShutdownException(ex) || IsDisposed)
-        {
-        }
-    }
-
-    private void RestartCanvasInitializationTimeout(string requestedCanvasName, int loadVersion)
-    {
-        CancelCanvasInitializationTimeout();
-
-        if (IsDisposed)
-        {
-            return;
-        }
-
-        var cancellationTokenSource = new CancellationTokenSource();
-        _canvasInitializationTimeoutCts = cancellationTokenSource;
-        _ = WatchCanvasInitializationTimeoutAsync(requestedCanvasName, loadVersion, cancellationTokenSource.Token);
-    }
-
-    private void CancelCanvasInitializationTimeout()
-    {
-        var cancellationTokenSource = Interlocked.Exchange(ref _canvasInitializationTimeoutCts, null);
-        if (cancellationTokenSource == null)
-        {
-            return;
-        }
-
-        try
-        {
-            cancellationTokenSource.Cancel();
-        }
-        catch (ObjectDisposedException)
-        {
-        }
-
-        cancellationTokenSource.Dispose();
-    }
-
-    private async Task WatchCanvasInitializationTimeoutAsync(string requestedCanvasName, int loadVersion, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await Task.Delay(CanvasInitializationTimeout, cancellationToken);
-        }
-        catch (OperationCanceledException)
-        {
-            return;
-        }
-
-        if (cancellationToken.IsCancellationRequested || IsDisposed)
-        {
-            return;
-        }
-
-        if (loadVersion != Volatile.Read(ref _canvasLoadVersion)
-            || !string.Equals(requestedCanvasName, canvasName, StringComparison.Ordinal)
-            || _canvasReady)
-        {
-            return;
-        }
-
-        _nlog.Warn(
-            "Canvas {CanvasName} did not initialize within {TimeoutSeconds} seconds. Reloading page.",
-            requestedCanvasName,
-            CanvasInitializationTimeout.TotalSeconds);
-
-        try
-        {
-            await InvokeAsync(() => NavigationManager.NavigateTo(NavigationManager.Uri, forceLoad: true));
         }
         catch (Exception ex) when (IsExpectedUiShutdownException(ex) || IsDisposed)
         {
@@ -350,6 +268,7 @@ public partial class CanvasPage : ComponentBase, IAsyncDisposable
 
                 _pendingViewportRefresh = true;
                 _canvasReady = true;
+                _initTimedOut = false;
                 CancelCanvasInitializationTimeout();
                 await RequestRenderAsync();
                 return;
@@ -383,102 +302,6 @@ public partial class CanvasPage : ComponentBase, IAsyncDisposable
             }
 
             await RequestRenderAsync();
-        }
-    }
-
-    private async Task InitJsViewport(int loadVersion)
-    {
-        var canvasSnapshot = _canvas;
-        var objRefSnapshot = _objRef;
-        if (canvasSnapshot == null || objRefSnapshot == null || !IsCurrentCanvasLoad(loadVersion, canvasSnapshot))
-        {
-            return;
-        }
-
-        await JSRuntime.InvokeVoidAsync(
-            "canvasViewport.init",
-            objRefSnapshot,
-            _viewportRef,
-            _rendererRef,
-            _coordsDisplayRef,
-            canvasSnapshot.Width,
-            canvasSnapshot.Height,
-            ViewportWidth,
-            ViewportHeight);
-
-        if (!IsCurrentCanvasLoad(loadVersion, canvasSnapshot))
-        {
-            return;
-        }
-
-        _jsViewportInitialized = true;
-        await SyncBrushModeAsync();
-        await SyncTextModeStateAsync();
-    }
-
-    [JSInvokable]
-    public async Task OnWindowResize()
-    {
-        if (IsDisposed)
-        {
-            return;
-        }
-
-        await CalculateViewportDimensions();
-        if (IsDisposed)
-        {
-            return;
-        }
-
-        if (_jsViewportInitialized)
-        {
-            try
-            {
-                await JSRuntime.InvokeVoidAsync("canvasViewport.fitCanvas", ViewportWidth, ViewportHeight);
-            }
-            catch (Exception ex) when (IsExpectedUiShutdownException(ex))
-            {
-                return;
-            }
-        }
-
-        await RequestRenderAsync();
-    }
-
-    private async Task CalculateViewportDimensions()
-    {
-        try
-        {
-            var layoutMetrics = await JSRuntime.InvokeAsync<LayoutMetrics>("canvasHelpers.getLayoutMetrics");
-            _isMobileLayout = layoutMetrics.WindowWidth <= 768;
-
-            var hostSize = await JSRuntime.InvokeAsync<ElementSize>("canvasHelpers.getElementSize", _viewportHostRef);
-            if (hostSize.Width > 0 && hostSize.Height > 0)
-            {
-                ViewportWidth = Math.Max(100, hostSize.Width);
-                ViewportHeight = Math.Max(100, hostSize.Height);
-                return;
-            }
-
-            const double safetyPadding = 2;
-            if (_isMobileLayout)
-            {
-                const double mobileBottomSheetHeader = 56;
-                ViewportWidth = Math.Max(100, layoutMetrics.WindowWidth - layoutMetrics.MainHPad - safetyPadding);
-                ViewportHeight = Math.Max(100, layoutMetrics.WindowHeight - layoutMetrics.MainVPad - mobileBottomSheetHeader - safetyPadding);
-            }
-            else
-            {
-                ViewportWidth = Math.Max(100, layoutMetrics.WindowWidth - layoutMetrics.PixelManagerWidth - layoutMetrics.MainHPad - safetyPadding);
-                ViewportHeight = Math.Max(100, layoutMetrics.WindowHeight - layoutMetrics.MainVPad - safetyPadding);
-            }
-        }
-        catch (Exception ex) when (IsExpectedUiShutdownException(ex))
-        {
-        }
-        catch (Exception ex)
-        {
-            _nlog.Warn(ex, "Failed to calculate viewport dimensions");
         }
     }
 
@@ -518,6 +341,7 @@ public partial class CanvasPage : ComponentBase, IAsyncDisposable
         _canvasReady = false;
         _canvas = null;
         _loadedCanvasName = null;
+        _initTimedOut = false;
         _pendingViewportRefresh = true;
         _pendingCanvasLoad = true;
         _rendererInitializationInProgress = false;
@@ -538,276 +362,6 @@ public partial class CanvasPage : ComponentBase, IAsyncDisposable
         }
 
         await LoadRequestedCanvasAsync(requestedCanvasName, loadVersion);
-    }
-
-    private async Task LoadRequestedCanvasAsync(string requestedCanvasName, int loadVersion)
-    {
-        if (!_interactiveReady || IsDisposed)
-        {
-            _pendingCanvasLoad = true;
-            return;
-        }
-
-        _pendingCanvasLoad = false;
-
-        try
-        {
-            _colors ??= await ApiClient.GetColorsAsync();
-            if (loadVersion != _canvasLoadVersion || requestedCanvasName != canvasName || IsDisposed)
-            {
-                return;
-            }
-
-            var loadedCanvas = await ApiClient.GetCanvas(requestedCanvasName);
-            if (loadVersion != _canvasLoadVersion || requestedCanvasName != canvasName || IsDisposed)
-            {
-                return;
-            }
-
-            _canvas = loadedCanvas;
-            _loadedCanvasName = requestedCanvasName;
-            if (Sidebar != null)
-            {
-                await Sidebar.RefreshCanvases();
-            }
-            if (_canvas.CanvasMode != CanvasMode.FreeDraw)
-            {
-                _isBrushEnabled = false;
-                _isEraserBrushEnabled = false;
-            }
-
-            await RefreshGoldAsync();
-            await LoadCanvasImage(loadVersion);
-
-            if (_hubConnection?.State == HubConnectionState.Connected && _connectedGroup != requestedCanvasName)
-            {
-                if (!string.IsNullOrEmpty(_connectedGroup))
-                {
-                    await _hubConnection.InvokeAsync("LeaveCanvasGroup", _connectedGroup);
-                }
-
-                await _hubConnection.InvokeAsync("JoinCanvasGroup", requestedCanvasName);
-                _connectedGroup = requestedCanvasName;
-            }
-
-            _clickedPixel = null;
-            _clickedPixelData = null;
-
-            if (_hasRendered && _renderer != null)
-            {
-                await InitJsViewport(loadVersion);
-            }
-        }
-        catch (Exception ex)
-        {
-            if (IsCanvasNotFoundException(ex))
-            {
-                await HandleMissingCanvasAsync(requestedCanvasName, loadVersion);
-                return;
-            }
-
-            _nlog.Warn(ex, "Failed to load canvas {CanvasName}", canvasName);
-        }
-    }
-
-    private async Task HandleMissingCanvasAsync(string requestedCanvasName, int loadVersion)
-    {
-        if (loadVersion != _canvasLoadVersion || requestedCanvasName != canvasName || IsDisposed)
-        {
-            return;
-        }
-
-        CancelCanvasInitializationTimeout();
-        _canvasReady = true;
-        _loadedCanvasName = null;
-        await RequestRenderAsync();
-
-        await NotificationService.NotifyAsync(new CustomNotification
-        {
-            Message = "Canvas with this name does not exist. Returning to home",
-            Type = NotificationType.Error,
-        });
-
-        try
-        {
-            await Task.Delay(500);
-        }
-        catch (TaskCanceledException)
-        {
-            return;
-        }
-
-        if (loadVersion != _canvasLoadVersion || requestedCanvasName != canvasName || IsDisposed)
-        {
-            return;
-        }
-
-        NavigationManager.NavigateTo(DefaultConfig.DefaultPage, replace: true);
-    }
-
-    private async Task LoadCanvasImage(int? loadVersion = null)
-    {
-        if (_canvas == null || _renderer == null)
-        {
-            return;
-        }
-
-        var canvasSnapshot = _canvas;
-        var versionSnapshot = loadVersion ?? _canvasLoadVersion;
-        try
-        {
-            var imageUrl = GetCanvasImageUrl(canvasSnapshot.Name);
-            if (!IsCurrentCanvasLoad(versionSnapshot, canvasSnapshot) || _renderer == null)
-            {
-                return;
-            }
-
-            await _renderer.LoadImageFromUrlAsync(imageUrl, _currentSessionId);
-        }
-        catch (Exception ex) when (IsExpectedUiShutdownException(ex) || !IsCurrentCanvasLoad(versionSnapshot, canvasSnapshot))
-        {
-        }
-        catch (Exception ex)
-        {
-            _nlog.Warn(ex, "Failed to load image for canvas {CanvasName}", canvasName);
-        }
-    }
-
-    private async Task HandleBrushToggledAsync(bool isEnabled)
-    {
-        var shouldResetStroke = !isEnabled || _isEraserBrushEnabled;
-        _isBrushEnabled = isEnabled;
-        if (isEnabled)
-        {
-            _isEraserBrushEnabled = false;
-        }
-
-        if (shouldResetStroke)
-        {
-            ResetBrushStroke();
-        }
-
-        await SyncBrushModeAsync();
-        await InvokeAsync(StateHasChanged);
-    }
-
-    private async Task HandleEraserBrushToggledAsync(bool isEnabled)
-    {
-        var shouldResetStroke = !isEnabled || _isBrushEnabled;
-        _isEraserBrushEnabled = isEnabled;
-        if (isEnabled)
-        {
-            _isBrushEnabled = false;
-        }
-
-        if (shouldResetStroke)
-        {
-            ResetBrushStroke();
-        }
-
-        await SyncBrushModeAsync();
-        await InvokeAsync(StateHasChanged);
-    }
-
-    private Task HandleSelectedEraserSizeChangedAsync(int size)
-    {
-        _selectedEraserSize = size;
-        return SyncBrushPreviewAndStateAsync();
-    }
-
-    private Task HandleSelectedBrushColorHexChangedAsync(string? colorHex)
-    {
-        _selectedBrushColorHex = colorHex;
-        return SyncBrushPreviewAndStateAsync();
-    }
-
-    private Task HandleTextCaretPreviewChanged(TextCaretPreviewState state)
-    {
-        _textCaretPreview = state;
-        return SyncTextCaretPreviewAsync();
-    }
-
-    private Task HandleTextSelectionPersistenceChanged(bool isEnabled)
-    {
-        _isTextSelectionPersistenceEnabled = isEnabled;
-        return SyncTextModeStateAsync();
-    }
-
-    private async Task SyncTextCaretPreviewAsync()
-    {
-        await SyncTextModeStateAsync();
-        await InvokeAsync(StateHasChanged);
-    }
-
-    private async Task SyncTextModeStateAsync()
-    {
-        if (!_jsViewportInitialized)
-        {
-            return;
-        }
-
-        try
-        {
-            await JSRuntime.InvokeVoidAsync("canvasViewport.setSelectionPersistence", _isTextSelectionPersistenceEnabled);
-        }
-        catch (Exception ex)
-        {
-            _nlog.Warn(ex, "Failed to sync text selection persistence to canvas viewport");
-        }
-    }
-
-    private async Task SyncBrushModeAsync()
-    {
-        if (!_jsViewportInitialized)
-        {
-            return;
-        }
-
-        try
-        {
-            await JSRuntime.InvokeVoidAsync("canvasViewport.setBrushEnabled", IsDragToolEnabled);
-            await JSRuntime.InvokeVoidAsync("canvasViewport.setBrushPreview", _isEraserBrushEnabled, _selectedBrushColorHex, _selectedEraserSize);
-        }
-        catch (Exception ex)
-        {
-            _nlog.Warn(ex, "Failed to sync brush mode to canvas viewport");
-        }
-    }
-
-    private async Task SyncBrushPreviewAndStateAsync()
-    {
-        await SyncBrushModeAsync();
-        await InvokeAsync(StateHasChanged);
-    }
-
-    private void ResetBrushStroke()
-    {
-        lock (_brushStrokeLock)
-        {
-            _brushStrokeActive = false;
-            _brushStrokePixels.Clear();
-            _activeStrokeId = null;
-            _strokeChunkSequence = 0;
-            _strokeChunkStartedAtUtc = default;
-        }
-    }
-
-    private string GetTextCaretStyle()
-    {
-        if (!_clickedPixel.HasValue || _canvas == null)
-        {
-            return string.Empty;
-        }
-
-        var x = _clickedPixel.Value.X + _textCaretPreview.Margin;
-        var y = _clickedPixel.Value.Y + _textCaretPreview.Margin;
-        var color = string.IsNullOrWhiteSpace(_textCaretPreview.ColorHex) ? "#1e4f9d" : _textCaretPreview.ColorHex;
-        return string.Join(' ',
-            $"left:calc({x} * 100% / {_canvas.Width});",
-            $"top:calc({y} * 100% / {_canvas.Height});",
-            $"width:max(1px, calc(100% / {_canvas.Width}));",
-            $"height:max(1px, calc({Math.Max(1, _textCaretPreview.LineHeight)} * 100% / {_canvas.Height}));",
-            $"background:{color};");
     }
 
     public async ValueTask DisposeAsync()
@@ -903,31 +457,4 @@ public partial class CanvasPage : ComponentBase, IAsyncDisposable
             await _hubConnection.DisposeAsync();
         }
     }
-
-    private sealed class ConfirmedPlaybackWorkItem
-    {
-        public List<PixelDto> Pixels { get; init; } = [];
-        public List<CoordinateDto> Coordinates { get; init; } = [];
-        public bool IsDeletion { get; init; }
-        public int DurationMs { get; init; }
-
-        public static ConfirmedPlaybackWorkItem FromPixels(ConfirmedPixelPlaybackBatchDto playbackBatch) => new()
-        {
-            Pixels = playbackBatch.Pixels,
-            DurationMs = playbackBatch.DurationMs,
-        };
-
-        public static ConfirmedPlaybackWorkItem FromDeletes(ConfirmedPixelDeletionPlaybackBatchDto playbackBatch) => new()
-        {
-            Coordinates = playbackBatch.Coordinates,
-            IsDeletion = true,
-            DurationMs = playbackBatch.DurationMs,
-        };
-    }
-
-    private sealed record ElementSize(double Width, double Height);
-    private sealed record LayoutMetrics(double WindowWidth, double WindowHeight, double MainHPad, double MainVPad, double PixelManagerWidth);
 }
-
-
-

@@ -16,7 +16,7 @@ internal class UserRepositoryReadTest : SyntheticDataTest
             UserName = "TestUser",
             LoginMethod = LoginMethod.Password,
         };
-        var passwordDto = new UserPaswordDto
+        var passwordDto = new UserPasswordDto
         {
             PasswordHashOrKey = "hash",
             LoginMethod = LoginMethod.Password,
@@ -45,7 +45,7 @@ internal class UserRepositoryReadTest : SyntheticDataTest
             UserName = "TestUser",
             LoginMethod = LoginMethod.Password,
         };
-        var passwordDto = new UserPaswordDto
+        var passwordDto = new UserPasswordDto
         {
             PasswordHashOrKey = "hash",
             LoginMethod = LoginMethod.Password,
@@ -58,7 +58,7 @@ internal class UserRepositoryReadTest : SyntheticDataTest
             Id = newUser!.Id,
             LoginMethod = LoginMethod.Password,
         };
-        var loginPasswordDto = new UserPaswordDto
+        var loginPasswordDto = new UserPasswordDto
         {
             PasswordHashOrKey = "hash",
             LoginMethod = LoginMethod.Password,
@@ -93,7 +93,7 @@ internal class UserRepositoryReadTest : SyntheticDataTest
             UserName = "TestUser",
             LoginMethod = LoginMethod.Password,
         };
-        var passwordDto = new UserPaswordDto
+        var passwordDto = new UserPasswordDto
         {
             PasswordHashOrKey = "hash",
             LoginMethod = LoginMethod.Password,
@@ -106,7 +106,7 @@ internal class UserRepositoryReadTest : SyntheticDataTest
             Id = newUser!.Id,
             LoginMethod = LoginMethod.Password,
         };
-        var loginPasswordDto = new UserPaswordDto
+        var loginPasswordDto = new UserPasswordDto
         {
             PasswordHashOrKey = "wronghash",
             LoginMethod = LoginMethod.Password,

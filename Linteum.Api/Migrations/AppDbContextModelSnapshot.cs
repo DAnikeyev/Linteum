@@ -119,6 +119,9 @@ namespace Linteum.Api.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("HexValue")
+                        .IsUnique();
+
                     b.ToTable("Colors");
                 });
 
@@ -176,6 +179,8 @@ namespace Linteum.Api.Migrations
 
                     b.HasIndex("CanvasId");
 
+                    b.HasIndex("ColorId");
+
                     b.HasIndex("OwnerId");
 
                     b.HasIndex("CanvasId", "X", "Y")
@@ -214,6 +219,10 @@ namespace Linteum.Api.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("ChangedAt");
+
+                    b.HasIndex("NewColorId");
+
+                    b.HasIndex("OldColorId");
 
                     b.HasIndex("OldOwnerUserId");
 
@@ -328,17 +337,37 @@ namespace Linteum.Api.Migrations
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
 
+                    b.HasOne("Linteum.Domain.Color", "Color")
+                        .WithMany()
+                        .HasForeignKey("ColorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("Linteum.Domain.User", "Owner")
                         .WithMany()
                         .HasForeignKey("OwnerId");
 
                     b.Navigation("Canvas");
 
+                    b.Navigation("Color");
+
                     b.Navigation("Owner");
                 });
 
             modelBuilder.Entity("Linteum.Domain.PixelChangedEvent", b =>
                 {
+                    b.HasOne("Linteum.Domain.Color", "NewColor")
+                        .WithMany()
+                        .HasForeignKey("NewColorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Linteum.Domain.Color", "OldColor")
+                        .WithMany()
+                        .HasForeignKey("OldColorId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
                     b.HasOne("Linteum.Domain.User", "OldOwnerUser")
                         .WithMany()
                         .HasForeignKey("OldOwnerUserId");
@@ -354,6 +383,10 @@ namespace Linteum.Api.Migrations
                         .HasForeignKey("PixelId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.Navigation("NewColor");
+
+                    b.Navigation("OldColor");
 
                     b.Navigation("OldOwnerUser");
 
