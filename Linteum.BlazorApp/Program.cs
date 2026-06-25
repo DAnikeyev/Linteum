@@ -62,6 +62,7 @@ try
     builder.Services.AddScoped<ApiHttp>();
     builder.Services.AddScoped<PixelCacheManager>();
     builder.Services.AddScoped<SessionStore>();
+    builder.Services.AddSingleton<ColorsCache>();
     builder.Services.AddScoped<ColorsRepository>();
     builder.Services.AddScoped<CanvasesRepository>();
     builder.Services.AddScoped<SubscriptionsRepository>();
@@ -86,6 +87,8 @@ try
     logger.Info("Razor Components and Interactive Server Components added");
 
     var app = builder.Build();
+
+    logger.Info("Now listening on: {Urls}", string.Join(", ", app.Urls));
 
     if (!app.Environment.IsDevelopment())
     {
@@ -122,6 +125,11 @@ try
 
         var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         var contentType = response.Content.Headers.ContentType?.ToString() ?? "image/png";
+
+        // Let the browser reuse the image for quick revisits/navigation. The image content is global
+        // per canvas; 'private' keeps proxies/CDNs out of this auth-gated response. Re-reads beyond
+        // the window re-fetch and hit the (now cached) API, with client reconcile covering the gap.
+        httpContext.Response.Headers.CacheControl = "private, max-age=30";
 
         httpContext.Response.RegisterForDispose(response);
         return Results.Stream(stream, contentType);

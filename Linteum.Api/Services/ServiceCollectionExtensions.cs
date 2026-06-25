@@ -21,6 +21,9 @@ namespace Linteum.Api.Services
             
             services.AddMemoryCache();
             services.AddSingleton<ICanvasWriteCoordinator, CanvasWriteCoordinator>();
+            services.AddSingleton<CanvasImageCache>();
+            services.AddSingleton<ICanvasImageCache>(sp => sp.GetRequiredService<CanvasImageCache>());
+            services.AddSingleton<IHostedService>(sp => sp.GetRequiredService<CanvasImageCache>());
             services.AddSingleton(Channel.CreateUnbounded<PixelDto>());
             services.AddSingleton<PixelChangeCounterService>();
             services.AddSingleton<IPixelChangeCounter>(sp => sp.GetRequiredService<PixelChangeCounterService>());

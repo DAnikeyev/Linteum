@@ -85,6 +85,11 @@ public class CanvasSeedQueueService : BackgroundService, ICanvasSeedQueue
             using var scope = _scopeFactory.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var notifier = scope.ServiceProvider.GetRequiredService<IPixelNotifier>();
+            var imageCache = scope.ServiceProvider.GetService<ICanvasImageCache>();
+
+            // The canvas may have been viewed (and cached) between creation and seeding; drop any
+            // partial entry so the post-seed state is rendered from truth.
+            imageCache?.Remove(request.CanvasName);
 
             var palette = await dbContext.Colors
                 .AsNoTracking()
@@ -221,6 +226,10 @@ public class CanvasSeedQueueService : BackgroundService, ICanvasSeedQueue
                     .ExecuteUpdateAsync(setters => setters
                         .SetProperty(canvasEntity => canvasEntity.UpdatedAt, DateTime.UtcNow), stoppingToken);
             }, stoppingToken);
+
+            // Seeding wrote pixels via bulk SQL (not the per-pixel write-through path); drop the cache
+            // so the next read renders the fully-seeded canvas from truth.
+            imageCache?.Remove(request.CanvasName);
 
             _logger.LogInformation(
                 "Processed queued canvas seed for {CanvasName}. Creator={CreatorUserName}, SeededPixels={SeededPixels}, CanvasMode={CanvasMode}",

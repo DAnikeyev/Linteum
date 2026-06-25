@@ -262,12 +262,14 @@ public partial class CanvasPage
     private Task HandleCanvasErasedLocallyAsync()
     {
         _suppressNextEraseNotification = true;
+        _canvasMutationPendingConfirmation = true;
         return HandleCanvasErasedAsync(showNotification: false);
     }
 
     private Task HandleCanvasDeletedLocallyAsync()
     {
         _suppressNextDeleteNotification = true;
+        _canvasMutationPendingConfirmation = true;
         return HandleCanvasDeletedAsync(showNotification: false);
     }
 
@@ -281,6 +283,7 @@ public partial class CanvasPage
 
         var showNotification = !_suppressNextEraseNotification;
         _suppressNextEraseNotification = false;
+        _canvasMutationPendingConfirmation = false;
         return HandleCanvasErasedAsync(showNotification);
     }
 
@@ -294,6 +297,7 @@ public partial class CanvasPage
 
         var showNotification = !_suppressNextDeleteNotification;
         _suppressNextDeleteNotification = false;
+        _canvasMutationPendingConfirmation = false;
         return HandleCanvasDeletedAsync(showNotification);
     }
 
@@ -325,6 +329,7 @@ public partial class CanvasPage
 
             _maintenanceProgress = null;
             _clickedPixelData = null;
+            _canvasImageVersion++;
             await LoadCanvasImage();
 
             if (showNotification)
@@ -453,6 +458,7 @@ public partial class CanvasPage
         if (subscriptionSeq > 0 && _lastReconciledSeq > 0 && subscriptionSeq <= _lastReconciledSeq)
         {
             _nlog.Info("Canvas {CanvasName} event sequence reset (server restart?); reloading image.", currentName);
+            _canvasImageVersion++;
             await LoadCanvasImage();
             _lastReconciledSeq = subscriptionSeq;
             await RequestRenderAsync();

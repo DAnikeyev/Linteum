@@ -407,7 +407,12 @@ public partial class PixelManager
         try
         {
             var result = await ApiClient.EraseCanvasAsync(Canvas.Name);
-            if (result.Completed && OnCanvasErased.HasDelegate)
+
+            // The erase is always queued (Completed=false); clear the local canvas
+            // immediately so the user sees a blank canvas without waiting for the
+            // SignalR broadcast. The background job finishes shortly and confirms
+            // via SignalR — the suppress flag prevents double-processing.
+            if (OnCanvasErased.HasDelegate)
             {
                 await OnCanvasErased.InvokeAsync();
             }
@@ -447,7 +452,8 @@ public partial class PixelManager
         try
         {
             var result = await ApiClient.DeleteCanvasAsync(Canvas.Name);
-            if (result.Completed && OnCanvasDeleted.HasDelegate)
+
+            if (OnCanvasDeleted.HasDelegate)
             {
                 await OnCanvasDeleted.InvokeAsync();
             }

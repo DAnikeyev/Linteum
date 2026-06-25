@@ -90,7 +90,12 @@ public class DailyCleanupService : BackgroundService
                         candidate.Id,
                         candidate.UpdatedAt);
 
-                    await repositoryManager.CanvasRepository.TryDeleteCanvasGraduallyAsync(candidate.Id, stoppingToken);
+                    var graduallyDeleted = await repositoryManager.CanvasRepository.TryDeleteCanvasGraduallyAsync(candidate.Id, stoppingToken);
+                    if (graduallyDeleted)
+                    {
+                        // Drop the cached image so a later read sees the canvas as gone instead of a stale snapshot.
+                        scope.ServiceProvider.GetService<ICanvasImageCache>()?.Remove(candidate.Name);
+                    }
                     await Task.Delay(CanvasDelay, stoppingToken);
                 }
 

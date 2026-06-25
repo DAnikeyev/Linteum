@@ -163,6 +163,11 @@ public class CanvasMaintenanceQueueService : BackgroundService, ICanvasMaintenan
                 workItem.Request.CanvasName,
                 workItem.Request.CanvasId,
                 stopwatch.ElapsedMilliseconds);
+
+            // Bulk DB mutation bypassed the per-pixel write-through hooks, so drop the cached image;
+            // the next read re-renders the (erased / now-empty) canvas from truth.
+            scope.ServiceProvider.GetService<ICanvasImageCache>()?.Remove(workItem.Request.CanvasName);
+
             await PublishProgressAsync(
                 workItem.Request,
                 workItem.Operation,

@@ -18,7 +18,7 @@ public class RepositoryManager
     public IPixelRepository PixelRepository { get; }
     
     
-    public RepositoryManager(AppDbContext context, IMapper mapper, Config config, ILoggerFactory loggerFactory, IPixelNotifier pixelNotifier, IMemoryCache cache, ICanvasWriteCoordinator canvasWriteCoordinator)
+    public RepositoryManager(AppDbContext context, IMapper mapper, Config config, ILoggerFactory loggerFactory, IPixelNotifier pixelNotifier, IMemoryCache cache, ICanvasWriteCoordinator canvasWriteCoordinator, ICanvasImageCache? imageCache = null)
     {
         LoginEventRepository = new LoginEventRepository(context, mapper, loggerFactory.CreateLogger<LoginEventRepository>());
         BalanceChangedEventRepository = new BalanceChangedEventRepository(context, mapper, loggerFactory.CreateLogger<BalanceChangedEventRepository>(), canvasWriteCoordinator);
@@ -27,6 +27,6 @@ public class RepositoryManager
         SubscriptionRepository = new SubscriptionRepository(context, mapper, BalanceChangedEventRepository, canvasWriteCoordinator, loggerFactory.CreateLogger<SubscriptionRepository>());
         UserRepository = new UserRepository(context, mapper, BalanceChangedEventRepository, SubscriptionRepository, config, loggerFactory.CreateLogger<UserRepository>());
         PixelChangedEventRepository = new PixelChangedEventRepository(context, mapper, loggerFactory.CreateLogger<PixelChangedEventRepository>());
-        PixelRepository = new PixelRepository(context, mapper, loggerFactory.CreateLogger<PixelRepository>(), pixelNotifier, ColorRepository, BalanceChangedEventRepository, config, canvasWriteCoordinator);
+        PixelRepository = new PixelRepository(context, mapper, loggerFactory.CreateLogger<PixelRepository>(), pixelNotifier, ColorRepository, BalanceChangedEventRepository, config, canvasWriteCoordinator, imageCache);
     }
 }

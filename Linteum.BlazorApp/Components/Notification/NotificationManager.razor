@@ -14,12 +14,18 @@
     private CustomNotification? CurrentNotification;
     private bool Visible;
     private bool NotFading;
-    private bool _listenerStarted = false;
+    private bool _listenerStarted;
 
-    protected override void OnInitialized()
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        Logger.LogInformation("NotificationManager initialized, starting listener.");
-        ListenAsync();
+        // OnAfterRender is NOT invoked during the Blazor Server prerender pass,
+        // so the listener starts only once — on the interactive circuit.
+        if (firstRender && !_listenerStarted)
+        {
+            _listenerStarted = true;
+            Logger.LogInformation("NotificationManager initialized, starting listener.");
+            ListenAsync();
+        }
     }
 
     private async Task ListenAsync()

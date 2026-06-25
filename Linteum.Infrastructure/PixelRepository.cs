@@ -40,8 +40,9 @@ public class PixelRepository : IPixelRepository
     private readonly int _normalModeDailyPixelLimit;
     private readonly int _guestNormalModeDailyPixelLimit;
     private readonly ICanvasWriteCoordinator _canvasWriteCoordinator;
+    private readonly ICanvasImageCache? _imageCache;
 
-    public PixelRepository(AppDbContext context, IMapper mapper, ILogger<PixelRepository> logger, IPixelNotifier notifier, IColorRepository colorRepository, IBalanceChangedEventRepository balanceChangedEventRepository, Config config, ICanvasWriteCoordinator canvasWriteCoordinator)
+    public PixelRepository(AppDbContext context, IMapper mapper, ILogger<PixelRepository> logger, IPixelNotifier notifier, IColorRepository colorRepository, IBalanceChangedEventRepository balanceChangedEventRepository, Config config, ICanvasWriteCoordinator canvasWriteCoordinator, ICanvasImageCache? imageCache = null)
     {
         _context = context;
         _mapper = mapper;
@@ -52,6 +53,7 @@ public class PixelRepository : IPixelRepository
         _normalModeDailyPixelLimit = Math.Max(0, config.NormalModeDailyPixelLimit);
         _guestNormalModeDailyPixelLimit = Math.Max(0, config.GuestNormalModeDailyPixelLimit);
         _canvasWriteCoordinator = canvasWriteCoordinator;
+        _imageCache = imageCache;
     }
 
     private async Task<int?> GetDefaultColorIdAsync()
@@ -235,6 +237,13 @@ public class PixelRepository : IPixelRepository
                 }
             }
 
+            if (batchResult.ChangedPixels.Count > 0 && _imageCache is { } writeCache)
+            {
+                // Keep the in-memory raster in lockstep with the DB commit. Applied inside the
+                // per-canvas coordinator section, so raster mutations are ordered exactly like the
+                // writes and no change is lost.
+                await writeCache.ApplyWritesAsync(canvas.Name, batchResult.ChangedPixels);
+            }
             return batchResult;
         });
 
@@ -317,6 +326,13 @@ public class PixelRepository : IPixelRepository
             if (deletedCount > 0)
             {
                 await TouchCanvasAsync(canvasId, DateTime.UtcNow);
+            }
+
+            if (deletedCount > 0 && _imageCache is { } deleteCache)
+            {
+                // Reflect the deletions on the live raster, inside the same per-canvas coordinator
+                // section as the DB delete so the two stay consistent.
+                await deleteCache.ApplyDeletesAsync(canvas.Name, deletedCoordinates);
             }
 
             _logger.LogInformation("Deleted {Count} pixels and their history from canvas {CanvasName} by user {UserId}", deletedCount, canvas.Name, userId);

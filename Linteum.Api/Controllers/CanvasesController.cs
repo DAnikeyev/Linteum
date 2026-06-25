@@ -11,10 +11,8 @@ using Linteum.Api.Services;
 using Linteum.Api.Models;
 using Linteum.Shared;
 using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.Drawing.Processing;
 using SixLabors.ImageSharp.Formats;
 using SixLabors.ImageSharp.Formats.Jpeg;
-using SixLabors.ImageSharp.Processing;
 
 namespace Linteum.Api.Controllers
 {
@@ -28,9 +26,10 @@ namespace Linteum.Api.Controllers
         private readonly Config _config;
         private readonly ICanvasSeedQueue _canvasSeedQueue;
         private readonly ICanvasMaintenanceQueue _canvasMaintenanceQueue;
+        private readonly ICanvasImageCache _imageCache;
         private const long MaxCanvasImageUploadBytes = 20 * 1024 * 1024;
 
-        public CanvasesController(RepositoryManager repoManager, ILogger<CanvasesController> logger, IOptions<CanvasSizeOptions> canvasSizeOptions, Config config, ICanvasSeedQueue canvasSeedQueue, ICanvasMaintenanceQueue canvasMaintenanceQueue)
+        public CanvasesController(RepositoryManager repoManager, ILogger<CanvasesController> logger, IOptions<CanvasSizeOptions> canvasSizeOptions, Config config, ICanvasSeedQueue canvasSeedQueue, ICanvasMaintenanceQueue canvasMaintenanceQueue, ICanvasImageCache imageCache)
         {
             _logger = logger;
             _canvasSizeOptions = canvasSizeOptions.Value;
@@ -38,6 +37,7 @@ namespace Linteum.Api.Controllers
             _config = config;
             _canvasSeedQueue = canvasSeedQueue;
             _canvasMaintenanceQueue = canvasMaintenanceQueue;
+            _imageCache = imageCache;
         }
 
         [HttpGet]
@@ -501,32 +501,11 @@ namespace Linteum.Api.Controllers
                 return NotFound("Canvas not found.");
             }
 
-            var pixels = _repoManager.PixelRepository.StreamPixelsForCanvasAsync(canvas.Id);
-            var colors = await _repoManager.ColorRepository.GetAllAsync();
-            var colorMap = colors.ToDictionary(c => c.Id, c => Color.ParseHex(c.HexValue));
-
-            using var image = new Image<SixLabors.ImageSharp.PixelFormats.Rgba32>(canvas.Width, canvas.Height);
-
-            image.Mutate(x => x.Fill(Color.White));
-
-            // Stream pixels straight into the raster instead of materializing the whole canvas
-            // into a List<PixelDto> first (P-PERF-01). The PNG raster buffer itself is unavoidable
-            // for an image export; this removes the additional multi-million-object buffer.
-            var cancellationToken = HttpContext.RequestAborted;
-            await foreach (var pixel in pixels)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (colorMap.TryGetValue(pixel.ColorId, out var color))
-                {
-                    image[pixel.X, pixel.Y] = color;
-                }
-            }
-
-            var ms = new MemoryStream();
-            await image.SaveAsPngAsync(ms);
-            ms.Position = 0;
-            _logger.LogInformation("Canvas image for {CanvasName} generated successfully for user {UserId}.", name, userId.Value);
-            return File(ms, "image/png");
+            // Served from the in-memory raster cache (cold-rendered from the DB on first access, then
+            // kept live by write-through on pixel changes). See CanvasImageCache.
+            var cached = await _imageCache.GetOrRenderAsync(canvas.Id, canvas.Name, canvas.Width, canvas.Height, HttpContext.RequestAborted);
+            _logger.LogDebug("Canvas image for {CanvasName} served from cache for user {UserId}.", name, userId.Value);
+            return File(cached.Bytes, cached.ContentType);
         }
 
         

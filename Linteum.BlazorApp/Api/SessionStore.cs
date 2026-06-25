@@ -24,14 +24,23 @@ internal sealed class SessionStore
 
     public async Task SetSessionAsync(Guid? sessionId)
     {
-        _cache.ClearAllCaches();
         if (sessionId.HasValue)
         {
+            // Only clear caches when the session actually changes (login/logout).
+            // Revalidation on page reload with the same sessionId must not flush caches —
+            // it would wipe the pixel cache, history cache, and color cache on every F5.
+            var existingSessionId = await _localStorage.GetItemAsync<string>(LocalStorageKey.SessionId);
+            if (!string.Equals(existingSessionId, sessionId.Value.ToString(), StringComparison.OrdinalIgnoreCase))
+            {
+                _cache.ClearAllCaches();
+            }
+
             await _localStorage.SetItemAsync(LocalStorageKey.SessionId, sessionId.Value.ToString());
             await _localStorage.SetItemAsync(LocalStorageKey.SessionCreatedAt, DateTime.UtcNow);
         }
         else
         {
+            _cache.ClearAllCaches();
             await _localStorage.RemoveItemAsync(LocalStorageKey.SessionId);
             await _localStorage.RemoveItemAsync(LocalStorageKey.UserId);
         }

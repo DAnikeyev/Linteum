@@ -6,31 +6,33 @@ namespace Linteum.BlazorApp.Api;
 internal sealed class ColorsRepository
 {
     private readonly ApiHttp _http;
+    private readonly ColorsCache _sharedCache;
     private readonly PixelCacheManager _cache;
     private readonly ILogger<ColorsRepository> _logger;
 
-    public ColorsRepository(ApiHttp http, PixelCacheManager cache, ILogger<ColorsRepository> logger)
+    public ColorsRepository(ApiHttp http, ColorsCache sharedCache, PixelCacheManager cache, ILogger<ColorsRepository> logger)
     {
         _http = http;
+        _sharedCache = sharedCache;
         _cache = cache;
         _logger = logger;
     }
 
     public async Task<List<ColorDto>?> GetColorsAsync()
     {
-        _logger.LogInformation("GetColorsAsync called");
-        if (_cache.TryGetColors(out var cached))
+        var colors = await _sharedCache.GetOrCreateAsync(FetchFromApiAsync);
+
+        if (colors is not null)
         {
-            return new List<ColorDto>(cached);
+            _cache.SetColors(colors);
         }
 
-        var colors = await _http.Client.GetFromJsonAsync<List<ColorDto>>("/colors");
-        if (colors is null)
-        {
-            return null;
-        }
+        return colors;
+    }
 
-        _cache.SetColors(new List<ColorDto>(colors));
-        return new List<ColorDto>(colors);
+    private async Task<List<ColorDto>?> FetchFromApiAsync()
+    {
+        _logger.LogInformation("GetColorsAsync called (cache miss, fetching from API)");
+        return await _http.Client.GetFromJsonAsync<List<ColorDto>>("/colors");
     }
 }

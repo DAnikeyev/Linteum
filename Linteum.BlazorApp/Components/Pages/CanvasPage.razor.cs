@@ -79,12 +79,21 @@ public partial class CanvasPage : ComponentBase, IAsyncDisposable
     private DotNetObjectReference<CanvasPage>? _objRef;
     private string? _resizeListenerId;
     private int _canvasLoadVersion;
+    private int _canvasImageVersion;
     private int _disposeState;
     private CanvasMaintenanceProgressDto? _maintenanceProgress;
     private bool _suppressNextEraseNotification;
     private bool _suppressNextDeleteNotification;
     private bool _isHandlingCanvasErase;
     private bool _isHandlingCanvasDelete;
+
+    /// <summary>
+    /// True from the moment a local erase/delete is initiated until the corresponding
+    /// SignalR broadcast arrives. While set, all incoming pixel-update and deletion
+    /// events are dropped to prevent stale pre-erase pixels from flashing on the
+    /// optimistically-cleared canvas.
+    /// </summary>
+    private bool _canvasMutationPendingConfirmation;
 
     // Brush / eraser flush plumbing — owned here because the lifecycle methods
     // (OnParametersSetAsync / OnInitializedAsync / DisposeAsync) set up and tear

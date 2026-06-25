@@ -26,7 +26,8 @@ public partial class CanvasPage
 
     private string GetCanvasImageUrl(string canvasNameValue)
     {
-        return $"{NavigationManager.BaseUri.TrimEnd('/')}/_canvas-image/{Uri.EscapeDataString(canvasNameValue)}";
+        var baseUrl = $"{NavigationManager.BaseUri.TrimEnd('/')}/_canvas-image/{Uri.EscapeDataString(canvasNameValue)}";
+        return _canvasImageVersion > 0 ? $"{baseUrl}?v={_canvasImageVersion}" : baseUrl;
     }
 
     private void RestartCanvasInitializationTimeout(string requestedCanvasName, int loadVersion)
