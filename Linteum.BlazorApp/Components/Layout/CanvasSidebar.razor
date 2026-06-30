@@ -70,21 +70,29 @@
         if (firstRender && !_hasRendered)
         {
             _hasRendered = true;
-            _userName = await LocalStorageService.GetItemAsync<string>(LocalStorageKey.UserName);
-            _loginMethod = await ReadLoginMethodAsync();
-
-            var savedState = await LocalStorageService.GetItemAsync<bool?>(LocalStorageKey.SidebarCollapsed);
-            if (savedState.HasValue)
+            try
             {
-                _isCollapsed = savedState.Value;
-            }
+                _userName = await LocalStorageService.GetItemAsync<string>(LocalStorageKey.UserName);
+                _loginMethod = await ReadLoginMethodAsync();
 
-            if (CollapsedChanged.HasDelegate)
+                var savedState = await LocalStorageService.GetItemAsync<bool?>(LocalStorageKey.SidebarCollapsed);
+                if (savedState.HasValue)
+                {
+                    _isCollapsed = savedState.Value;
+                }
+
+                if (CollapsedChanged.HasDelegate)
+                {
+                    await CollapsedChanged.InvokeAsync(_isCollapsed);
+                }
+
+                await LoadCanvases();
+            }
+            catch (Exception ex) when (ex is JSDisconnectedException or OperationCanceledException or ObjectDisposedException)
             {
-                await CollapsedChanged.InvokeAsync(_isCollapsed);
+                // Circuit disconnecting during the first render — bail out; the circuit is being disposed.
+                return;
             }
-
-            await LoadCanvases();
             StateHasChanged();
         }
     }

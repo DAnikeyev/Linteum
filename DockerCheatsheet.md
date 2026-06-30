@@ -31,6 +31,17 @@ docker compose --profile bots down
 # Restart a single service
 docker compose restart linteum-api
 
+# ── Bots prerequisites ──────────────────────────────────────────────────────
+# 1. Bots are behind `profiles: [bots]`, so a plain `docker compose up -d --build`
+#    SKIPS them and the `linteum-linteum-bots` image is never built. Build it once:
+docker compose --profile bots build
+#
+# 2. Run these from the REPO ROOT on the deploy machine (Windows), where
+#    docker-compose.yml + .env live. The active `myvps` Docker context routes them
+#    to the VPS daemon. Do NOT run `docker compose ...` from an SSH shell on the
+#    VPS — the compose file is not on the VPS, so it errors
+#    "no configuration file provided: not found".
+
 # Run the Cleaner bot on canvas "Default"
 docker compose --profile bots run --rm linteum-bots cleaner Default
 
@@ -40,10 +51,26 @@ docker compose --profile bots run --rm linteum-bots vangogh
 # Run Munch
 docker compose --profile bots run --rm linteum-bots munch
 
+# Xerox paints an image onto a canvas. The image is baked into the bots image:
+# Levitan.jpg, StarryNight.jpg, Scream.jpg, Inception.jpg, Earth.jpg, M42.jpg,
+# Thailand.jpg, home.jpg
 docker compose --profile bots run --rm linteum-bots xerox canvas-name image-file
 
-# Reuse the already-built bots image without rebuild
-docker run --rm --network linteum_prod1 -e BOT_API_URL=http://linteum-api:8080 -e BOT_TIMEOUT_MINUTES=10 linteum-linteum-bots xerox canvas-name image-file
+# Reuse the already-built bots image WITHOUT compose and WITHOUT rebuild — e.g. from
+# the VPS shell (ssh myvps). Compose injects BOT_PASSWORD + BOT_SERVICE_TOKEN for you;
+# a bare `docker run` does not, so create an env-file ONCE on the VPS (copy from .env):
+#   cat > /root/linteum-bots.env <<'EOF'
+#   BOT_API_URL=http://linteum-api:8080
+#   BOT_PASSWORD=<BOT_PASSWORD from .env>
+#   BOT_SERVICE_TOKEN=<BOT_SERVICE_TOKEN from .env>
+#   BOT_TIMEOUT_MINUTES=10
+#   EOF
+#   chmod 600 /root/linteum-bots.env
+# Then re-run instantly with any bot (image is already built → no rebuild delay):
+docker run --rm --env-file /root/linteum-bots.env --network linteum_prod1 linteum-linteum-bots xerox canvas-name image-file
+# Quick test cap (minutes; -e beats --env-file):
+#   docker run --rm --env-file /root/linteum-bots.env -e BOT_TIMEOUT_MINUTES=0.25 \
+#     --network linteum_prod1 linteum-linteum-bots xerox canvas-name image-file
 ```
 
 ## Compose — Build

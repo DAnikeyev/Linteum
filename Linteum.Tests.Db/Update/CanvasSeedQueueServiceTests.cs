@@ -15,7 +15,7 @@ namespace Linteum.Tests.Db.Update;
 internal class CanvasSeedQueueServiceTests : SyntheticDataTest
 {
     [Test]
-    public async Task CanvasSeedQueueService_SeedsEconomyCanvasPixelsWithCreatorHistoryAndPriceOne()
+    public async Task CanvasSeedQueueService_SeedsEconomyCanvasPixelsWithPriceOneAndNoCreatorHistory()
     {
         var user = await DbHelper.AddDefaultUser("CanvasSeedEconomyUser");
         var canvas = await RepoManager.CanvasRepository.TryAddCanvas(new CanvasDto
@@ -58,9 +58,11 @@ internal class CanvasSeedQueueServiceTests : SyntheticDataTest
 
             var samplePixel = pixels.First(pixel => pixel.Id.HasValue);
             var history = (await RepoManager.PixelChangedEventRepository.GetByPixelIdAsync(samplePixel.Id!.Value)).ToList();
-            Assert.That(history, Has.Count.EqualTo(1));
-            Assert.That(history[0].OwnerUserId, Is.EqualTo(user.Id.Value));
-            Assert.That(history[0].NewPrice, Is.EqualTo(1));
+            // Seeding writes the initial pixels but no PixelChangedEvent history rows. Those events
+            // feed the creator's daily Normal-mode quota (PixelRepository.GetUsedNormalModePixelsTodayAsync)
+            // and per-pixel history; counting the entire seed against the creator on creation day would
+            // exhaust their quota and block them from painting their own canvas.
+            Assert.That(history, Is.Empty);
 
             Assert.That(notifier.BatchSizes.Sum(), Is.EqualTo(canvas.Width * canvas.Height));
             Assert.That(notifier.BatchSizes.All(size => size <= 500), Is.True);

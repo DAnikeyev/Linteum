@@ -1,3 +1,35 @@
+# 0.2.3 - 2026/06/21
+
+## Realtime
+- Canvas changes are no longer silently lost when a client loads a snapshot slightly before (or reconnects slightly after) its live SignalR subscription: pixel-change broadcasts are now mirrored into a per-canvas expirable buffer, and a non-blocking post-job backfills the missed events by sequence after the snapshot is on screen (P‑RT‑05).
+- Reconnect now rejoins the *current* canvas instead of a potentially stale group, and reconciles the disconnect gap from the buffer (P‑RT‑02).
+- Added a connection-status banner so users see "Reconnecting…" / "Realtime connection lost" with a Retry button instead of a silent loss of realtime (P‑RT‑03).
+- The 20 s initialization timeout no longer force-reloads the page; it shows a countdown and a manual Retry that rebuilds the connection, preserving pending strokes (P‑RT‑04).
+
+## Performance
+- Canvas image rendering (`GET /canvases/image/{name}`) now streams pixels straight into the raster instead of materializing the whole canvas into memory, removing the OOM risk on large canvases (P‑PERF‑01).
+- Pixel history cleanup now prunes everything past the kept-window per pixel in a single server-side `ROW_NUMBER()` delete, with no client-side materialization (P‑PERF‑02).
+- The seeder now bulk-subscribes all users to secondary default canvases in one transaction instead of one transaction per user (P‑PERF‑04).
+- The Blazor client's pixel/history caches are now backed by a bounded TTL+LRU cache, so they can no longer grow without limit while staying effective for hot pixels (P‑PERF‑06).
+- Render batches are sent to the canvas as typed parallel arrays instead of per-pixel JSON objects, cutting serialization cost on the hot pixel path (P‑PERF‑07).
+- (Already resolved) `Unsubscribe` reads only the single latest balance row (P‑PERF‑03).
+
+## Maintainability
+- Renamed typo'd DTO/exception filenames and identifiers to their canonical spellings (`UserPaswordDto` → `UserPasswordDto`, `GetDefautColor` → `GetDefaultColor`, and the `CanvasPaswordDto`/`UserAlreadySubsribedException`/`SubscribeCanvasRequestDTO`/`ServiceCollectionExtenstions`/`PermamentDbTest` files), updating every reference (P‑MAIN‑01).
+- Removed the dead single-pixel write helpers in `PixelRepository` (`TryChangePixelInternalAsync` and its Normal/Economy/FreeDraw variants plus the `PixelAttemptResult` record) that re-entered the batch path and were never reached (P‑MAIN‑02).
+- Decomposed the `MyApiClient` god-class: the ~1170-line class that mixed HTTP access, caching, and session storage is now a thin forwarding facade over focused collaborators under `Linteum.BlazorApp/Api/` — `ApiHttp` (HTTP client), `PixelCacheManager` (the three caches), `SessionStore` (session/local-storage), and one repository per resource (Colors/Canvases/Subscriptions/CanvasChat/Pixels/History/Balance/Account). All 12 consuming components are unchanged (P‑MAIN‑03).
+
+## UI
+- The mouse-coordinate readout is no longer hidden by CSS while JavaScript populates it — the redundant `display: none` was removed so the element shows on hover (P‑UI‑01).
+
+## Testing
+- DB integration tests now run against an ephemeral Testcontainers PostgreSQL instead of a pre-provisioned localhost instance, and isolate per test with `TRUNCATE … RESTART IDENTITY CASCADE` instead of dropping/recreating the database (P‑TEST‑03, P‑TEST‑04).
+- Added `WebApplicationFactory`-based API tests covering the session-auth contract: protected endpoints return 401 without a `Session-Id`, `[PublicEndpoint]`s are reachable, and `[DisabledEndpoint]`s return 404 (P‑TEST‑02).
+- Removed the assertion-less `Hashing.cs` scratch test and normalized namespaces / removed dead files across the test projects (P‑TEST‑01, P‑TEST‑05).
+
+## Networking / ops docs
+- Documented explicit WebSocket hardening for the Blazor nginx proxy (`proxy_read_timeout`/`proxy_send_timeout` 3600s, `proxy_buffering off`) in `Networking-and-TLS.md`; applying it on the live VPS is operational (P‑NET‑02).
+
 # 0.2.2 - 2026/05/07
 - Added GuestMode.
 - More small UI improvements and optimizations.
@@ -105,7 +137,7 @@
 
 ## Bots and Tooling
 - Introduced bot framework with `CleanerBot`, `MunchBot`, and artist bots (`VanGogh`, `VanGogh2`).
-- Added `XeroxBot` for reproducing images onto canvases with multi-threaded parallel pixel placement (16 workers, channel-based queue).
+- Added `XeroxBot` for reproducing images onto canvases with batch pixel placement.
 - Added `Inception.jpg` and `Earth.jpg` reference images for bot use.
 - Updated Docker configuration for multi-service deployment with environment variable support.
 - Added database migration and seeding tools for automated environment setup.

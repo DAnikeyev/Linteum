@@ -123,18 +123,17 @@ public partial class CanvasPage
             _hubConnection.On<IReadOnlyCollection<CanvasIncomeUpdateDto>>("ReceiveCanvasIncomeUpdates", updates =>
                 InvokeAsync(() => HandleCanvasIncomeUpdatesAsync(updates)));
 
-            _hubConnection.Reconnected += async _ =>
-            {
-                if (!string.IsNullOrEmpty(_connectedGroup))
-                {
-                    await _hubConnection.InvokeAsync("JoinCanvasGroup", _connectedGroup);
-                }
-            };
+            _hubConnection.Reconnecting += error => InvokeAsync(() => OnHubReconnectingAsync(error));
+            _hubConnection.Reconnected += connectionId => InvokeAsync(() => OnHubReconnectedAsync(connectionId));
+            _hubConnection.Closed += error => InvokeAsync(() => OnHubClosedAsync(error));
 
+            _connectionStatus = HubConnectionStatus.Connecting;
             await _hubConnection.StartAsync();
+            _connectionStatus = HubConnectionStatus.Connected;
         }
         catch (Exception ex)
         {
+            _connectionStatus = HubConnectionStatus.Disconnected;
             _nlog.Error(ex, "Failed to start SignalR connection");
         }
         finally
@@ -263,12 +262,14 @@ public partial class CanvasPage
     private Task HandleCanvasErasedLocallyAsync()
     {
         _suppressNextEraseNotification = true;
-        return HandleCanvasErasedAsync(showNotification: false);
+        _canvasMutationPendingConfirmation = true;
+        return HandleCanvasErasedAsync(showNotification: false, reloadImage: false);
     }
 
     private Task HandleCanvasDeletedLocallyAsync()
     {
         _suppressNextDeleteNotification = true;
+        _canvasMutationPendingConfirmation = true;
         return HandleCanvasDeletedAsync(showNotification: false);
     }
 
@@ -282,7 +283,15 @@ public partial class CanvasPage
 
         var showNotification = !_suppressNextEraseNotification;
         _suppressNextEraseNotification = false;
-        return HandleCanvasErasedAsync(showNotification);
+        _canvasMutationPendingConfirmation = false;
+        if (_isHandlingCanvasErase)
+        {
+            _pendingConfirmedCanvasErase = true;
+            _pendingConfirmedCanvasEraseNotification |= showNotification;
+            return Task.CompletedTask;
+        }
+
+        return HandleCanvasErasedAsync(showNotification, reloadImage: true);
     }
 
     private Task OnCanvasDeletedFromHubAsync(string deletedCanvasName)
@@ -295,10 +304,11 @@ public partial class CanvasPage
 
         var showNotification = !_suppressNextDeleteNotification;
         _suppressNextDeleteNotification = false;
+        _canvasMutationPendingConfirmation = false;
         return HandleCanvasDeletedAsync(showNotification);
     }
 
-    private async Task HandleCanvasErasedAsync(bool showNotification)
+    private async Task HandleCanvasErasedAsync(bool showNotification, bool reloadImage = true)
     {
         if (_canvas == null || _isHandlingCanvasErase)
         {
@@ -325,8 +335,17 @@ public partial class CanvasPage
             }
 
             _maintenanceProgress = null;
+            _clickedPixel = null;
             _clickedPixelData = null;
-            await LoadCanvasImage();
+            if (reloadImage)
+            {
+                _canvasImageVersion++;
+                await LoadCanvasImage();
+            }
+            else if (_renderer != null)
+            {
+                await _renderer.ClearAsync();
+            }
 
             if (showNotification)
             {
@@ -346,6 +365,13 @@ public partial class CanvasPage
         finally
         {
             _isHandlingCanvasErase = false;
+            if (_pendingConfirmedCanvasErase && _canvas != null)
+            {
+                var pendingNotification = _pendingConfirmedCanvasEraseNotification;
+                _pendingConfirmedCanvasErase = false;
+                _pendingConfirmedCanvasEraseNotification = false;
+                await HandleCanvasErasedAsync(pendingNotification, reloadImage: true);
+            }
         }
     }
 
@@ -422,5 +448,321 @@ public partial class CanvasPage
             _nlog.Warn(ex, "NotificationService.Writer.WriteAsync failed");
         }
     }
-}
 
+    private Task OnHubReconnectingAsync(Exception? error)
+    {
+        _connectionStatus = HubConnectionStatus.Reconnecting;
+        _nlog.Info("SignalR connection reconnecting. {ErrorMessage}", error?.Message ?? "Unknown");
+        return RequestRenderAsync();
+    }
+
+    private async Task OnHubReconnectedAsync(string? connectionId)
+    {
+        _connectionStatus = HubConnectionStatus.Connected;
+        var currentName = _canvas?.Name ?? canvasName;
+        _nlog.Info("SignalR reconnected ({ConnectionId}); rejoining canvas {CanvasName} and reconciling.", connectionId, currentName);
+
+        // P-RT-02: a reconnect gets a new connection id, and the server dropped the previous
+        // connection's group memberships on disconnect. Clear our cached group so we rejoin the
+        // CURRENT canvas (not a stale _connectedGroup from before the disconnect).
+        _connectedGroup = null;
+        var subscriptionSeq = await EnsureJoinedCurrentCanvasAsync(currentName);
+        if (IsDisposed)
+        {
+            return;
+        }
+
+        var loadVersion = Volatile.Read(ref _canvasLoadVersion);
+
+        // If the server's sequence went backwards relative to what we last reconciled, the API
+        // process restarted and the in-memory buffer reset. The buffer cannot cover the gap, so
+        // reload the snapshot (which itself triggers a fresh reconcile afterwards).
+        if (subscriptionSeq > 0 && _lastReconciledSeq > 0 && subscriptionSeq <= _lastReconciledSeq)
+        {
+            _nlog.Info("Canvas {CanvasName} event sequence reset (server restart?); reloading image.", currentName);
+            _canvasImageVersion++;
+            await LoadCanvasImage();
+            _lastReconciledSeq = subscriptionSeq;
+            await RequestRenderAsync();
+            return;
+        }
+
+        if (subscriptionSeq > 0)
+        {
+            // Reconcile from the last sequence we had applied up to now; covers the disconnect gap.
+            _ = TryReconcileCanvasAsync(currentName, loadVersion, _lastReconciledSeq, allowImageReloadFallback: true);
+        }
+
+        await RequestRenderAsync();
+    }
+
+    private Task OnHubClosedAsync(Exception? error)
+    {
+        _connectionStatus = HubConnectionStatus.Disconnected;
+        _nlog.Warn("SignalR connection closed and will not auto-reconnect. {ErrorMessage}", error?.Message ?? "Unknown");
+        return RequestRenderAsync();
+    }
+
+    /// <summary>
+    /// Makes sure the hub is subscribed to <paramref name="canvasName"/> (leaving a stale group
+    /// first if any), and returns the high-water event sequence the server reported at join time.
+    /// The sequence is captured server-side AFTER group membership is established, so any event
+    /// with seq &lt;= the returned value either predates this join or was also delivered live, and
+    /// any higher-seq event will arrive live — a clean, race-free reconcile boundary.
+    /// </summary>
+    private async Task<long> EnsureJoinedCurrentCanvasAsync(string canvasName)
+    {
+        if (_hubConnection?.State != HubConnectionState.Connected)
+        {
+            return 0;
+        }
+
+        if (string.Equals(_connectedGroup, canvasName, StringComparison.Ordinal))
+        {
+            return 0;
+        }
+
+        try
+        {
+            if (!string.IsNullOrEmpty(_connectedGroup))
+            {
+                await _hubConnection.InvokeAsync("LeaveCanvasGroup", _connectedGroup);
+            }
+
+            var subscriptionSeq = await _hubConnection.InvokeAsync<long>("JoinCanvasGroup", canvasName);
+            _connectedGroup = canvasName;
+            return subscriptionSeq;
+        }
+        catch (Exception ex) when (IsExpectedUiShutdownException(ex) || IsDisposed)
+        {
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            _nlog.Warn(ex, "Failed to join canvas group {CanvasName}", canvasName);
+            return 0;
+        }
+    }
+
+    /// <summary>
+    /// Non-blocking post-job that fetches the pixel-change events the client missed between its
+    /// canvas snapshot and its live subscription (the load gap) — or, on reconnect, between the
+    /// last sequence it applied and now — and replays them in sequence order. Pixel writes are
+    /// last-writer-wins per coordinate, so re-applying an event the client already has is
+    /// idempotent. If the buffer has already evicted the needed range (long disconnect / slow
+    /// load), it falls back to a full image reload. Never delays the main canvas load: callers fire
+    /// it with discard (<c>_ =</c>) after the snapshot is on screen.
+    /// </summary>
+    private async Task TryReconcileCanvasAsync(string canvasName, int loadVersion, long afterSeq, bool allowImageReloadFallback)
+    {
+        if (IsDisposed || loadVersion != Volatile.Read(ref _canvasLoadVersion))
+        {
+            return;
+        }
+
+        if (!IsCurrentCanvasByName(canvasName))
+        {
+            return;
+        }
+
+        if (_hubConnection?.State != HubConnectionState.Connected)
+        {
+            return;
+        }
+
+        if (!string.Equals(_connectedGroup, canvasName, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (_reconcileInProgress)
+        {
+            return;
+        }
+
+        _reconcileInProgress = true;
+        var needsImageReload = false;
+        try
+        {
+            List<CanvasChangeEntryDto>? entries;
+            try
+            {
+                entries = await _hubConnection.InvokeAsync<List<CanvasChangeEntryDto>>(
+                    "GetCanvasChanges", canvasName, afterSeq, long.MaxValue);
+            }
+            catch (Exception ex) when (IsExpectedUiShutdownException(ex) || IsDisposed)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                _nlog.Warn(ex, "Failed to fetch canvas changes for reconcile on {CanvasName}", canvasName);
+                return;
+            }
+
+            if (IsDisposed || loadVersion != Volatile.Read(ref _canvasLoadVersion) || !IsCurrentCanvasByName(canvasName))
+            {
+                return;
+            }
+
+            if (entries == null || entries.Count == 0)
+            {
+                // Nothing changed in the window; advance our marker so a later reconnect reconcile
+                // starts from the right place.
+                if (afterSeq > _lastReconciledSeq)
+                {
+                    _lastReconciledSeq = afterSeq;
+                }
+                return;
+            }
+
+            // Gap: the buffer's oldest entry in range does not immediately follow our anchor, so the
+            // buffer has already evicted the events we needed. We cannot reconstruct the gap from
+            // the buffer -> fall back to a fresh snapshot.
+            if (entries[0].Seq > afterSeq + 1)
+            {
+                if (allowImageReloadFallback)
+                {
+                    _nlog.Info("Reconcile gap for {CanvasName}: expected seq {Expected} but oldest available is {Oldest}. Reloading canvas image.", canvasName, afterSeq + 1, entries[0].Seq);
+                    needsImageReload = true;
+                }
+                return;
+            }
+
+            var lastAppliedSeq = afterSeq;
+            foreach (var entry in entries)
+            {
+                if (IsDisposed || loadVersion != Volatile.Read(ref _canvasLoadVersion) || !IsCurrentCanvasByName(canvasName))
+                {
+                    return;
+                }
+
+                await ApplyCanvasChangeEntryAsync(entry);
+                lastAppliedSeq = entry.Seq;
+            }
+
+            _lastReconciledSeq = lastAppliedSeq;
+
+            // Truncation: we hit the response cap, so there may be more events beyond what we
+            // fetched. Reload the snapshot to guarantee a correct final state.
+            if (entries.Count >= CanvasReconcileLimits.MaxEntriesPerResponse && allowImageReloadFallback)
+            {
+                _nlog.Info("Reconcile for {CanvasName} hit the response cap; reloading canvas image to be safe.", canvasName);
+                needsImageReload = true;
+            }
+        }
+        finally
+        {
+            _reconcileInProgress = false;
+        }
+
+        // Perform the fallback reload AFTER releasing the reconcile guard, so the reload's own
+        // scheduled reconcile (recent path) is not blocked by this still-in-progress reconcile.
+        if (needsImageReload && !IsDisposed && loadVersion == Volatile.Read(ref _canvasLoadVersion) && IsCurrentCanvasByName(canvasName))
+        {
+            await LoadCanvasImage();
+        }
+    }
+
+    /// <summary>
+    /// Load-gap post-job: fetches the most recent buffered events and re-applies them idempotently.
+    /// A canvas snapshot is rendered only moments before this runs, so the newest buffered entries
+    /// always cover the window between that snapshot and the live subscription (including any live
+    /// update the freshly painted image may have clobbered). No sequence anchor is needed, so there
+    /// is nothing to go stale and no reload loop is possible. Fire-and-forget; never blocks the load.
+    /// </summary>
+    private async Task TryReconcileRecentCanvasAsync(string canvasName, int loadVersion)
+    {
+        if (IsDisposed || loadVersion != Volatile.Read(ref _canvasLoadVersion))
+        {
+            return;
+        }
+
+        if (!IsCurrentCanvasByName(canvasName))
+        {
+            return;
+        }
+
+        if (_hubConnection?.State != HubConnectionState.Connected)
+        {
+            return;
+        }
+
+        if (!string.Equals(_connectedGroup, canvasName, StringComparison.Ordinal))
+        {
+            return;
+        }
+
+        if (_reconcileInProgress)
+        {
+            return;
+        }
+
+        _reconcileInProgress = true;
+        try
+        {
+            List<CanvasChangeEntryDto>? entries;
+            try
+            {
+                entries = await _hubConnection.InvokeAsync<List<CanvasChangeEntryDto>>(
+                    "GetRecentCanvasChanges", canvasName, CanvasReconcileLimits.MaxEntriesPerResponse);
+            }
+            catch (Exception ex) when (IsExpectedUiShutdownException(ex) || IsDisposed)
+            {
+                return;
+            }
+            catch (Exception ex)
+            {
+                _nlog.Warn(ex, "Failed to fetch recent canvas changes for reconcile on {CanvasName}", canvasName);
+                return;
+            }
+
+            if (IsDisposed || loadVersion != Volatile.Read(ref _canvasLoadVersion) || !IsCurrentCanvasByName(canvasName))
+            {
+                return;
+            }
+
+            if (entries == null || entries.Count == 0)
+            {
+                return;
+            }
+
+            var lastAppliedSeq = _lastReconciledSeq;
+            foreach (var entry in entries)
+            {
+                if (IsDisposed || loadVersion != Volatile.Read(ref _canvasLoadVersion) || !IsCurrentCanvasByName(canvasName))
+                {
+                    return;
+                }
+
+                await ApplyCanvasChangeEntryAsync(entry);
+                if (entry.Seq > lastAppliedSeq)
+                {
+                    lastAppliedSeq = entry.Seq;
+                }
+            }
+
+            _lastReconciledSeq = lastAppliedSeq;
+        }
+        finally
+        {
+            _reconcileInProgress = false;
+        }
+    }
+
+    private async Task ApplyCanvasChangeEntryAsync(CanvasChangeEntryDto entry)
+    {
+        if (entry.Pixels.Count > 0)
+        {
+            foreach (var pixel in entry.Pixels)
+            {
+                await HandlePixelUpdatedAsync(pixel, suppressRipple: true);
+            }
+        }
+
+        if (entry.DeletedCoordinates.Count > 0)
+        {
+            await HandlePixelsDeletedAsync(entry.DeletedCoordinates);
+        }
+    }
+}

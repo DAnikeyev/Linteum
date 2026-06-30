@@ -11,30 +11,66 @@ public abstract class BotBase
 
     protected readonly HttpClient HttpClient;
     protected readonly string ApiUrl;
-    protected string? MasterPassword { get; }
+    protected string? ServiceToken { get; }
     protected string BotEmail { get; }
     protected string BotPassword { get; }
     protected string BotUserName { get; }
     private long _batchedRequestCount;
     private long _attemptedPixelCount;
 
-    protected BotBase(string email, string password, string userName)
+    // Bot credentials are read from the environment so no secret lives in source (P-SEC-10).
+    // The password is the only secret; email/userName are non-secret service-account identifiers.
+    protected BotBase(string email, string userName)
     {
         BotEmail = email;
-        BotPassword = password;
         BotUserName = userName;
-        ApiUrl = Environment.GetEnvironmentVariable("BOT_API_URL") ?? "http://localhost:5182";
-        MasterPassword = Environment.GetEnvironmentVariable("BOT_MASTER_PASSWORD");
+        BotPassword = Environment.GetEnvironmentVariable("BOT_PASSWORD")
+            ?? throw new InvalidOperationException(
+                "BOT_PASSWORD is not set. Bot credentials must be provided via the environment (P-SEC-10).");
 
-        var handler = new HttpClientHandler
-        {
-            ServerCertificateCustomValidationCallback = (_, _, _, _) => true
-        };
+        ApiUrl = Environment.GetEnvironmentVariable("BOT_API_URL") ?? "http://localhost:8080";
+
+        // Dedicated least-privilege secret; never the API MASTER_PASSWORD (P-SEC-11). Optional —
+        // when unset the bot paints without the quota/balance override (a no-op on FreeDraw).
+        ServiceToken = Environment.GetEnvironmentVariable("BOT_SERVICE_TOKEN");
+
+        // TLS is validated by default (system trust store). The validation bypass is dev-only
+        // and must be opted into explicitly via BOT_INSECURE_SKIP_TLS_VALIDATION (P-SEC-09).
+        var handler = CreateHttpClientHandler();
         HttpClient = new HttpClient(handler)
         {
             BaseAddress = new Uri(ApiUrl),
             Timeout = TimeSpan.FromSeconds(10)
         };
+    }
+
+    private static HttpClientHandler CreateHttpClientHandler()
+    {
+        var skipTlsValidation = IsTruthyEnvironmentVariable("BOT_INSECURE_SKIP_TLS_VALIDATION");
+        if (skipTlsValidation)
+        {
+            Console.WriteLine(
+                "WARNING: BOT_INSECURE_SKIP_TLS_VALIDATION is set — TLS certificate validation is DISABLED. " +
+                "Use this only for local development against a self-signed certificate.");
+            return new HttpClientHandler
+            {
+                ServerCertificateCustomValidationCallback = (_, _, _, _) => true
+            };
+        }
+
+        return new HttpClientHandler();
+    }
+
+    private static bool IsTruthyEnvironmentVariable(string name)
+    {
+        var value = Environment.GetEnvironmentVariable(name);
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        return string.Equals(value.Trim(), "1", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(value.Trim(), "true", StringComparison.OrdinalIgnoreCase);
     }
 
     public async Task RunAsync()
@@ -113,13 +149,7 @@ public abstract class BotBase
 
     protected async Task<Guid?> LoginOrRegisterAsync()
     {
-        var loginDto = new UserDto
-        {
-            Email = BotEmail,
-            LoginMethod = LoginMethod.Password
-        };
-
-        var loginRes = await HttpClient.PostAsJsonAsync($"Users/login?passwordHashOrKey={BotPassword}", loginDto);
+        var loginRes = await HttpClient.PostAsJsonAsync("Users/login", new LoginRequestDto { Email = BotEmail, Password = BotPassword });
         if (loginRes.IsSuccessStatusCode)
         {
             var result = await loginRes.Content.ReadFromJsonAsync<LoginResponse>();
@@ -129,14 +159,7 @@ public abstract class BotBase
         if (loginRes.StatusCode == System.Net.HttpStatusCode.Unauthorized || loginRes.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
             Console.WriteLine("Login failed, trying to register...");
-            var registerDto = new UserDto
-            {
-                Email = BotEmail,
-                UserName = BotUserName,
-                LoginMethod = LoginMethod.Password
-            };
-            
-            var regRes = await HttpClient.PostAsJsonAsync($"Users/add?passwordHashOrKey={BotPassword}", registerDto);
+            var regRes = await HttpClient.PostAsJsonAsync("Users/add", new SignupRequestDto { Email = BotEmail, UserName = BotUserName, Password = BotPassword });
             if (regRes.IsSuccessStatusCode)
             {
                  var result = await regRes.Content.ReadFromJsonAsync<LoginResponse>();
@@ -193,7 +216,7 @@ public abstract class BotBase
         RecordBatchAttempt(pixels.Count);
         var requestDto = new PixelBatchChangeRequestDto
         {
-            MasterPassword = MasterPassword,
+            ServiceToken = ServiceToken,
             Pixels = pixels.Select(pixel => new PixelDto
             {
                 Id = pixel.Id,
@@ -244,7 +267,7 @@ public abstract class BotBase
         RecordBatchAttempt(coordinates.Count);
         var requestDto = new PixelBatchDto
         {
-            MasterPassword = MasterPassword,
+            ServiceToken = ServiceToken,
             Coordinates = coordinates.ToList(),
             ColorId = colorId,
             Price = price,

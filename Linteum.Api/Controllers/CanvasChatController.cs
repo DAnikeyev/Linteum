@@ -1,3 +1,4 @@
+using Linteum.Api.Middleware;
 using Linteum.Api.Services;
 using Linteum.Infrastructure;
 using Linteum.Shared.DTO;
@@ -10,18 +11,15 @@ namespace Linteum.Api.Controllers;
 public class CanvasChatController : ControllerBase
 {
     private readonly RepositoryManager _repositoryManager;
-    private readonly SessionService _sessionService;
     private readonly ICanvasChatBroadcaster _canvasChatBroadcaster;
     private readonly ILogger<CanvasChatController> _logger;
 
     public CanvasChatController(
         RepositoryManager repositoryManager,
-        SessionService sessionService,
         ICanvasChatBroadcaster canvasChatBroadcaster,
         ILogger<CanvasChatController> logger)
     {
         _repositoryManager = repositoryManager;
-        _sessionService = sessionService;
         _canvasChatBroadcaster = canvasChatBroadcaster;
         _logger = logger;
     }
@@ -29,7 +27,7 @@ public class CanvasChatController : ControllerBase
     [HttpPost("{canvasName}")]
     public async Task<IActionResult> SendMessage(string canvasName, [FromBody] SendCanvasChatMessageRequestDto request, CancellationToken cancellationToken)
     {
-        var userId = _sessionService.ProcessHeader(HttpContext.Request.Headers);
+        var userId = HttpContext.GetSessionUserId();
         if (!userId.HasValue)
         {
             _logger.LogWarning("Canvas chat send failed: Session-Id header missing or invalid.");

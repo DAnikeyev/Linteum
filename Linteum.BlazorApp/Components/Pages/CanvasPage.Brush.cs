@@ -408,6 +408,13 @@ public partial class CanvasPage
 
     private async Task HandlePixelsDeletedAsync(IReadOnlyCollection<CoordinateDto>? coordinates)
     {
+        // Drop events that arrived between the local erase/delete and the
+        // SignalR confirmation — the canvas is being reset.
+        if (_canvasMutationPendingConfirmation)
+        {
+            return;
+        }
+
         if (_canvas == null || coordinates == null || coordinates.Count == 0)
         {
             return;
@@ -461,6 +468,13 @@ public partial class CanvasPage
 
     private async Task HandlePixelUpdatedAsync(PixelDto pixel, bool suppressRipple)
     {
+        // Drop events that arrived between the local erase/delete and the
+        // SignalR confirmation — the canvas is being reset.
+        if (_canvasMutationPendingConfirmation)
+        {
+            return;
+        }
+
         if (_renderer == null || _colors == null)
         {
             return;
@@ -910,6 +924,27 @@ public partial class CanvasPage
         return _isBrushEnabled
             || _isEraserBrushEnabled
             || _isTextSelectionPersistenceEnabled;
+    }
+
+    private sealed class ConfirmedPlaybackWorkItem
+    {
+        public List<PixelDto> Pixels { get; init; } = [];
+        public List<CoordinateDto> Coordinates { get; init; } = [];
+        public bool IsDeletion { get; init; }
+        public int DurationMs { get; init; }
+
+        public static ConfirmedPlaybackWorkItem FromPixels(ConfirmedPixelPlaybackBatchDto playbackBatch) => new()
+        {
+            Pixels = playbackBatch.Pixels,
+            DurationMs = playbackBatch.DurationMs,
+        };
+
+        public static ConfirmedPlaybackWorkItem FromDeletes(ConfirmedPixelDeletionPlaybackBatchDto playbackBatch) => new()
+        {
+            Coordinates = playbackBatch.Coordinates,
+            IsDeletion = true,
+            DurationMs = playbackBatch.DurationMs,
+        };
     }
 }
 

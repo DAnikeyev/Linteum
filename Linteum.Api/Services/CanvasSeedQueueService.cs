@@ -85,6 +85,11 @@ public class CanvasSeedQueueService : BackgroundService, ICanvasSeedQueue
             using var scope = _scopeFactory.CreateScope();
             var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
             var notifier = scope.ServiceProvider.GetRequiredService<IPixelNotifier>();
+            var imageCache = scope.ServiceProvider.GetService<ICanvasImageCache>();
+
+            // The canvas may have been viewed (and cached) between creation and seeding; drop any
+            // partial entry so the post-seed state is rendered from truth.
+            imageCache?.Remove(request.CanvasName);
 
             var palette = await dbContext.Colors
                 .AsNoTracking()
@@ -97,119 +102,18 @@ public class CanvasSeedQueueService : BackgroundService, ICanvasSeedQueue
                 })
                 .ToListAsync(stoppingToken);
 
-            var defaultColor = palette.FirstOrDefault(color => string.Equals(color.HexValue, "#FFFFFF", StringComparison.OrdinalIgnoreCase));
-            if (defaultColor == null)
-            {
-                _logger.LogWarning("Skipping queued canvas seed for {CanvasName}: default white color was not found.", request.CanvasName);
-                return;
-            }
-
             using var imageStream = new MemoryStream(request.ImageBytes, writable: false);
             using var image = await Image.LoadAsync<Rgba32>(imageStream, stoppingToken);
             var grid = ImageConverter.ConvertImageToGrid(image, request.Width, request.Height, palette);
             var seedPrice = request.CanvasMode == CanvasMode.Economy ? 1L : 0L;
             var seedBatches = BuildSeedBatches(grid, seedPrice).ToArray();
-            var totalSeededPixels = 0;
-            var shouldStop = false;
-            var originalAutoDetectChanges = dbContext.ChangeTracker.AutoDetectChangesEnabled;
-            dbContext.ChangeTracker.AutoDetectChangesEnabled = false;
 
-            try
-            {
-                foreach (var batch in seedBatches)
-                {
-                    stoppingToken.ThrowIfCancellationRequested();
-
-                    List<PixelDto> changedPixels = [];
-                    await _canvasWriteCoordinator.ExecuteAsync(request.CanvasId, async _ =>
-                    {
-                        var canvas = await dbContext.Canvases
-                            .AsNoTracking()
-                            .FirstOrDefaultAsync(c => c.Id == request.CanvasId, stoppingToken);
-
-                        if (canvas == null ||
-                            !string.Equals(canvas.Name, request.CanvasName, StringComparison.Ordinal) ||
-                            canvas.Width != request.Width ||
-                            canvas.Height != request.Height ||
-                            canvas.CanvasMode != request.CanvasMode)
-                        {
-                            _logger.LogWarning("Skipping queued canvas seed for {CanvasName}: canvas no longer matches the queued request.", request.CanvasName);
-                            shouldStop = true;
-                            dbContext.ChangeTracker.Clear();
-                            return;
-                        }
-
-                        var existingCoordinates = await LoadExistingCoordinatesAsync(dbContext, request.CanvasId, batch.Coordinates, stoppingToken);
-                        var coordinatesToInsert = batch.Coordinates
-                            .Where(coordinate => !existingCoordinates.Contains((coordinate.X, coordinate.Y)))
-                            .ToList();
-
-                        if (coordinatesToInsert.Count == 0)
-                        {
-                            dbContext.ChangeTracker.Clear();
-                            return;
-                        }
-
-                        var timestamp = DateTime.UtcNow;
-                        var pixels = coordinatesToInsert.Select(coordinate => new Pixel
-                        {
-                            Id = Guid.NewGuid(),
-                            CanvasId = request.CanvasId,
-                            X = coordinate.X,
-                            Y = coordinate.Y,
-                            ColorId = batch.ColorId,
-                            OwnerId = request.CreatorId,
-                            Price = batch.Price,
-                        }).ToList();
-
-                        var pixelChangedEvents = pixels.Select(pixel => new PixelChangedEvent
-                        {
-                            Id = Guid.NewGuid(),
-                            PixelId = pixel.Id,
-                            OldOwnerUserId = null,
-                            OwnerUserId = request.CreatorId,
-                            OldColorId = defaultColor.Id,
-                            NewColorId = pixel.ColorId,
-                            NewPrice = pixel.Price,
-                            ChangedAt = timestamp,
-                        }).ToList();
-
-                        await dbContext.Pixels.AddRangeAsync(pixels, stoppingToken);
-                        await dbContext.PixelChangedEvents.AddRangeAsync(pixelChangedEvents, stoppingToken);
-                        await dbContext.SaveChangesAsync(stoppingToken);
-
-                        changedPixels = pixels.Select(pixel => new PixelDto
-                        {
-                            Id = pixel.Id,
-                            CanvasId = pixel.CanvasId,
-                            X = pixel.X,
-                            Y = pixel.Y,
-                            ColorId = pixel.ColorId,
-                            OwnerId = pixel.OwnerId,
-                            Price = pixel.Price,
-                        }).ToList();
-
-                        totalSeededPixels += changedPixels.Count;
-                        dbContext.ChangeTracker.Clear();
-                    }, stoppingToken);
-
-                    if (shouldStop)
-                    {
-                        break;
-                    }
-
-                    foreach (var notificationBatch in changedPixels.Chunk(SeedBatchSize))
-                    {
-                        await NotifySeedBatchSafelyAsync(notifier, request.CanvasName, notificationBatch);
-                    }
-                }
-            }
-            finally
-            {
-                dbContext.ChangeTracker.AutoDetectChangesEnabled = originalAutoDetectChanges;
-            }
-
-            if (shouldStop)
+            // Seed with up to 3 attempts, resuming from the last committed batch. Already-drawn
+            // pixels are skipped by LoadExistingCoordinatesAsync inside each batch, so a retry never
+            // re-draws — the committed pixels are its memory. Returns null if seeding was aborted
+            // (canvas no longer matches the request, or every attempt failed).
+            var totalSeededPixels = await SeedCanvasBatchesWithRetryAsync(dbContext, notifier, request, seedBatches, stoppingToken);
+            if (totalSeededPixels is null)
             {
                 return;
             }
@@ -221,6 +125,10 @@ public class CanvasSeedQueueService : BackgroundService, ICanvasSeedQueue
                     .ExecuteUpdateAsync(setters => setters
                         .SetProperty(canvasEntity => canvasEntity.UpdatedAt, DateTime.UtcNow), stoppingToken);
             }, stoppingToken);
+
+            // Seeding wrote pixels via bulk SQL (not the per-pixel write-through path); drop the cache
+            // so the next read renders the fully-seeded canvas from truth.
+            imageCache?.Remove(request.CanvasName);
 
             _logger.LogInformation(
                 "Processed queued canvas seed for {CanvasName}. Creator={CreatorUserName}, SeededPixels={SeededPixels}, CanvasMode={CanvasMode}",
@@ -236,6 +144,157 @@ public class CanvasSeedQueueService : BackgroundService, ICanvasSeedQueue
         {
             _logger.LogError(exception, "Failed to process queued canvas seed for {CanvasName}", request.CanvasName);
         }
+    }
+
+    /// <summary>
+    /// Writes the seed batches to the database with up to <c>3</c> attempts. On a transient
+    /// failure the next attempt resumes from <c>startIndex</c> (the batch after the last one that
+    /// fully committed); combined with <see cref="LoadExistingCoordinatesAsync"/>, which skips
+    /// coordinates that already exist, this means a retry never re-draws a pixel — the committed
+    /// rows are how progress is remembered. Each batch's <c>SaveChangesAsync</c> is atomic, so a
+    /// failed batch commits nothing and is cleanly re-attempted.
+    /// </summary>
+    /// <returns>The total number of pixels seeded across all attempts, or <c>null</c> if seeding
+    /// was aborted (the canvas no longer matches the request, or every attempt failed).</returns>
+    private async Task<int?> SeedCanvasBatchesWithRetryAsync(
+        AppDbContext dbContext,
+        IPixelNotifier notifier,
+        QueuedCanvasSeedRequest request,
+        SeedBatch[] seedBatches,
+        CancellationToken stoppingToken)
+    {
+        const int maxAttempts = 3;
+        var totalSeededPixels = 0;
+        var startIndex = 0;
+        var originalAutoDetectChanges = dbContext.ChangeTracker.AutoDetectChangesEnabled;
+        dbContext.ChangeTracker.AutoDetectChangesEnabled = false;
+
+        try
+        {
+            for (var attempt = 1; attempt <= maxAttempts; attempt++)
+            {
+                var shouldStop = false;
+                try
+                {
+                    for (var index = startIndex; index < seedBatches.Length; index++)
+                    {
+                        stoppingToken.ThrowIfCancellationRequested();
+                        var batch = seedBatches[index];
+
+                        List<PixelDto> changedPixels = [];
+                        await _canvasWriteCoordinator.ExecuteAsync(request.CanvasId, async _ =>
+                        {
+                            var canvas = await dbContext.Canvases
+                                .AsNoTracking()
+                                .FirstOrDefaultAsync(c => c.Id == request.CanvasId, stoppingToken);
+
+                            if (canvas == null ||
+                                !string.Equals(canvas.Name, request.CanvasName, StringComparison.Ordinal) ||
+                                canvas.Width != request.Width ||
+                                canvas.Height != request.Height ||
+                                canvas.CanvasMode != request.CanvasMode)
+                            {
+                                _logger.LogWarning("Skipping queued canvas seed for {CanvasName}: canvas no longer matches the queued request.", request.CanvasName);
+                                shouldStop = true;
+                                dbContext.ChangeTracker.Clear();
+                                return;
+                            }
+
+                            var existingCoordinates = await LoadExistingCoordinatesAsync(dbContext, request.CanvasId, batch.Coordinates, stoppingToken);
+                            var coordinatesToInsert = batch.Coordinates
+                                .Where(coordinate => !existingCoordinates.Contains((coordinate.X, coordinate.Y)))
+                                .ToList();
+
+                            if (coordinatesToInsert.Count == 0)
+                            {
+                                dbContext.ChangeTracker.Clear();
+                                return;
+                            }
+
+                            var pixels = coordinatesToInsert.Select(coordinate => new Pixel
+                            {
+                                Id = Guid.NewGuid(),
+                                CanvasId = request.CanvasId,
+                                X = coordinate.X,
+                                Y = coordinate.Y,
+                                ColorId = batch.ColorId,
+                                OwnerId = request.CreatorId,
+                                Price = batch.Price,
+                            }).ToList();
+
+                            // NOTE: no PixelChangedEvent rows are written for the seed. Those events
+                            // feed the creator's daily Normal-mode quota (PixelRepository.GetUsed-
+                            // NormalModePixelsTodayAsync) and per-pixel history; counting the entire
+                            // seed against the creator on creation day would exhaust their quota and
+                            // block them from painting their own canvas. The seed is the canvas's
+                            // initial state, not user activity. Rendering reads the Pixels table and
+                            // pixel ownership lives on the Pixel row, so neither is affected.
+                            await dbContext.Pixels.AddRangeAsync(pixels, stoppingToken);
+                            await dbContext.SaveChangesAsync(stoppingToken);
+
+                            changedPixels = pixels.Select(pixel => new PixelDto
+                            {
+                                Id = pixel.Id,
+                                CanvasId = pixel.CanvasId,
+                                X = pixel.X,
+                                Y = pixel.Y,
+                                ColorId = pixel.ColorId,
+                                OwnerId = pixel.OwnerId,
+                                Price = pixel.Price,
+                            }).ToList();
+
+                            totalSeededPixels += changedPixels.Count;
+                            dbContext.ChangeTracker.Clear();
+                        }, stoppingToken);
+
+                        if (shouldStop)
+                        {
+                            return null;
+                        }
+
+                        // The batch fully committed; advance the resume point past it before notifying,
+                        // so a crash during notification resumes at the next batch (this batch's pixels
+                        // are already persisted and will be skipped on re-read).
+                        startIndex = index + 1;
+
+                        foreach (var notificationBatch in changedPixels.Chunk(SeedBatchSize))
+                        {
+                            await NotifySeedBatchSafelyAsync(notifier, request.CanvasName, notificationBatch);
+                        }
+                    }
+
+                    return totalSeededPixels;
+                }
+                catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+                {
+                    throw;
+                }
+                catch (Exception exception)
+                {
+                    dbContext.ChangeTracker.Clear();
+
+                    if (attempt < maxAttempts)
+                    {
+                        _logger.LogWarning(exception,
+                            "Canvas seed attempt {Attempt}/{MaxAttempts} failed for {CanvasName}; will retry from batch {StartIndex}. Pixels drawn so far: {DrawnPixels}.",
+                            attempt, maxAttempts, request.CanvasName, startIndex, totalSeededPixels);
+                        await Task.Delay(TimeSpan.FromSeconds(2), stoppingToken);
+                        continue;
+                    }
+
+                    _logger.LogError(exception,
+                        "Canvas seed failed after {MaxAttempts} attempts for {CanvasName}. Pixels drawn: {DrawnPixels}.",
+                        maxAttempts, request.CanvasName, totalSeededPixels);
+                    return null;
+                }
+            }
+        }
+        finally
+        {
+            dbContext.ChangeTracker.AutoDetectChangesEnabled = originalAutoDetectChanges;
+        }
+
+        return totalSeededPixels;
     }
 
     private static IEnumerable<SeedBatch> BuildSeedBatches(ColorDto[,] grid, long price)

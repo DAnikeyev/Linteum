@@ -407,6 +407,10 @@ window.canvasRenderer = {
             });
     },
 
+    clearImage: function () {
+        this.drawLoadedImage(null);
+    },
+
     filterNonWhitePixels: function (coordinates) {
         if (!this.ctx || !this.committedImageData || !Array.isArray(coordinates) || coordinates.length === 0) {
             return coordinates || [];
@@ -539,7 +543,10 @@ window.canvasRenderer = {
             }
 
             if (pixel.suppressRipple) {
-                this.rememberSuppressedRipple(pixel, now);
+                // Brush/erase render this pixel without a ripple. Do NOT seed the suppress
+                // marker here: the marker is seeded only when a ripple is actually drawn
+                // (below), so it truthfully means "this pixel already rippled recently" and
+                // a later echo of the same pixel de-duplicates instead of being silenced.
                 continue;
             }
 
@@ -553,6 +560,65 @@ window.canvasRenderer = {
                 color: pixel.color,
                 startTime: now
             });
+
+            // Seed AFTER drawing the ripple so the server's echo of this same pixel
+            // is de-duplicated instead of double-rippling.
+            this.rememberSuppressedRipple(pixel, now);
+        }
+
+        if (this.shouldAnimateOverlay()) {
+            this.ensureAnimation();
+        }
+    },
+
+    // Typed-array counterpart of renderBatch for the hot pixel path (P-PERF-07). Parallel arrays are
+    // far cheaper to serialize over the Blazor circuit than an array of per-pixel objects.
+    //   xs/ys    : Int32Array of coordinates
+    //   rgbs     : Int32Array of packed 0xRRGGBB colors (unused when the clear flag is set)
+    //   flags    : Uint8Array; bit0 = clear, bit1 = suppressRipple, bit2 = skip (invalid color)
+    renderBatchTyped: function (xs, ys, rgbs, flags) {
+        if (!this.ctx) return;
+
+        var n = xs ? xs.length : 0;
+        if (n === 0) return;
+
+        var now = performance.now();
+        this.pruneSuppressedRipples(now);
+
+        for (var i = 0; i < n; i++) {
+            var x = xs[i];
+            var y = ys[i];
+            var flag = flags[i];
+
+            if ((flag & 4) !== 0) {
+                continue; // invalid color — mirrors renderBatch's silent skip
+            }
+
+            var color = '#' + (rgbs[i] >>> 0).toString(16).padStart(6, '0');
+            var pixel = { x: x, y: y, color: color };
+
+            if ((flag & 1) !== 0) {
+                this.ctx.clearRect(x, y, 1, 1);
+                this.setCommittedPixelData(x, y, color, true);
+                continue;
+            }
+
+            this.ctx.fillStyle = color;
+            this.ctx.fillRect(x, y, 1, 1);
+            this.setCommittedPixelData(x, y, color, false);
+
+            if ((flag & 2) !== 0) {
+                // suppressRipple: draw without a ripple, and do not poison the echo.
+                // See renderBatch for why the marker is seeded only after a ripple is drawn.
+                continue;
+            }
+
+            if (this.shouldSkipRipple(pixel, now)) {
+                continue;
+            }
+
+            this.ripples.push({ x: x + 0.5, y: y + 0.5, color: color, startTime: now });
+            this.rememberSuppressedRipple(pixel, now);
         }
 
         if (this.shouldAnimateOverlay()) {

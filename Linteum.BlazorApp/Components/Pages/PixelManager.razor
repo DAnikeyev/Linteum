@@ -220,12 +220,15 @@
 
                     <div class="pm-field">
                         <label for="textContentInput" class="form-label">Text</label>
+                        @* Uncontrolled element: the DOM owns the value so typing stays native and
+                           responsive under Blazor Server. We only read it via @oninput; never bind
+                           value back, or per-keystroke render round-trips clobber characters typed
+                           faster than the network. _textContent is reset on entering Text mode. *@
                         <textarea id="textContentInput"
                                   class="form-control pm-textarea"
                                   rows="4"
                                   maxlength="500"
                                   placeholder="Type text to draw..."
-                                  value="@_textContent"
                                   @oninput="OnTextContentInput"
                                   @onkeydown="OnTextContentKeyDownAsync"></textarea>
                         <div class="pm-text-note">Text starts at the selected pixel and is applied in batches of up to 100 pixels. Press Ctrl+Enter to paint.</div>
@@ -329,11 +332,11 @@
                     <div class="pm-creator-actions">
                         @if (CanEraseCanvas)
                         {
-                            <button type="button" class="btn pm-creator-btn pm-creator-erase-btn" @onclick="PromptEraseCanvas" disabled="@(_isManagingCanvas || HasActiveCanvasMaintenance)">Erase canvas</button>
+                            <button type="button" class="btn pm-creator-btn pm-creator-erase-btn" @onclick="PromptEraseCanvas" disabled="@(_isManagingCanvas || HasActiveCanvasMaintenance)">Erase</button>
                         }
                         @if (CanDeleteCanvas)
                         {
-                            <button type="button" class="btn pm-creator-btn pm-creator-delete-btn" @onclick="PromptDeleteCanvas" disabled="@(_isManagingCanvas || HasActiveCanvasMaintenance)">Delete canvas</button>
+                            <button type="button" class="btn pm-creator-btn pm-creator-delete-btn" @onclick="PromptDeleteCanvas" disabled="@(_isManagingCanvas || HasActiveCanvasMaintenance)">Delete</button>
                         }
                     </div>
                     @if (HasPendingCanvasAction)

@@ -171,7 +171,14 @@
         {
             if (!_hasLoadedMinimizedPreference)
             {
-                _storedMinimizedPreference = await LocalStorageService.GetSessionItemAsync<bool?>(MinimizedStorageKey);
+                try
+                {
+                    _storedMinimizedPreference = await LocalStorageService.GetSessionItemAsync<bool?>(MinimizedStorageKey);
+                }
+                catch (Exception ex) when (IsExpectedCircuitShutdown(ex))
+                {
+                    _storedMinimizedPreference = null;
+                }
                 _hasLoadedMinimizedPreference = true;
             }
 
@@ -197,18 +204,34 @@
         {
             if (!State.IsMinimized)
             {
-                await JSRuntime.InvokeVoidAsync("canvasHelpers.enableEnterToSend", _draftMessageRef, GetComposerEnterReference());
+                await SafeInvokeVoidAsync("canvasHelpers.enableEnterToSend", _draftMessageRef, GetComposerEnterReference());
             }
 
             return;
         }
 
-        await JSRuntime.InvokeVoidAsync("canvasHelpers.scrollElementToBottom", _messagesContainerRef);
+        await SafeInvokeVoidAsync("canvasHelpers.scrollElementToBottom", _messagesContainerRef);
         if (!State.IsMinimized)
         {
-            await JSRuntime.InvokeVoidAsync("canvasHelpers.enableEnterToSend", _draftMessageRef, GetComposerEnterReference());
+            await SafeInvokeVoidAsync("canvasHelpers.enableEnterToSend", _draftMessageRef, GetComposerEnterReference());
         }
     }
+
+    // Wraps fire-and-forget UI interop so a disconnect while the chat is re-rendering does not
+    // throw an unhandled JSDisconnectedException and tear the circuit down.
+    private async Task SafeInvokeVoidAsync(string identifier, params object?[]? args)
+    {
+        try
+        {
+            await JSRuntime.InvokeVoidAsync(identifier, args);
+        }
+        catch (Exception ex) when (IsExpectedCircuitShutdown(ex))
+        {
+        }
+    }
+
+    private static bool IsExpectedCircuitShutdown(Exception ex) =>
+        ex is JSDisconnectedException or OperationCanceledException or ObjectDisposedException;
 
     public void Dispose()
     {

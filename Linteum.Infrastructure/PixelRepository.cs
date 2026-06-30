@@ -24,7 +24,6 @@ public class PixelRepository : IPixelRepository
         Other,
     }
 
-    private sealed record PixelAttemptResult(PixelDto? Pixel, PixelChangeFailureReason FailureReason = PixelChangeFailureReason.None);
     private sealed record ChunkExecutionResult(IReadOnlyList<PixelDto> ChangedPixels, PixelChangeFailureReason FailureReason = PixelChangeFailureReason.None);
 
     private sealed class BatchExecutionState
@@ -32,42 +31,37 @@ public class PixelRepository : IPixelRepository
         public int RemainingNormalQuota { get; set; } = int.MaxValue;
     }
 
-    private static int? DefaultColorId;
     private readonly AppDbContext _context;
     private readonly IMapper _mapper;
     private readonly ILogger<PixelRepository> _logger;
     private readonly IPixelNotifier _notifier;
     private readonly IColorRepository _colorRepository;
+    private readonly IBalanceChangedEventRepository _balanceChangedEventRepository;
     private readonly int _normalModeDailyPixelLimit;
     private readonly int _guestNormalModeDailyPixelLimit;
     private readonly ICanvasWriteCoordinator _canvasWriteCoordinator;
+    private readonly ICanvasImageCache? _imageCache;
 
-    public PixelRepository(AppDbContext context, IMapper mapper, ILogger<PixelRepository> logger, IPixelNotifier notifier, IColorRepository colorRepository, Config config, ICanvasWriteCoordinator canvasWriteCoordinator)
+    public PixelRepository(AppDbContext context, IMapper mapper, ILogger<PixelRepository> logger, IPixelNotifier notifier, IColorRepository colorRepository, IBalanceChangedEventRepository balanceChangedEventRepository, Config config, ICanvasWriteCoordinator canvasWriteCoordinator, ICanvasImageCache? imageCache = null)
     {
         _context = context;
         _mapper = mapper;
         _logger = logger;
         _notifier = notifier;
         _colorRepository = colorRepository;
+        _balanceChangedEventRepository = balanceChangedEventRepository;
         _normalModeDailyPixelLimit = Math.Max(0, config.NormalModeDailyPixelLimit);
         _guestNormalModeDailyPixelLimit = Math.Max(0, config.GuestNormalModeDailyPixelLimit);
         _canvasWriteCoordinator = canvasWriteCoordinator;
+        _imageCache = imageCache;
     }
 
     private async Task<int?> GetDefaultColorIdAsync()
     {
-        if (DefaultColorId != null)
-        {
-            return DefaultColorId;
-        }
-
-        var defaultColor = await _colorRepository.GetDefautColor();
-        if (defaultColor != null)
-        {
-            DefaultColorId = defaultColor.Id;
-        }
-
-        return DefaultColorId;
+        // Resolved per call (once per chunk) instead of cached statically, so the default color is always
+        // correct even if white (#FFFFFF) is deleted or re-seeded with a new Id (P-CON-06).
+        var defaultColor = await _colorRepository.GetDefaultColor();
+        return defaultColor?.Id;
     }
 
     public async Task<IEnumerable<PixelDto>> GetByCanvasIdAsync(Guid canvasId)
@@ -77,6 +71,22 @@ public class PixelRepository : IPixelRepository
             .Where(p => p.CanvasId == canvasId)
             .Select(p => _mapper.Map<PixelDto>(p))
             .ToListAsync();
+    }
+
+    public IAsyncEnumerable<PixelDto> StreamPixelsForCanvasAsync(Guid canvasId)
+    {
+        // Project only the render fields and stream, so a whole-canvas render never buffers every
+        // pixel (P-PERF-01). The DbContext (scoped to the request) stays alive for the enumeration.
+        return _context.Pixels
+            .AsNoTracking()
+            .Where(p => p.CanvasId == canvasId)
+            .Select(p => new PixelDto
+            {
+                X = p.X,
+                Y = p.Y,
+                ColorId = p.ColorId,
+            })
+            .AsAsyncEnumerable();
     }
 
     public async Task<IEnumerable<PixelDto>> GetByOwnerIdAsync(Guid ownerId)
@@ -227,6 +237,13 @@ public class PixelRepository : IPixelRepository
                 }
             }
 
+            if (batchResult.ChangedPixels.Count > 0 && _imageCache is { } writeCache)
+            {
+                // Keep the in-memory raster in lockstep with the DB commit. Applied inside the
+                // per-canvas coordinator section, so raster mutations are ordered exactly like the
+                // writes and no change is lost.
+                await writeCache.ApplyWritesAsync(canvas.Name, batchResult.ChangedPixels);
+            }
             return batchResult;
         });
 
@@ -311,6 +328,13 @@ public class PixelRepository : IPixelRepository
                 await TouchCanvasAsync(canvasId, DateTime.UtcNow);
             }
 
+            if (deletedCount > 0 && _imageCache is { } deleteCache)
+            {
+                // Reflect the deletions on the live raster, inside the same per-canvas coordinator
+                // section as the DB delete so the two stay consistent.
+                await deleteCache.ApplyDeletesAsync(canvas.Name, deletedCoordinates);
+            }
+
             _logger.LogInformation("Deleted {Count} pixels and their history from canvas {CanvasName} by user {UserId}", deletedCount, canvas.Name, userId);
 
             return new PixelBatchDeleteResultDto
@@ -353,46 +377,6 @@ public class PixelRepository : IPixelRepository
             : 0;
 
         return CreateNormalModeQuotaDto(canvas.CanvasMode == CanvasMode.Normal, usedToday, dailyLimit);
-    }
-
-    private async Task<PixelAttemptResult> TryChangePixelInternalAsync(Guid ownerId, PixelDto pixel, Canvas canvas, BatchExecutionState state, bool useMasterOverride)
-    {
-        if (pixel.X < 0 || pixel.Y < 0 || pixel.X >= canvas.Width || pixel.Y >= canvas.Height)
-        {
-            _logger.LogDebug("Pixel coordinates ({X}, {Y}) are out of bounds for canvas {CanvasName} (Width: {Width}, Height: {Height}).", pixel.X, pixel.Y, canvas.Name, canvas.Width, canvas.Height);
-            return new PixelAttemptResult(null, PixelChangeFailureReason.OutOfBounds);
-        }
-
-        return canvas.CanvasMode switch
-        {
-            CanvasMode.Normal => await TryChangePixelNormalAsync(pixel, ownerId, state, useMasterOverride),
-            CanvasMode.Economy => await TryChangePixelEconomyAsync(pixel, ownerId, useMasterOverride),
-            CanvasMode.FreeDraw => new PixelAttemptResult(await TryChangePixelFreeDrawAsync(pixel, ownerId)),
-            _ => new PixelAttemptResult(null, PixelChangeFailureReason.UnknownCanvasMode),
-        };
-    }
-
-    private async Task<PixelAttemptResult> TryChangePixelNormalAsync(PixelDto pixel, Guid ownerId, BatchExecutionState state, bool useMasterOverride)
-    {
-        if (!useMasterOverride && state.RemainingNormalQuota <= 0)
-        {
-            _logger.LogDebug("Normal mode daily limit reached for user {OwnerId} on canvas {CanvasId}", ownerId, pixel.CanvasId);
-            return new PixelAttemptResult(null, PixelChangeFailureReason.NormalLimitReached);
-        }
-
-        var changedPixel = await TryChangePixelFreeDrawAsync(pixel, ownerId);
-        if (changedPixel != null && !useMasterOverride)
-        {
-            state.RemainingNormalQuota--;
-        }
-
-        return new PixelAttemptResult(changedPixel, changedPixel == null ? PixelChangeFailureReason.Other : PixelChangeFailureReason.None);
-    }
-
-    private async Task<PixelDto?> TryChangePixelFreeDrawAsync(PixelDto pixel, Guid ownerId)
-    {
-        var result = await TryChangePixelsBatchAsync(ownerId, [pixel]);
-        return result.ChangedPixels.FirstOrDefault();
     }
 
     private async Task<int> GetUsedNormalModePixelsTodayAsync(Guid ownerId, Guid canvasId)
@@ -439,17 +423,6 @@ public class PixelRepository : IPixelRepository
                && postgresException.SqlState == PostgresErrorCodes.UniqueViolation;
     }
 
-    private async Task<PixelAttemptResult> TryChangePixelEconomyAsync(PixelDto pixel, Guid ownerId, bool useMasterOverride)
-    {
-        var result = await TryChangePixelsBatchAsync(ownerId, [pixel], useMasterOverride);
-        var failureReason = result.ChangedPixels.Count > 0
-            ? PixelChangeFailureReason.None
-            : result.StoppedByBudget
-                ? PixelChangeFailureReason.EconomyInsufficientBalance
-                : PixelChangeFailureReason.Other;
-        return new PixelAttemptResult(result.ChangedPixels.FirstOrDefault(), failureReason);
-    }
-
     private async Task<ChunkExecutionResult> ExecuteChunkAsync(Guid ownerId, IReadOnlyCollection<PixelDto> pixels, Canvas canvas, bool useMasterOverride)
     {
         if (pixels.Count == 0)
@@ -485,84 +458,98 @@ public class PixelRepository : IPixelRepository
             return new ChunkExecutionResult(Array.Empty<PixelDto>(), PixelChangeFailureReason.Other);
         }
 
-        try
+        // A (CanvasId,X,Y) uniqueness conflict can only come from another API process (this chunk runs inside
+        // the canvas write-coordinator lock). Reload the conflicting pixels and retry once as an update (P-CON-02).
+        const int maxAttempts = 2;
+        for (var attempt = 1; attempt <= maxAttempts; attempt++)
         {
-            var existingPixels = await LoadPixelsForCoordinatesAsync(pixels.First().CanvasId, pixels);
-            var existingByCoordinate = existingPixels.ToDictionary(pixel => (pixel.X, pixel.Y));
-            var changedPixels = new List<PixelDto>(pixels.Count);
-            var pixelChangedEvents = new List<PixelChangedEvent>(pixels.Count);
-
-            foreach (var pixel in pixels)
+            try
             {
-                if (!existingByCoordinate.TryGetValue((pixel.X, pixel.Y), out var existingPixel))
+                var existingPixels = await LoadPixelsForCoordinatesAsync(pixels.First().CanvasId, pixels);
+                var existingByCoordinate = existingPixels.ToDictionary(pixel => (pixel.X, pixel.Y));
+                var changedPixels = new List<PixelDto>(pixels.Count);
+                var pixelChangedEvents = new List<PixelChangedEvent>(pixels.Count);
+
+                foreach (var pixel in pixels)
                 {
-                    existingPixel = new Pixel
+                    if (!existingByCoordinate.TryGetValue((pixel.X, pixel.Y), out var existingPixel))
                     {
-                        Id = Guid.NewGuid(),
-                        CanvasId = pixel.CanvasId,
-                        X = pixel.X,
-                        Y = pixel.Y,
-                        ColorId = pixel.ColorId,
-                        OwnerId = ownerId,
-                        Price = 0,
-                    };
-                    existingByCoordinate[(pixel.X, pixel.Y)] = existingPixel;
-                    await _context.Pixels.AddAsync(existingPixel);
+                        existingPixel = new Pixel
+                        {
+                            Id = Guid.NewGuid(),
+                            CanvasId = pixel.CanvasId,
+                            X = pixel.X,
+                            Y = pixel.Y,
+                            ColorId = pixel.ColorId,
+                            OwnerId = ownerId,
+                            Price = 0,
+                        };
+                        existingByCoordinate[(pixel.X, pixel.Y)] = existingPixel;
+                        await _context.Pixels.AddAsync(existingPixel);
 
-                    pixelChangedEvents.Add(new PixelChangedEvent
+                        pixelChangedEvents.Add(new PixelChangedEvent
+                        {
+                            Id = Guid.NewGuid(),
+                            PixelId = existingPixel.Id,
+                            OldOwnerUserId = null,
+                            OwnerUserId = ownerId,
+                            OldColorId = defaultColorId.Value,
+                            NewColorId = pixel.ColorId,
+                            NewPrice = 0,
+                            ChangedAt = DateTime.UtcNow,
+                        });
+                    }
+                    else
                     {
-                        Id = Guid.NewGuid(),
-                        PixelId = existingPixel.Id,
-                        OldOwnerUserId = null,
-                        OwnerUserId = ownerId,
-                        OldColorId = defaultColorId.Value,
-                        NewColorId = pixel.ColorId,
-                        NewPrice = 0,
-                        ChangedAt = DateTime.UtcNow,
-                    });
+                        var oldOwnerId = existingPixel.OwnerId;
+                        var oldColorId = existingPixel.ColorId;
+                        existingPixel.ColorId = pixel.ColorId;
+                        existingPixel.OwnerId = ownerId;
+                        existingPixel.Price = 0;
+
+                        pixelChangedEvents.Add(new PixelChangedEvent
+                        {
+                            Id = Guid.NewGuid(),
+                            PixelId = existingPixel.Id,
+                            OldOwnerUserId = oldOwnerId,
+                            OwnerUserId = ownerId,
+                            OldColorId = oldColorId,
+                            NewColorId = pixel.ColorId,
+                            NewPrice = 0,
+                            ChangedAt = DateTime.UtcNow,
+                        });
+                    }
+
+                    changedPixels.Add(_mapper.Map<PixelDto>(existingPixel));
                 }
-                else
-                {
-                    var oldOwnerId = existingPixel.OwnerId;
-                    var oldColorId = existingPixel.ColorId;
-                    existingPixel.ColorId = pixel.ColorId;
-                    existingPixel.OwnerId = ownerId;
-                    existingPixel.Price = 0;
 
-                    pixelChangedEvents.Add(new PixelChangedEvent
-                    {
-                        Id = Guid.NewGuid(),
-                        PixelId = existingPixel.Id,
-                        OldOwnerUserId = oldOwnerId,
-                        OwnerUserId = ownerId,
-                        OldColorId = oldColorId,
-                        NewColorId = pixel.ColorId,
-                        NewPrice = 0,
-                        ChangedAt = DateTime.UtcNow,
-                    });
-                }
-
-                changedPixels.Add(_mapper.Map<PixelDto>(existingPixel));
+                await _context.PixelChangedEvents.AddRangeAsync(pixelChangedEvents);
+                await _context.SaveChangesAsync();
+                await TouchCanvasAsync(pixels.First().CanvasId, DateTime.UtcNow);
+                _context.ChangeTracker.Clear();
+                return new ChunkExecutionResult(changedPixels);
             }
+            catch (DbUpdateException ex) when (IsPixelConflict(ex))
+            {
+                _context.ChangeTracker.Clear();
+                if (attempt < maxAttempts)
+                {
+                    _logger.LogDebug(ex, "Pixel batch conflicted for owner {OwnerId} on canvas {CanvasId}; retrying as update", ownerId, pixels.First().CanvasId);
+                    continue;
+                }
 
-            await _context.PixelChangedEvents.AddRangeAsync(pixelChangedEvents);
-            await _context.SaveChangesAsync();
-            await TouchCanvasAsync(pixels.First().CanvasId, DateTime.UtcNow);
-            _context.ChangeTracker.Clear();
-            return new ChunkExecutionResult(changedPixels);
+                _logger.LogWarning("Pixel batch for owner {OwnerId} on canvas {CanvasId} still conflicted after {Attempts} attempts; dropping chunk.", ownerId, pixels.First().CanvasId, maxAttempts);
+                return new ChunkExecutionResult(Array.Empty<PixelDto>(), PixelChangeFailureReason.Other);
+            }
+            catch (Exception ex)
+            {
+                _context.ChangeTracker.Clear();
+                _logger.LogError(ex, "Error changing free draw batch. OwnerId={OwnerId}, CanvasId={CanvasId}", ownerId, pixels.First().CanvasId);
+                return new ChunkExecutionResult(Array.Empty<PixelDto>(), PixelChangeFailureReason.Other);
+            }
         }
-        catch (DbUpdateException ex) when (IsPixelConflict(ex))
-        {
-            _context.ChangeTracker.Clear();
-            _logger.LogDebug(ex, "Pixel batch conflicted for owner {OwnerId} on canvas {CanvasId}", ownerId, pixels.First().CanvasId);
-            return new ChunkExecutionResult(Array.Empty<PixelDto>(), PixelChangeFailureReason.Other);
-        }
-        catch (Exception ex)
-        {
-            _context.ChangeTracker.Clear();
-            _logger.LogError(ex, "Error changing free draw batch. OwnerId={OwnerId}, CanvasId={CanvasId}", ownerId, pixels.First().CanvasId);
-            return new ChunkExecutionResult(Array.Empty<PixelDto>(), PixelChangeFailureReason.Other);
-        }
+
+        return new ChunkExecutionResult(Array.Empty<PixelDto>(), PixelChangeFailureReason.Other);
     }
 
     private async Task<ChunkExecutionResult> ExecuteEconomyChunkAsync(Guid ownerId, IReadOnlyCollection<PixelDto> pixels, bool useMasterOverride)
@@ -581,7 +568,7 @@ public class PixelRepository : IPixelRepository
             var existingByCoordinate = existingPixels.ToDictionary(pixel => (pixel.X, pixel.Y));
             var changedPixels = new List<PixelDto>(pixels.Count);
             var pixelChangedEvents = new List<PixelChangedEvent>(pixels.Count);
-            var balanceChangedEvents = new List<BalanceChangedEvent>(pixels.Count);
+            var totalPaid = 0L;
             var currentBalance = useMasterOverride ? 0L : await GetCurrentBalanceAsync(ownerId, pixels.First().CanvasId);
 
             if (!useMasterOverride && currentBalance == null)
@@ -648,16 +635,7 @@ public class PixelRepository : IPixelRepository
 
                 if (!useMasterOverride)
                 {
-                    balanceChangedEvents.Add(new BalanceChangedEvent
-                    {
-                        Id = Guid.NewGuid(),
-                        UserId = ownerId,
-                        CanvasId = pixel.CanvasId,
-                        ChangedAt = DateTime.UtcNow,
-                        OldBalance = currentBalance!.Value,
-                        NewBalance = currentBalance.Value - paid,
-                        Reason = BalanceChangedReason.PixelPayment,
-                    });
+                    totalPaid += paid;
                     currentBalance -= paid;
                 }
 
@@ -671,12 +649,21 @@ public class PixelRepository : IPixelRepository
             }
 
             await _context.PixelChangedEvents.AddRangeAsync(pixelChangedEvents);
-            if (balanceChangedEvents.Count > 0)
+            await _context.SaveChangesAsync();
+
+            // Route the chunk's total payment through the canonical guarded balance path so the negative-
+            // balance guard always applies (P-CON-05). This produces one PixelPayment ledger event per chunk;
+            // final balance is identical to the former per-pixel events.
+            if (totalPaid > 0)
             {
-                await _context.BalanceChangedEvents.AddRangeAsync(balanceChangedEvents);
+                var balanceResult = await _balanceChangedEventRepository.TryChangeBalanceCoreAsync(ownerId, pixels.First().CanvasId, -totalPaid, BalanceChangedReason.PixelPayment);
+                if (balanceResult == null)
+                {
+                    await transaction.RollbackAsync();
+                    return new ChunkExecutionResult(Array.Empty<PixelDto>(), PixelChangeFailureReason.EconomyInsufficientBalance);
+                }
             }
 
-            await _context.SaveChangesAsync();
             await TouchCanvasAsync(pixels.First().CanvasId, DateTime.UtcNow);
             await transaction.CommitAsync();
             _context.ChangeTracker.Clear();

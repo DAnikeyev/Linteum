@@ -39,7 +39,7 @@ public class ColorRepository : IColorRepository
             .ToList();
     }
 
-    public async Task<ColorDto?> GetDefautColor()
+    public async Task<ColorDto?> GetDefaultColor()
     {
         var defaultColor = await _context.Colors.AsNoTracking().FirstOrDefaultAsync(c => c.HexValue == "#FFFFFF");
         if (defaultColor == null)

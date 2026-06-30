@@ -45,6 +45,7 @@ public class AppDbContext : DbContext
             entity.Property(p => p.ColorId);
             entity.HasOne(p => p.Owner).WithMany().HasForeignKey(p => p.OwnerId);
             entity.HasOne(p => p.Canvas).WithMany(c => c.Pixels).HasForeignKey(p => p.CanvasId);
+            entity.HasOne(p => p.Color).WithMany().HasForeignKey(p => p.ColorId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<PixelChangedEvent>(entity =>
@@ -61,6 +62,8 @@ public class AppDbContext : DbContext
             entity.HasOne(e => e.Pixel).WithMany().HasForeignKey(e => e.PixelId);
             entity.HasOne(e => e.User).WithMany(u => u.PixelChangedEvents).HasForeignKey(e => e.OwnerUserId);
             entity.HasOne(e => e.OldOwnerUser).WithMany().HasForeignKey(e => e.OldOwnerUserId);
+            entity.HasOne(e => e.OldColor).WithMany().HasForeignKey(e => e.OldColorId).OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(e => e.NewColor).WithMany().HasForeignKey(e => e.NewColorId).OnDelete(DeleteBehavior.Restrict);
         });
 
         modelBuilder.Entity<BalanceChangedEvent>(entity =>
@@ -91,6 +94,7 @@ public class AppDbContext : DbContext
             entity.HasKey(c => c.Id);
             entity.Property(c => c.HexValue);
             entity.Property(c => c.Name);
+            entity.HasIndex(c => c.HexValue).IsUnique();
         });
 
         modelBuilder.Entity<Canvas>(entity =>

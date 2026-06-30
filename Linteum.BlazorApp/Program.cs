@@ -1,4 +1,5 @@
 using Linteum.BlazorApp;
+using Linteum.BlazorApp.Api;
 using Linteum.BlazorApp.Components;
 using Linteum.BlazorApp.Components.Notification;
 using Linteum.BlazorApp.Services;
@@ -53,6 +54,23 @@ try
         GoogleClientId = Environment.GetEnvironmentVariable("GOOGLE_CLIENT_ID") ?? string.Empty,
     });
     builder.Services.AddScoped(sp => sp.GetRequiredService<IHttpClientFactory>().CreateClient("ApiClient"));
+
+    // API gateway collaborators (P‑MAIN‑03): MyApiClient is now a thin facade over these focused,
+    // single-responsibility services — one HTTP client, a cache manager, a session store, and one
+    // repository per resource. All are scoped (one instance per circuit), so the caches stay
+    // per-circuit exactly as before.
+    builder.Services.AddScoped<ApiHttp>();
+    builder.Services.AddScoped<PixelCacheManager>();
+    builder.Services.AddScoped<SessionStore>();
+    builder.Services.AddSingleton<ColorsCache>();
+    builder.Services.AddScoped<ColorsRepository>();
+    builder.Services.AddScoped<CanvasesRepository>();
+    builder.Services.AddScoped<SubscriptionsRepository>();
+    builder.Services.AddScoped<CanvasChatRepository>();
+    builder.Services.AddScoped<PixelsRepository>();
+    builder.Services.AddScoped<HistoryRepository>();
+    builder.Services.AddScoped<BalanceRepository>();
+    builder.Services.AddScoped<AccountRepository>();
     builder.Services.AddScoped<MyApiClient>();
     builder.Services.AddDataProtection()
         .PersistKeysToFileSystem(new DirectoryInfo(Path.Combine(builder.Environment.ContentRootPath, "keys")))
@@ -69,6 +87,8 @@ try
     logger.Info("Razor Components and Interactive Server Components added");
 
     var app = builder.Build();
+
+    logger.Info("Now listening on: {Urls}", string.Join(", ", app.Urls));
 
     if (!app.Environment.IsDevelopment())
     {
@@ -105,6 +125,11 @@ try
 
         var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
         var contentType = response.Content.Headers.ContentType?.ToString() ?? "image/png";
+
+        // Let the browser reuse the image for quick revisits/navigation. The image content is global
+        // per canvas; 'private' keeps proxies/CDNs out of this auth-gated response. Re-reads beyond
+        // the window re-fetch and hit the (now cached) API, with client reconcile covering the gap.
+        httpContext.Response.Headers.CacheControl = "private, max-age=30";
 
         httpContext.Response.RegisterForDispose(response);
         return Results.Stream(stream, contentType);

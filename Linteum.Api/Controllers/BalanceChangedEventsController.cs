@@ -1,5 +1,6 @@
 using Linteum.Infrastructure;
-using Linteum.Api.Services;
+using Linteum.Api.Attributes;
+using Linteum.Api.Middleware;
 using Linteum.Shared;
 using Microsoft.AspNetCore.Mvc;
 
@@ -11,16 +12,15 @@ namespace Linteum.Api.Controllers
     {
         private readonly RepositoryManager _repoManager;
         private readonly ILogger<BalanceChangedEventsController> _logger;
-        private readonly SessionService _sessionService;
 
-        public BalanceChangedEventsController(RepositoryManager repoManager, SessionService sessionService, ILogger<BalanceChangedEventsController> logger)
+        public BalanceChangedEventsController(RepositoryManager repoManager, ILogger<BalanceChangedEventsController> logger)
         {
             _repoManager = repoManager;
-            _sessionService = sessionService;
             _logger = logger;
         }
 
         [HttpGet("user/{userId}")]
+        [DisabledEndpoint]
         public async Task<IActionResult> GetByUserId(Guid userId)
         {
             var events = (await _repoManager.BalanceChangedEventRepository.GetByUserIdAsync(userId)).ToList();
@@ -29,6 +29,7 @@ namespace Linteum.Api.Controllers
         }
 
         [HttpGet("user/{userId}/canvas/{canvasId}")]
+        [DisabledEndpoint]
         public async Task<IActionResult> GetByUserAndCanvasId(Guid userId, Guid canvasId)
         {
             var events = (await _repoManager.BalanceChangedEventRepository.GetByUserAndCanvasIdAsync(userId, canvasId)).ToList();
@@ -39,7 +40,7 @@ namespace Linteum.Api.Controllers
         [HttpGet("current/canvas/{canvasId}")]
         public async Task<IActionResult> GetCurrentForSession(Guid canvasId)
         {
-            var userId = _sessionService.ProcessHeader(HttpContext.Request.Headers);
+            var userId = HttpContext.GetSessionUserId();
             if (userId == null)
             {
                 _logger.LogWarning("Current balance request failed for canvas {CanvasId}: Session-Id header missing or invalid.", canvasId);
@@ -56,6 +57,7 @@ namespace Linteum.Api.Controllers
         }
 
         [HttpPost("change")]
+        [DisabledEndpoint]
         public async Task<IActionResult> TryChangeBalance(Guid userId, Guid canvasId, long delta, BalanceChangedReason reason)
         {
             var result = await _repoManager.BalanceChangedEventRepository.TryChangeBalanceAsync(userId, canvasId, delta, reason);
@@ -70,4 +72,3 @@ namespace Linteum.Api.Controllers
         }
     }
 }
-

@@ -557,13 +557,15 @@
 
 .pm-creator-btn {
     flex: 1 1 0;
+    /* min-width: 0 lets the flex items shrink below their label width, otherwise
+       long labels push the button outside the Canvas Tools card on narrow panels. */
+    min-width: 0;
     border-radius: 11px;
     padding: 0.48rem 0.54rem;
     font-size: 0.7rem;
     font-weight: 700;
     letter-spacing: 0.02em;
     text-transform: uppercase;
-    white-space: nowrap;
     color: #fff !important;
     box-shadow: 0 10px 20px rgba(29, 83, 169, 0.16);
 }

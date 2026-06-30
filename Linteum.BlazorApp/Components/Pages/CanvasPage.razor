@@ -8,6 +8,48 @@
     {
         <div class="canvas-loading-overlay">
             <div class="loading-spinner"></div>
+            @if (_initTimedOut)
+            {
+                <div class="canvas-loading-retry">
+                    <span>Taking longer than expected to load the canvas.</span>
+                    <button type="button" class="canvas-retry-button"
+                            disabled="@_retryInProgress"
+                            @onclick="RetryInitializationAsync">
+                        Retry
+                    </button>
+                </div>
+            }
+            else if (_initSecondsRemaining > 0)
+            {
+                <div class="canvas-loading-countdown">@_initSecondsRemaining</div>
+            }
+        </div>
+    }
+
+    @if (_canvas != null
+         && (_connectionStatus == HubConnectionStatus.Reconnecting
+             || _connectionStatus == HubConnectionStatus.Disconnected))
+    {
+        <div class="canvas-connection-banner @(_connectionStatus.ToString().ToLowerInvariant())">
+            <span class="canvas-connection-banner-text">
+                <span class="canvas-connection-dot"></span>
+                @if (_connectionStatus == HubConnectionStatus.Reconnecting)
+                {
+                    <text>Reconnecting…</text>
+                }
+                else
+                {
+                    <text>Realtime connection lost</text>
+                }
+            </span>
+            @if (_connectionStatus == HubConnectionStatus.Disconnected)
+            {
+                <button type="button" class="canvas-retry-button"
+                        disabled="@_retryInProgress"
+                        @onclick="RetryInitializationAsync">
+                    Retry
+                </button>
+            }
         </div>
     }
 

@@ -8,10 +8,10 @@ public interface IUserRepository
     public Task<UserDto?> GetByUserNameAsync(string userName);
     public Task<UserDto?> GetByIdAsync(Guid id);
     public Task<string[]> GetByIdAsync(IList<Guid> id);
-    public Task<UserDto?> AddOrUpdateUserAsync(UserDto userDto, UserPaswordDto? passwordDto = null);
+    public Task<UserDto?> AddOrUpdateUserAsync(UserDto userDto, UserPasswordDto? passwordDto = null);
     public Task<UserDto?> CreateGuestUserAsync();
     public Task<int> DeleteExpiredGuestUsersAsync(DateTime cutoffUtc, CancellationToken cancellationToken = default);
     
     public Task<UserDto?> DeleteUserAsync(UserDto userDto);
-    public Task<UserDto?> TryLogin(UserDto userDto, UserPaswordDto userPaswordDto);
+    public Task<UserDto?> TryLogin(UserDto userDto, UserPasswordDto userPaswordDto);
 }
