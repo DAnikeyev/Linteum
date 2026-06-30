@@ -66,7 +66,7 @@ flowchart LR
     end
 
     subgraph Nginx["nginx (TLS terminator)"]
-        UP["upstream blazor_cluster<br/>ip_hash: 5010 / 5011 / 5012"]
+        UP["upstream blazor_cluster<br/>hash $linteum_route_key: 5010 / 5011 / 5012"]
     end
 
     subgraph Linteum["Docker network: linteum_prod1"]
@@ -92,8 +92,10 @@ Two important properties of this topology:
    server**, not in the browser. The browser only holds the Blazor circuit (one WebSocket to
    nginx → a sticky Blazor replica). The Blazor server then reaches the API over the internal
    Docker network.
-2. **Sticky routing is mandatory.** nginx uses `ip_hash` so a given client always lands on the
-   same Blazor replica, because a Blazor Server circuit is stateful and bound to one process.
+2. **Sticky routing is mandatory.** nginx routes by a `linteum_route` **cookie** (not `ip_hash`
+   — Cloudflare sits in front and rotates its edge IP per connection, defeating IP hashing) so a
+   given client always lands on the same Blazor replica, because a Blazor Server circuit is
+   stateful and bound to one process.
 
 ## 3. Request lifecycle — "place a pixel"
 
@@ -225,4 +227,4 @@ All hosted services are registered as singletons/scoped in
 | Append‑only balance ledger | Full audit history of every economy transaction; balance is always reconstructable. | Balance reads require "latest row" queries; consistency relies on per‑canvas serialization. |
 | Per‑canvas write semaphore | Serializes writes per canvas to avoid lost updates and balance races within a process. | Not distributed — only safe with a single API instance. |
 | EF Core pooled DbContext (pool 64) | Reduces per‑request DbContext allocation cost. | Pool can be exhausted under heavy background‑service load. |
-| 3 Blazor replicas + ip_hash | Horizontal capacity for the stateful UI; sticky routing preserves circuits. | Online‑user state and in‑memory caches are per‑replica (no backplane). |
+| 3 Blazor replicas + cookie-sticky | Horizontal capacity for the stateful UI; sticky routing (linteum_route) preserves circuits. | Online‑user state and in‑memory caches are per‑replica (no backplane). |

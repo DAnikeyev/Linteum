@@ -96,7 +96,7 @@ internal sealed class CanvasesRepository
         if (response.StatusCode == HttpStatusCode.NotFound)
             throw new Exception($"Canvas {canvasName} is not found.");
         if (response.StatusCode == HttpStatusCode.Unauthorized)
-            throw new Exception("Password is incorrect.");
+            throw new CanvasPasswordRequiredException(canvasName);
         throw new Exception($"Failed to get info of {canvasName}. This exception is unexpected.");
     }
 

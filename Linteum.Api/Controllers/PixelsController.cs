@@ -151,6 +151,12 @@ public class PixelsController : ControllerBase
             return NotFound("Canvas not found.");
         }
 
+        var notSubscribed = await CreateNotSubscribedResultAsync(userId.Value, canvas.Id, canvasName, useMasterOverride: false);
+        if (notSubscribed != null)
+        {
+            return notSubscribed;
+        }
+
         if (canvas.CanvasMode == CanvasMode.Economy && await IsGuestUserAsync(userId.Value))
         {
             _logger.LogWarning("Guest user {UserId} attempted to paint on economy canvas {CanvasName}.", userId.Value, canvasName);
@@ -228,6 +234,12 @@ public class PixelsController : ControllerBase
             return BadRequest("Guest accounts cannot paint on economy canvases.");
         }
 
+        var notSubscribed = await CreateNotSubscribedResultAsync(userId.Value, canvas.Id, canvasName, useMasterOverride);
+        if (notSubscribed != null)
+        {
+            return notSubscribed;
+        }
+
         return await ExecuteBatchChangeAsync(canvasName, canvas.CanvasMode, userId.Value, request.Pixels, useMasterOverride);
     }
 
@@ -273,6 +285,12 @@ public class PixelsController : ControllerBase
             return BadRequest("Guest accounts cannot paint on economy canvases.");
         }
 
+        var notSubscribed = await CreateNotSubscribedResultAsync(userId.Value, canvas.Id, canvasName, useMasterOverride);
+        if (notSubscribed != null)
+        {
+            return notSubscribed;
+        }
+
         return await ExecuteBatchChangeAsync(canvasName, canvas.CanvasMode, userId.Value, pixels, useMasterOverride, request.Playback, request.Coordinates);
     }
 
@@ -306,6 +324,12 @@ public class PixelsController : ControllerBase
             userId.Value,
             request.Coordinates.Count,
             useMasterOverride);
+
+        var notSubscribed = await CreateNotSubscribedResultAsync(userId.Value, canvas.Id, canvasName, useMasterOverride);
+        if (notSubscribed != null)
+        {
+            return notSubscribed;
+        }
 
         var playback = CreatePlaybackMetadataOrNull(canvas.CanvasMode, request.Playback);
         var deleteResult = await _repoManager.PixelRepository.TryDeletePixelsBatchAsync(userId.Value, request.Coordinates, canvas.Id, useMasterOverride, suppressNotifications: playback != null);
@@ -515,6 +539,12 @@ public class PixelsController : ControllerBase
             return BadRequest("Text drawing is only available for FreeDraw canvases.");
         }
 
+        var notSubscribed = await CreateNotSubscribedResultAsync(userId.Value, canvas.Id, canvasName, useMasterOverride: false);
+        if (notSubscribed != null)
+        {
+            return notSubscribed;
+        }
+
         var colorsById = (await _repoManager.ColorRepository.GetAllAsync())
             .ToDictionary(color => color.Id);
 
@@ -606,6 +636,25 @@ public class PixelsController : ControllerBase
     {
         var user = await _repoManager.UserRepository.GetByIdAsync(userId);
         return GuestUserHelper.IsGuest(user);
+    }
+
+    /// <summary>
+    /// Enforces that a user must be subscribed to a canvas before they can mutate pixels on it
+    /// (change / delete / text-draw). This closes direct-API painting on a canvas the caller never
+    /// joined — including password-protected canvases they can't even view. Bots/services/admins
+    /// authenticating via the master password or a service token are exempt (<paramref name="useMasterOverride"/>),
+    /// since they paint without a user subscription. Returns a 403 result when access is denied,
+    /// otherwise null.
+    /// </summary>
+    private async Task<IActionResult?> CreateNotSubscribedResultAsync(Guid userId, Guid canvasId, string canvasName, bool useMasterOverride)
+    {
+        if (useMasterOverride || await _repoManager.SubscriptionRepository.IsSubscribedAsync(userId, canvasId))
+        {
+            return null;
+        }
+
+        _logger.LogWarning("User {UserId} attempted to paint on canvas {CanvasName} without a subscription.", userId, canvasName);
+        return StatusCode(StatusCodes.Status403Forbidden, "You must be subscribed to this canvas to paint on it.");
     }
 
     private int GetNormalModeDailyPixelLimit(bool isGuestUser) =>

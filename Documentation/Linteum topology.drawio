@@ -1,0 +1,158 @@
+<mxfile host="app.diagrams.net">
+  <diagram id="hbyYysxjWkMVl0bv7f6y" name="Linteum — VPS Deployment">
+    <mxGraphModel dx="2571" dy="1416" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="850" pageHeight="1100" math="0" shadow="0">
+      <root>
+        <object label="" id="0">
+          <mxCell />
+        </object>
+        <mxCell id="1" parent="0" />
+        <mxCell id="00YiF7oHtqqJY91mOm1K-18" parent="1" style="text;html=1;strokeColor=none;fillColor=none;align=left;verticalAlign=middle;whiteSpace=wrap;rounded=0;fontSize=20;fontStyle=1;" value="Linteum — VPS Deployment Topology (UML Component View)" vertex="1">
+          <mxGeometry height="32" width="900" x="490" y="310" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-19" parent="1" style="shape=component;align=center;html=1;whiteSpace=wrap;overflow=hidden;fontSize=12;spacingLeft=18;spacingTop=6;fillColor=#ffffff;strokeColor=#999999;" value="&lt;b&gt;End Users&lt;/b&gt;&lt;br&gt;Browser · Blazor circuit&lt;br&gt;«client»" vertex="1">
+          <mxGeometry height="110" width="230" x="490" y="356" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-20" parent="1" style="shape=component;align=center;html=1;whiteSpace=wrap;overflow=hidden;fontSize=12;spacingLeft=18;spacingTop=6;fillColor=#ffe6cc;strokeColor=#d79b00;" value="&lt;b&gt;Cloudflare&lt;/b&gt;&lt;br&gt;DNS · CDN · WAF&lt;br&gt;edge proxy (TLS front)" vertex="1">
+          <mxGeometry height="110" width="400" x="960" y="356" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-23" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;verticalAlign=top;fontStyle=1;fontSize=14;align=left;spacingLeft=12;spacingTop=8;" value="«device»  Debian 13 VPS  —  4 vCPU · 8 GB RAM · 251 GB   (nginx · Docker · ufw)" vertex="1">
+          <mxGeometry height="1020" width="1640" x="490" y="536" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-24" parent="00YiF7oHtqqJY91mOm1K-23" style="shape=component;align=center;html=1;whiteSpace=wrap;overflow=hidden;fontSize=11;spacingLeft=18;spacingTop=6;fillColor=#f8cecc;strokeColor=#b85450;" value="&lt;b&gt;sshd&lt;/b&gt;&lt;br&gt;:22 · admin access" vertex="1">
+          <mxGeometry height="80" width="150" x="50" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-25" parent="00YiF7oHtqqJY91mOm1K-23" style="shape=component;align=center;html=1;whiteSpace=wrap;overflow=hidden;fontSize=11;spacingLeft=18;spacingTop=6;fillColor=#f8cecc;strokeColor=#b85450;" value="&lt;b&gt;ufw&lt;/b&gt;&lt;br&gt;default-deny firewall" vertex="1">
+          <mxGeometry height="80" width="150" x="50" y="160" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-26" parent="00YiF7oHtqqJY91mOm1K-23" style="shape=component;align=center;html=1;whiteSpace=wrap;overflow=hidden;fontSize=11;spacingLeft=18;spacingTop=6;fillColor=#e1d5e7;strokeColor=#9673a6;" value="&lt;b&gt;nginx 1.26.3&lt;/b&gt;&lt;br&gt;«TLS terminator»&lt;br&gt;upstream blazor_cluster&lt;br&gt;cookie-sticky (linteum_route) 5010/5011/5012&lt;br&gt;WebSocket upgrade · buffering off" vertex="1">
+          <mxGeometry height="180" width="300" x="430" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-27" parent="00YiF7oHtqqJY91mOm1K-23" style="shape=component;align=center;html=1;whiteSpace=wrap;overflow=hidden;fontSize=11;spacingLeft=18;spacingTop=6;fillColor=#e1d5e7;strokeColor=#9673a6;" value="&lt;b&gt;Certbot 4.0.0&lt;/b&gt;&lt;br&gt;Let&#39;s Encrypt agent&lt;br&gt;certbot.timer (renew)" vertex="1">
+          <mxGeometry height="120" width="230" x="800" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-29" parent="00YiF7oHtqqJY91mOm1K-23" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;verticalAlign=top;fontStyle=1;fontSize=13;align=left;spacingLeft=12;spacingTop=8;" value="«network»  linteum_prod1  —  Docker bridge   (project: linteum)" vertex="1">
+          <mxGeometry height="660" width="920" x="50" y="320" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-30" parent="00YiF7oHtqqJY91mOm1K-29" style="shape=component;align=center;html=1;whiteSpace=wrap;overflow=hidden;fontSize=11;spacingLeft=18;spacingTop=6;fillColor=#fff2cc;strokeColor=#d6b656;" value="&lt;b&gt;Blazor replica 1&lt;/b&gt;&lt;br&gt;Linteum.BlazorApp&lt;br&gt;:5010 · 394M" vertex="1">
+          <mxGeometry height="120" width="180" x="40" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-31" parent="00YiF7oHtqqJY91mOm1K-29" style="shape=component;align=center;html=1;whiteSpace=wrap;overflow=hidden;fontSize=11;spacingLeft=18;spacingTop=6;fillColor=#fff2cc;strokeColor=#d6b656;" value="&lt;b&gt;Blazor replica 2&lt;/b&gt;&lt;br&gt;Linteum.BlazorApp&lt;br&gt;&lt;div&gt;:5011 · 394M&lt;/div&gt;" vertex="1">
+          <mxGeometry height="120" width="180" x="250" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-32" parent="00YiF7oHtqqJY91mOm1K-29" style="shape=component;align=center;html=1;whiteSpace=wrap;overflow=hidden;fontSize=11;spacingLeft=18;spacingTop=6;fillColor=#fff2cc;strokeColor=#d6b656;" value="&lt;b&gt;Blazor replica 3&lt;/b&gt;&lt;br&gt;Linteum.BlazorApp&lt;br&gt;:5012 · 394M" vertex="1">
+          <mxGeometry height="120" width="180" x="460" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-33" parent="00YiF7oHtqqJY91mOm1K-29" style="shape=component;align=center;html=1;whiteSpace=wrap;overflow=hidden;fontSize=11;spacingLeft=18;spacingTop=6;fillColor=#fff2cc;strokeColor=#d6b656;" value="&lt;b&gt;linteum-bots&lt;/b&gt;&lt;br&gt;Linteum.Bots (clients)&lt;br&gt;profile: bots&lt;br&gt;(run one-shot)" vertex="1">
+          <mxGeometry height="120" width="210" x="680" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-34" parent="00YiF7oHtqqJY91mOm1K-29" style="shape=component;align=center;html=1;whiteSpace=wrap;overflow=hidden;fontSize=11;spacingLeft=18;spacingTop=6;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="&lt;b&gt;linteum-api&lt;/b&gt;&lt;br&gt;Linteum.Api · 2048M&lt;br&gt;REST + CanvasHub (SignalR)&lt;br&gt;EF Core · hosted services" vertex="1">
+          <mxGeometry height="130" width="300" x="270" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-35" parent="00YiF7oHtqqJY91mOm1K-29" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=15;float=0;limit=3;fontSize=11;fillColor=#d5e8d4;strokeColor=#82b366;" value="&lt;b&gt;linteum-db&lt;/b&gt;&lt;br&gt;PostgreSQL 16&lt;br&gt;vol: db_data&lt;br&gt;5434 → 5432" vertex="1">
+          <mxGeometry height="160" width="210" x="40" y="470" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-36" parent="00YiF7oHtqqJY91mOm1K-29" style="shape=component;align=center;html=1;whiteSpace=wrap;overflow=hidden;fontSize=11;spacingLeft=18;spacingTop=6;fillColor=#d5e8d4;strokeColor=#82b366;" value="&lt;b&gt;linteum-db-backup&lt;/b&gt;&lt;br&gt;pg_dump -Fc loop&lt;br&gt;vol: db_backups&lt;br&gt;daily · weekly" vertex="1">
+          <mxGeometry height="140" width="240" x="300" y="480" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-37" parent="00YiF7oHtqqJY91mOm1K-23" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;verticalAlign=top;fontStyle=1;fontSize=13;align=left;spacingLeft=12;spacingTop=8;" value="«network»  elk  —  Docker bridge   (project: ash-twin-monitoring)" vertex="1">
+          <mxGeometry height="400" width="600" x="1000" y="320" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-38" parent="00YiF7oHtqqJY91mOm1K-37" style="shape=component;align=center;html=1;whiteSpace=wrap;overflow=hidden;fontSize=11;spacingLeft=18;spacingTop=6;fillColor=#ffffff;strokeColor=#82b366;" value="&lt;b&gt;Filebeat&lt;/b&gt;&lt;br&gt;autodiscover · root&lt;br&gt;reads docker.sock + logs" vertex="1">
+          <mxGeometry height="120" width="250" x="40" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-39" parent="00YiF7oHtqqJY91mOm1K-37" style="shape=component;align=center;html=1;whiteSpace=wrap;overflow=hidden;fontSize=11;spacingLeft=18;spacingTop=6;fillColor=#ffffff;strokeColor=#82b366;" value="&lt;b&gt;Elasticsearch&lt;/b&gt;&lt;br&gt;docker-logs-*" vertex="1">
+          <mxGeometry height="120" width="250" x="40" y="250" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-40" parent="00YiF7oHtqqJY91mOm1K-37" style="shape=component;align=center;html=1;whiteSpace=wrap;overflow=hidden;fontSize=11;spacingLeft=18;spacingTop=6;fillColor=#ffffff;strokeColor=#82b366;" value="&lt;b&gt;Kibana&lt;/b&gt;&lt;br&gt;127.0.0.1:5601&lt;br&gt;query UI" vertex="1">
+          <mxGeometry height="120" width="240" x="320" y="250" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-41" parent="1" style="shape=note;whiteSpace=wrap;html=1;backgroundOutline=1;darkOpacity=0.05;align=center;fontSize=10;fillColor=#fff2cc;strokeColor=#d6b656;" value="Only nginx :80/:443 and ssh :22 are public." vertex="1">
+          <mxGeometry height="78" width="205" x="705" y="699" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-42" edge="1" parent="1" source="00YiF7oHtqqJY91mOm1K-19" style="endArrow=classic;html=1;rounded=0;fontSize=11;" target="00YiF7oHtqqJY91mOm1K-20" value="«HTTPS»&lt;br&gt;*.ash-twin.com">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-43" edge="1" parent="1" source="00YiF7oHtqqJY91mOm1K-20" style="endArrow=classic;html=1;rounded=0;fontSize=11;" target="00YiF7oHtqqJY91mOm1K-26" value="«TLS :443»&lt;br&gt;reverse proxy + WSS upgrade">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-44" edge="1" parent="1" source="00YiF7oHtqqJY91mOm1K-26" style="endArrow=classic;html=1;rounded=0;fontSize=10;" target="00YiF7oHtqqJY91mOm1K-30" value="linteum_route :5010">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-45" edge="1" parent="1" source="00YiF7oHtqqJY91mOm1K-26" style="endArrow=classic;html=1;rounded=0;fontSize=10;" target="00YiF7oHtqqJY91mOm1K-31" value="&lt;div&gt;linteum_route :5011&lt;/div&gt;">
+          <mxGeometry relative="1" x="-0.0289" y="3" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-46" edge="1" parent="1" source="00YiF7oHtqqJY91mOm1K-26" style="endArrow=classic;html=1;rounded=0;fontSize=10;" target="00YiF7oHtqqJY91mOm1K-32" value="linteum_route :5012">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-47" edge="1" parent="1" source="00YiF7oHtqqJY91mOm1K-30" style="endArrow=classic;html=1;rounded=0;" target="00YiF7oHtqqJY91mOm1K-34">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-48" edge="1" parent="1" source="00YiF7oHtqqJY91mOm1K-31" style="endArrow=classic;html=1;rounded=0;fontSize=10;" target="00YiF7oHtqqJY91mOm1K-34" value="«HTTP + SignalR»">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-49" edge="1" parent="1" source="00YiF7oHtqqJY91mOm1K-32" style="endArrow=classic;html=1;rounded=0;" target="00YiF7oHtqqJY91mOm1K-34">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-50" edge="1" parent="1" source="00YiF7oHtqqJY91mOm1K-34" style="endArrow=classic;html=1;rounded=0;fontSize=10;" target="00YiF7oHtqqJY91mOm1K-35" value="«TCP» EF Core / Npgsql">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-51" edge="1" parent="1" source="00YiF7oHtqqJY91mOm1K-36" style="endArrow=classic;html=1;rounded=0;fontSize=10;dashed=1;" target="00YiF7oHtqqJY91mOm1K-35" value="«pg_dump» daily / weekly">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-52" edge="1" parent="1" source="00YiF7oHtqqJY91mOm1K-33" style="endArrow=classic;html=1;rounded=0;fontSize=10;exitX=0.25;exitY=1;exitDx=0;exitDy=0;" target="00YiF7oHtqqJY91mOm1K-34" value="«HTTP»">
+          <mxGeometry relative="1" x="-0.1498" y="19" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-54" edge="1" parent="1" source="00YiF7oHtqqJY91mOm1K-27" style="endArrow=classic;html=1;rounded=0;fontSize=10;dashed=1;" target="00YiF7oHtqqJY91mOm1K-26" value="certbot.timer → reload nginx">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-58" edge="1" parent="1" source="00YiF7oHtqqJY91mOm1K-26" style="endArrow=classic;html=1;rounded=0;fontSize=10;" target="00YiF7oHtqqJY91mOm1K-40" value="proxy kibana.ash-twin.com → 127.0.0.1:5601">
+          <mxGeometry relative="1" x="0.1853" y="68" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-59" edge="1" parent="1" source="00YiF7oHtqqJY91mOm1K-29" style="endArrow=classic;html=1;rounded=0;fontSize=10;dashed=1;" target="00YiF7oHtqqJY91mOm1K-38" value="«reads» container logs (host log files)">
+          <mxGeometry relative="1" x="-0.0864" y="-30" as="geometry">
+            <mxPoint as="offset" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-60" edge="1" parent="1" source="00YiF7oHtqqJY91mOm1K-38" style="endArrow=classic;html=1;rounded=0;fontSize=10;" target="00YiF7oHtqqJY91mOm1K-39" value="ship (autodiscover)">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-61" edge="1" parent="1" source="00YiF7oHtqqJY91mOm1K-40" style="endArrow=classic;html=1;rounded=0;fontSize=10;" target="00YiF7oHtqqJY91mOm1K-39" value="query docker-logs-*">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-62" edge="1" parent="1" source="00YiF7oHtqqJY91mOm1K-25" style="endArrow=open;html=1;rounded=0;dashed=1;strokeColor=#b85450;" target="00YiF7oHtqqJY91mOm1K-41">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-63" parent="1" style="rounded=0;whiteSpace=wrap;html=1;fillColor=#fafafa;strokeColor=#999999;verticalAlign=top;fontStyle=1;fontSize=12;align=left;spacingLeft=12;spacingTop=6;" value="Legend — colour = architectural tier" vertex="1">
+          <mxGeometry height="70" width="1500" x="490" y="1586" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-64" parent="00YiF7oHtqqJY91mOm1K-63" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;align=center;verticalAlign=middle;fillColor=#ffe6cc;strokeColor=#d79b00;" value="Edge / DNS&lt;br&gt;(Cloudflare)" vertex="1">
+          <mxGeometry height="34" width="200" x="10" y="28" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-65" parent="00YiF7oHtqqJY91mOm1K-63" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;align=center;verticalAlign=middle;fillColor=#e1d5e7;strokeColor=#9673a6;" value="Reverse proxy / TLS&lt;br&gt;(nginx · Certbot)" vertex="1">
+          <mxGeometry height="34" width="200" x="222" y="28" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-66" parent="00YiF7oHtqqJY91mOm1K-63" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;align=center;verticalAlign=middle;fillColor=#f8cecc;strokeColor=#b85450;" value="Host security&lt;br&gt;(sshd · ufw)" vertex="1">
+          <mxGeometry height="34" width="200" x="434" y="28" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-67" parent="00YiF7oHtqqJY91mOm1K-63" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;align=center;verticalAlign=middle;fillColor=#fff2cc;strokeColor=#d6b656;" value="Presentation&lt;br&gt;(Blazor · Bots)" vertex="1">
+          <mxGeometry height="34" width="200" x="646" y="28" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-68" parent="00YiF7oHtqqJY91mOm1K-63" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;align=center;verticalAlign=middle;fillColor=#dae8fc;strokeColor=#6c8ebf;" value="Application&lt;br&gt;(Linteum.Api)" vertex="1">
+          <mxGeometry height="34" width="200" x="858" y="28" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-69" parent="00YiF7oHtqqJY91mOm1K-63" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;align=center;verticalAlign=middle;fillColor=#d5e8d4;strokeColor=#82b366;" value="Data&lt;br&gt;(PostgreSQL)" vertex="1">
+          <mxGeometry height="34" width="200" x="1070" y="28" as="geometry" />
+        </mxCell>
+        <mxCell id="00YiF7oHtqqJY91mOm1K-70" parent="00YiF7oHtqqJY91mOm1K-63" style="rounded=1;whiteSpace=wrap;html=1;fontSize=11;align=center;verticalAlign=middle;fillColor=#c8e6c9;strokeColor=#2e7d32;" value="Observability&lt;br&gt;(ELK stack)" vertex="1">
+          <mxGeometry height="34" width="200" x="1282" y="28" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

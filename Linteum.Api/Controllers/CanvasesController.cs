@@ -4,7 +4,6 @@ using Linteum.Api.Middleware;
 using Linteum.Shared.Exceptions;
 using Linteum.Infrastructure;
 using Linteum.Shared.DTO;
-using Microsoft.AspNetCore.SignalR;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Linteum.Api.Services;
@@ -72,6 +71,12 @@ namespace Linteum.Api.Controllers
             {
                 _logger.LogInformation("Canvas lookup for {CanvasName} returned no result for user {UserId}.", name, userId.Value);
                 return NotFound();
+            }
+
+            if (!await CanAccessCanvasAsync(userId.Value, canvas))
+            {
+                _logger.LogWarning("User {UserId} attempted to access password-protected canvas {CanvasName} without a subscription.", userId.Value, name);
+                return Unauthorized("Password required.");
             }
 
             await TryAutoSubscribeAsync(userId.Value, canvas);
@@ -501,6 +506,12 @@ namespace Linteum.Api.Controllers
                 return NotFound("Canvas not found.");
             }
 
+            if (!await CanAccessCanvasAsync(userId.Value, canvas))
+            {
+                _logger.LogWarning("User {UserId} requested image of password-protected canvas {CanvasName} without a subscription.", userId.Value, name);
+                return Unauthorized("Password required.");
+            }
+
             // Served from the in-memory raster cache (cold-rendered from the DB on first access, then
             // kept live by write-through on pixel changes). See CanvasImageCache.
             var cached = await _imageCache.GetOrRenderAsync(canvas.Id, canvas.Name, canvas.Width, canvas.Height, HttpContext.RequestAborted);
@@ -528,6 +539,18 @@ namespace Linteum.Api.Controllers
         {
             var user = await _repoManager.UserRepository.GetByIdAsync(userId);
             return GuestUserHelper.IsGuest(user);
+        }
+
+        /// <summary>
+        /// A user may access a canvas's content if it is public, or if they hold an active
+        /// subscription (which proves they supplied the password at least once). Used to gate
+        /// read paths so a password-protected canvas can't be viewed via a direct link without
+        /// the password.
+        /// </summary>
+        private async Task<bool> CanAccessCanvasAsync(Guid userId, CanvasDto canvas)
+        {
+            return !canvas.IsPasswordProtected
+                || await _repoManager.SubscriptionRepository.IsSubscribedAsync(userId, canvas.Id);
         }
 
         private async Task TryAutoSubscribeAsync(Guid userId, CanvasDto canvas)

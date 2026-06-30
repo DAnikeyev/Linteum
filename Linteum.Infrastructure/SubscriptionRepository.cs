@@ -45,6 +45,13 @@ public class SubscriptionRepository : ISubscriptionRepository
             .ToListAsync();
     }
 
+    public async Task<bool> IsSubscribedAsync(Guid userId, Guid canvasId)
+    {
+        return await _context.Subscriptions
+            .AsNoTracking()
+            .AnyAsync(s => s.UserId == userId && s.CanvasId == canvasId);
+    }
+
     public async Task<SubscriptionDto?> Subscribe(Guid userId, Guid canvasId, string? password)
     {
         return await _canvasWriteCoordinator.ExecuteAsync(canvasId, async _ =>

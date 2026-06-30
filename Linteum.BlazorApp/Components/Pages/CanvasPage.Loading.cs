@@ -1,3 +1,4 @@
+using Linteum.BlazorApp.Api;
 using Linteum.BlazorApp.Components.Notification;
 using Linteum.Shared;
 using Linteum.Shared.DTO;
@@ -230,6 +231,12 @@ public partial class CanvasPage
                 await InitJsViewport(loadVersion);
             }
         }
+        catch (CanvasPasswordRequiredException)
+        {
+            // The canvas is password-protected and the caller isn't subscribed. Guests and anyone
+            // opening it by link can't join here — notify and send them to the home canvas.
+            await HandlePasswordProtectedCanvasAsync(requestedCanvasName, loadVersion);
+        }
         catch (Exception ex)
         {
             if (IsCanvasNotFoundException(ex))
@@ -240,6 +247,41 @@ public partial class CanvasPage
 
             _nlog.Warn(ex, "Failed to load canvas {CanvasName}", canvasName);
         }
+    }
+
+    private async Task HandlePasswordProtectedCanvasAsync(string requestedCanvasName, int loadVersion)
+    {
+        if (IsStaleLoad(loadVersion, requestedCanvasName))
+        {
+            return;
+        }
+
+        CancelCanvasInitializationTimeout();
+        _canvasReady = true;
+        _loadedCanvasName = null;
+        await RequestRenderAsync();
+
+        await NotificationService.NotifyAsync(new CustomNotification
+        {
+            Message = "This canvas is password-protected. Subscribe to it from the canvas list with its password to join.",
+            Type = NotificationType.Error,
+        });
+
+        try
+        {
+            await Task.Delay(500);
+        }
+        catch (TaskCanceledException)
+        {
+            return;
+        }
+
+        if (IsStaleLoad(loadVersion, requestedCanvasName))
+        {
+            return;
+        }
+
+        NavigationManager.NavigateTo(DefaultConfig.DefaultPage, replace: true);
     }
 
     private async Task HandleMissingCanvasAsync(string requestedCanvasName, int loadVersion)

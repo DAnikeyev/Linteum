@@ -68,6 +68,20 @@ public class CanvasHub : Hub
     /// </summary>
     public async Task<long> JoinCanvasGroup(string canvasName)
     {
+        // A password-protected canvas must not be reachable over SignalR without a subscription
+        // (which proves the password was supplied). The HTTP read paths enforce the same gate;
+        // this is the defense-in-depth backstop against a client joining the group directly.
+        var canvas = await _repositoryManager.CanvasRepository.GetByNameAsync(canvasName);
+        if (canvas != null && canvas.IsPasswordProtected)
+        {
+            var userId = await GetUserIdAsync();
+            if (userId is null || !await _repositoryManager.SubscriptionRepository.IsSubscribedAsync(userId.Value, canvas.Id))
+            {
+                _logger.LogWarning("ConnectionId {ConnectionId} denied group join on password-protected canvas {CanvasName}.", Context.ConnectionId, canvasName);
+                throw new HubException("Password required to join this canvas.");
+            }
+        }
+
         _tracker.AddToGroup(Context.ConnectionId, canvasName);
         await Groups.AddToGroupAsync(Context.ConnectionId, canvasName);
         var highWaterSeq = _eventBuffer.GetHighWaterSequence(canvasName);
@@ -166,8 +180,29 @@ public class CanvasHub : Hub
 
     private async Task<string?> GetUserName()
     {
+        var userId = await GetUserIdAsync();
+        if (userId is null)
+        {
+            return null;
+        }
+
+        var user = await _repositoryManager.UserRepository.GetByIdAsync(userId.Value);
+        return user?.UserName;
+    }
+
+    /// <summary>
+    /// Resolves the authenticated user id from the connection's session (the SignalR connection
+    /// carries the session id in the <c>access_token</c> query string or <c>Session-Id</c> header).
+    /// Returns null for an unauthenticated / invalid session. Also refreshes the session's idle
+    /// timeout so hub activity keeps the session alive, mirroring <see cref="GetUserName"/>.
+    /// </summary>
+    private Task<Guid?> GetUserIdAsync()
+    {
         var httpContext = Context.GetHttpContext();
-        if (httpContext == null) return null;
+        if (httpContext == null)
+        {
+            return Task.FromResult<Guid?>(null);
+        }
 
         var sessionIdString = httpContext.Request.Query["access_token"].ToString();
         if (string.IsNullOrEmpty(sessionIdString))
@@ -177,15 +212,10 @@ public class CanvasHub : Hub
 
         if (Guid.TryParse(sessionIdString, out var sessionId))
         {
-            var userId = _sessionService.GetUserIdAndUpdateTimeLimit(sessionId);
-            if (userId.HasValue)
-            {
-                var user = await _repositoryManager.UserRepository.GetByIdAsync(userId.Value);
-                return user?.UserName;
-            }
+            return Task.FromResult(_sessionService.GetUserIdAndUpdateTimeLimit(sessionId));
         }
 
-        return null;
+        return Task.FromResult<Guid?>(null);
     }
 
 }

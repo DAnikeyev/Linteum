@@ -407,6 +407,10 @@ window.canvasRenderer = {
             });
     },
 
+    clearImage: function () {
+        this.drawLoadedImage(null);
+    },
+
     filterNonWhitePixels: function (coordinates) {
         if (!this.ctx || !this.committedImageData || !Array.isArray(coordinates) || coordinates.length === 0) {
             return coordinates || [];
@@ -539,7 +543,10 @@ window.canvasRenderer = {
             }
 
             if (pixel.suppressRipple) {
-                this.rememberSuppressedRipple(pixel, now);
+                // Brush/erase render this pixel without a ripple. Do NOT seed the suppress
+                // marker here: the marker is seeded only when a ripple is actually drawn
+                // (below), so it truthfully means "this pixel already rippled recently" and
+                // a later echo of the same pixel de-duplicates instead of being silenced.
                 continue;
             }
 
@@ -553,6 +560,10 @@ window.canvasRenderer = {
                 color: pixel.color,
                 startTime: now
             });
+
+            // Seed AFTER drawing the ripple so the server's echo of this same pixel
+            // is de-duplicated instead of double-rippling.
+            this.rememberSuppressedRipple(pixel, now);
         }
 
         if (this.shouldAnimateOverlay()) {
@@ -597,7 +608,8 @@ window.canvasRenderer = {
             this.setCommittedPixelData(x, y, color, false);
 
             if ((flag & 2) !== 0) {
-                this.rememberSuppressedRipple(pixel, now);
+                // suppressRipple: draw without a ripple, and do not poison the echo.
+                // See renderBatch for why the marker is seeded only after a ripple is drawn.
                 continue;
             }
 
@@ -606,6 +618,7 @@ window.canvasRenderer = {
             }
 
             this.ripples.push({ x: x + 0.5, y: y + 0.5, color: color, startTime: now });
+            this.rememberSuppressedRipple(pixel, now);
         }
 
         if (this.shouldAnimateOverlay()) {

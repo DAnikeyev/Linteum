@@ -86,6 +86,8 @@ public partial class CanvasPage : ComponentBase, IAsyncDisposable
     private bool _suppressNextDeleteNotification;
     private bool _isHandlingCanvasErase;
     private bool _isHandlingCanvasDelete;
+    private bool _pendingConfirmedCanvasErase;
+    private bool _pendingConfirmedCanvasEraseNotification;
 
     /// <summary>
     /// True from the moment a local erase/delete is initiated until the corresponding

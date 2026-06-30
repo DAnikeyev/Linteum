@@ -18,6 +18,14 @@ public partial class PixelManager
         _activeTool = tool;
         CloseTextColorMenus();
 
+        // The text area is uncontrolled (no value binding), so it always mounts empty.
+        // Reset the buffer on entering Text mode so the visible field and _textContent
+        // can't drift apart and Paint never submits text the user can't see.
+        if (tool == DrawingTool.Text)
+        {
+            _textContent = string.Empty;
+        }
+
         if (IsBrushEnabled && BrushToggleDisabled)
         {
             await SetBrushEnabledAsync(false);
@@ -242,7 +250,10 @@ public partial class PixelManager
         {
             var price = IsEconomyCanvas && TryGetEconomyBid(out var bid) ? bid : 0;
             var newPixel = await ApiClient.Paint(ClickedPixel.Value, Canvas, SelectedColor.Id, price);
-            CanvasRenderer?.EnqueuePixel(newPixel.X, newPixel.Y, SelectedColor.HexValue, suppressRipple: true);
+            // Optimistically render the pixel and play the wave/ripple immediately on success.
+            // The renderer seeds an echo-de-dup marker when it draws the ripple, so the
+            // server's SignalR echo of this same pixel is silenced instead of double-rippling.
+            CanvasRenderer?.EnqueuePixel(newPixel.X, newPixel.Y, SelectedColor.HexValue, suppressRipple: false);
 
             var message = IsEconomyCanvas
                 ? $"Bid {newPixel.Price} gold for pixel at ({newPixel.X}, {newPixel.Y}) with color {SelectedColor.Name ?? SelectedColor.HexValue}."

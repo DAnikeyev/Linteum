@@ -263,7 +263,7 @@ public partial class CanvasPage
     {
         _suppressNextEraseNotification = true;
         _canvasMutationPendingConfirmation = true;
-        return HandleCanvasErasedAsync(showNotification: false);
+        return HandleCanvasErasedAsync(showNotification: false, reloadImage: false);
     }
 
     private Task HandleCanvasDeletedLocallyAsync()
@@ -284,7 +284,14 @@ public partial class CanvasPage
         var showNotification = !_suppressNextEraseNotification;
         _suppressNextEraseNotification = false;
         _canvasMutationPendingConfirmation = false;
-        return HandleCanvasErasedAsync(showNotification);
+        if (_isHandlingCanvasErase)
+        {
+            _pendingConfirmedCanvasErase = true;
+            _pendingConfirmedCanvasEraseNotification |= showNotification;
+            return Task.CompletedTask;
+        }
+
+        return HandleCanvasErasedAsync(showNotification, reloadImage: true);
     }
 
     private Task OnCanvasDeletedFromHubAsync(string deletedCanvasName)
@@ -301,7 +308,7 @@ public partial class CanvasPage
         return HandleCanvasDeletedAsync(showNotification);
     }
 
-    private async Task HandleCanvasErasedAsync(bool showNotification)
+    private async Task HandleCanvasErasedAsync(bool showNotification, bool reloadImage = true)
     {
         if (_canvas == null || _isHandlingCanvasErase)
         {
@@ -328,9 +335,17 @@ public partial class CanvasPage
             }
 
             _maintenanceProgress = null;
+            _clickedPixel = null;
             _clickedPixelData = null;
-            _canvasImageVersion++;
-            await LoadCanvasImage();
+            if (reloadImage)
+            {
+                _canvasImageVersion++;
+                await LoadCanvasImage();
+            }
+            else if (_renderer != null)
+            {
+                await _renderer.ClearAsync();
+            }
 
             if (showNotification)
             {
@@ -350,6 +365,13 @@ public partial class CanvasPage
         finally
         {
             _isHandlingCanvasErase = false;
+            if (_pendingConfirmedCanvasErase && _canvas != null)
+            {
+                var pendingNotification = _pendingConfirmedCanvasEraseNotification;
+                _pendingConfirmedCanvasErase = false;
+                _pendingConfirmedCanvasEraseNotification = false;
+                await HandleCanvasErasedAsync(pendingNotification, reloadImage: true);
+            }
         }
     }
 
@@ -744,4 +766,3 @@ public partial class CanvasPage
         }
     }
 }
-

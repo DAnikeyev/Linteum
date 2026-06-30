@@ -189,4 +189,26 @@ public class CanvasEventBufferTests
             Assert.That(entries[0].Pixels, Is.Empty);
         });
     }
+
+    [Test]
+    public void Reset_DropsBufferedEventsAndRestartsSequence()
+    {
+        var buffer = CreateBuffer();
+        buffer.Record("A", EntryWithMarkerPixel(1));
+        buffer.Record("A", EntryWithMarkerPixel(2));
+
+        buffer.Reset("A");
+
+        var nextSeq = buffer.Record("A", EntryWithMarkerPixel(3));
+        var entries = buffer.GetRecent("A", max: 10);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(buffer.GetRange("A", afterSeq: 0, upToSeq: long.MaxValue, max: 10).Select(e => e.Pixels[0].X), Is.EqualTo(new[] { 3 }));
+            Assert.That(entries.Select(e => e.Seq), Is.EqualTo(new[] { 1L }));
+            Assert.That(entries.Select(e => e.Pixels[0].X), Is.EqualTo(new[] { 3 }));
+            Assert.That(nextSeq, Is.EqualTo(1));
+            Assert.That(buffer.GetHighWaterSequence("A"), Is.EqualTo(1));
+        });
+    }
 }

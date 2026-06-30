@@ -13,7 +13,7 @@
     <div class="brand-title">LINTEUM</div>
     @if (!_isAuthResolved || _isBusy)
     {
-        <div class="login-container auth-card auth-loading-card">
+        <div class="login-container auth-card auth-loading-card" data-auth-loading>
             <div class="auth-header">
                 <h3>@_busyTitle</h3>
                 <p>@_busyMessage</p>

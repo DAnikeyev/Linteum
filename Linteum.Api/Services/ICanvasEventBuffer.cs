@@ -44,4 +44,11 @@ public interface ICanvasEventBuffer
     /// boundary between "events I might have missed" and "events I will receive live".
     /// </summary>
     long GetHighWaterSequence(string canvasName);
+
+    /// <summary>
+    /// Drops all buffered events for <paramref name="canvasName"/>. Used after destructive
+    /// maintenance operations such as canvas erase/delete so clients never replay stale pre-mutation
+    /// events onto a fresh snapshot.
+    /// </summary>
+    void Reset(string canvasName);
 }

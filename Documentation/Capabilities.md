@@ -86,7 +86,7 @@ does it (non‑functional qualities). It is derived from the code and the runnin
   but is **single‑process**.
 
 ### Scalability
-- **Horizontal UI scaling**: 3 Blazor replicas behind nginx with `ip_hash` sticky routing.
+- **Horizontal UI scaling**: 3 Blazor replicas behind nginx with **cookie-based** sticky routing (the `linteum_route` cookie; `ip_hash` was replaced because Cloudflare rotates its edge IP per connection, defeating IP hashing).
 - **Bottlenecks**: no SignalR backplane (online state per replica); in‑process write
   coordination (safe only with a single API instance); single Postgres + single ES node.
 

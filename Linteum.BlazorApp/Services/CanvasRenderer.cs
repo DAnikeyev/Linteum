@@ -82,6 +82,22 @@ public class CanvasRenderer : IAsyncDisposable
         }
     }
 
+    public async Task ClearAsync()
+    {
+        if (!_initialized || IsDisposed)
+        {
+            return;
+        }
+
+        try
+        {
+            await _js.InvokeVoidAsync("canvasRenderer.clearImage");
+        }
+        catch (Exception ex) when (IsShuttingDown(ex))
+        {
+        }
+    }
+
     public async Task<List<CoordinateDto>> FilterNonWhiteCoordinatesAsync(IReadOnlyCollection<CoordinateDto> coordinates)
     {
         if (!_initialized || coordinates.Count == 0)

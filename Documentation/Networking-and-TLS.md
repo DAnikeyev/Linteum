@@ -1,8 +1,10 @@
 # Networking and TLS
 
-How traffic reaches Linteum from the internet: a single nginx instance terminates TLS and
-reverse‑proxies to the Blazor replicas, with Let's Encrypt certificates managed by Certbot.
-This documents the **running** configuration on the VPS.
+How traffic reaches Linteum from the internet: **Cloudflare** proxies `linteum.ash-twin.com`
+in front of a single nginx instance, which terminates TLS (Let's Encrypt / Certbot) and
+reverse‑proxies to the Blazor replicas. Cloudflare matters for routing: nginx sees Cloudflare's
+rotating edge IPs as `$remote_addr`, never the real client IP, so IP-based stickiness does not
+work — see §3. This documents the **running** configuration on the VPS.
 
 ## 1. Networks
 
@@ -48,8 +50,16 @@ All server blocks live in a single file, `/etc/nginx/sites-available/ash-twin`, 
 ### Blazor — `linteum.ash-twin.com` (sticky, WebSocket)
 
 ```nginx
+# Cookie-based stickiness: Cloudflare fronts nginx, so $remote_addr is a rotating Cloudflare
+# edge IP and ip_hash cannot pin a user to one Blazor replica. Pin each session to a replica
+# via a route cookie the browser always sends back (including on the /_blazor WebSocket upgrade).
+map $cookie_linteum_route $linteum_route_key {
+    ""      $request_id;             # first visit: mint a fresh route id
+    default $cookie_linteum_route;   # returning visit: keep the pinned route
+}
+
 upstream blazor_cluster {
-    ip_hash;                         # sticky by client IP — required for Blazor Server circuits
+    hash $linteum_route_key consistent;   # cookie-based sticky routing (was ip_hash)
     server 127.0.0.1:5010;
     server 127.0.0.1:5011;
     server 127.0.0.1:5012;
@@ -66,6 +76,7 @@ server {
 
     location / {
         proxy_pass http://blazor_cluster;
+        add_header Set-Cookie "linteum_route=$linteum_route_key; Path=/; HttpOnly; SameSite=Lax; Secure" always;
         proxy_http_version 1.1;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
@@ -84,10 +95,17 @@ server {
 # HTTP → HTTPS redirect for linteum.ash-twin.com (managed by Certbot)
 ```
 
-`ip_hash` is essential: a Blazor Server circuit is stateful and bound to one process, so a
-client must consistently reach the same replica. `proxy_read_timeout`/`proxy_send_timeout` are
-raised to 3600 s and `proxy_buffering` is disabled for the Blazor site, so long‑idle circuits
-survive and server‑rendered output streams immediately (P‑NET‑02).
+Sticky routing is essential: a Blazor Server circuit is stateful and bound to one process, so a
+client must consistently reach the same replica — otherwise the `/_blazor` negotiate and the
+WebSocket upgrade land on different replicas and the circuit fails to start with
+`No Connection with that ID: 404` (the recurring "Checking session" stuck spinner). Stickiness
+is **cookie-based** (`linteum_route`), not `ip_hash`, because Cloudflare sits in front of nginx
+and rotates its edge IP per connection, which defeats IP hashing. nginx mints the route cookie
+from `$request_id` on first visit and echoes it thereafter; `hash … consistent` maps the cookie
+to a replica and rebalances only a downed replica's users when a replica restarts on deploy.
+`proxy_read_timeout`/`proxy_send_timeout` are raised to 3600 s and `proxy_buffering` is disabled
+for the Blazor site, so long‑idle circuits survive and server‑rendered output streams
+immediately (P‑NET‑02).
 
 ### Other proxies in the same file
 - **`ash-twin.com` / `www.ash-twin.com`** (80 + 443) → `http://localhost:5001` (the ash‑tin hub).
@@ -125,8 +143,8 @@ SSL parameters come from `/etc/letsencrypt/options-ssl-nginx.conf` + `ssl-dhpara
 ## 5. End‑to‑end request flow
 
 ```
-Browser ──HTTPS──▶ nginx :443 (linteum.ash-twin.com, ECDSA cert)
-                     │  ip_hash sticky routing + WebSocket upgrade
+Browser ──HTTPS──▶ Cloudflare ──HTTPS──▶ nginx :443 (linteum.ash-twin.com, ECDSA cert)
+                                          │  cookie-sticky routing (linteum_route) + WebSocket upgrade
                      ▼
         Blazor replica 1/2/3  (Blazor Server circuit over WebSocket)
                      │

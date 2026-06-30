@@ -34,15 +34,18 @@ public class CanvasMaintenanceQueueService : BackgroundService, ICanvasMaintenan
     private readonly ConcurrentDictionary<string, byte> _queuedOperations = new(StringComparer.OrdinalIgnoreCase);
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IHubContext<CanvasHub> _hubContext;
+    private readonly ICanvasEventBuffer _eventBuffer;
     private readonly ILogger<CanvasMaintenanceQueueService> _logger;
 
     public CanvasMaintenanceQueueService(
         IServiceScopeFactory scopeFactory,
         IHubContext<CanvasHub> hubContext,
+        ICanvasEventBuffer eventBuffer,
         ILogger<CanvasMaintenanceQueueService> logger)
     {
         _scopeFactory = scopeFactory;
         _hubContext = hubContext;
+        _eventBuffer = eventBuffer;
         _logger = logger;
     }
 
@@ -164,6 +167,8 @@ public class CanvasMaintenanceQueueService : BackgroundService, ICanvasMaintenan
                 workItem.Request.CanvasId,
                 stopwatch.ElapsedMilliseconds);
 
+            _eventBuffer.Reset(workItem.Request.CanvasName);
+
             // Bulk DB mutation bypassed the per-pixel write-through hooks, so drop the cached image;
             // the next read re-renders the (erased / now-empty) canvas from truth.
             scope.ServiceProvider.GetService<ICanvasImageCache>()?.Remove(workItem.Request.CanvasName);
@@ -275,5 +280,4 @@ public class CanvasMaintenanceQueueService : BackgroundService, ICanvasMaintenan
         Delete,
     }
 }
-
 

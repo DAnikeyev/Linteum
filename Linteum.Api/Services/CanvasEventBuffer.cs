@@ -73,6 +73,16 @@ public sealed class CanvasEventBuffer : ICanvasEventBuffer
         return bucket.HighWater;
     }
 
+    public void Reset(string canvasName)
+    {
+        if (string.IsNullOrWhiteSpace(canvasName))
+        {
+            return;
+        }
+
+        _buckets.TryRemove(canvasName, out _);
+    }
+
     private sealed class CanvasBucket
     {
         private readonly object _lock = new();

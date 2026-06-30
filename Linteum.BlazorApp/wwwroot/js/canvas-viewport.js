@@ -112,6 +112,20 @@ function CanvasViewportController(dotNetRef, viewportEl, rendererEl, coordsEl, c
         'position:absolute;top:0;left:0;width:100%;height:100%;z-index:10;cursor:crosshair;touch-action:none;';
     viewportEl.appendChild(self.eventLayer);
 
+    // Interaction overlay (screen-space canvas): faint pixel grid, prominent
+    // canvas-edge frame, and crisp hover/selected pixel borders. Everything is
+    // drawn in device pixels derived from the same renderer rect used for
+    // hit-testing, so it stays perfectly aligned at every zoom on every browser
+    // — there is no CSS layout or per-line sub-pixel snapping to drift (the
+    // failure mode of a DOM/CSS grid in Chrome/Edge).
+    self.gridCanvas = document.createElement('canvas');
+    self.gridCanvas.className = 'canvas-interaction-overlay';
+    self.gridCanvas.style.cssText =
+        'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:6;';
+    self.gridCtx = self.gridCanvas.getContext('2d');
+    self._colors = null;
+    viewportEl.appendChild(self.gridCanvas);
+
     // Coords display (Blazor-owned element, passed in)
     self.coordsEl = coordsEl;
 
@@ -163,20 +177,189 @@ function CanvasViewportController(dotNetRef, viewportEl, rendererEl, coordsEl, c
         return Math.round(value * dpr) / dpr;
     };
 
+    // Resolve the app's accent tokens once (defined on :root in app.css). Hex
+    // fallbacks keep working even if the stylesheet has not loaded yet.
+    self._ensureColors = function () {
+        if (self._colors) {
+            return self._colors;
+        }
+        var resolve = function (name, fallback) {
+            var value = getComputedStyle(document.documentElement).getPropertyValue(name);
+            value = value ? value.trim() : '';
+            return value || fallback;
+        };
+        self._colors = {
+            hover: resolve('--accent-blue-600', '#2d72dd'),      // hovered pixel border
+            selected: resolve('--accent-orange-500', '#ef7a2f'),  // selected pixel border
+            edge: resolve('--ink-700', '#324c73'),                // canvas edge frame
+            grid: 'rgba(90, 112, 148, 0.16)',                     // faint pixel grid (softer minor lines)
+            gridStrong: 'rgba(40, 64, 100, 0.40)'                 // every 10th grid line (crisper for orientation)
+        };
+        return self._colors;
+    };
+
+    // Match the interaction canvas backing store to the viewport at the current
+    // DPR. Returns true when it changed (assigning width/height also clears it).
+    self._sizeGridCanvas = function (cssW, cssH, dpr) {
+        var bw = Math.max(1, Math.round(cssW * dpr));
+        var bh = Math.max(1, Math.round(cssH * dpr));
+        if (self.gridCanvas.width !== bw || self.gridCanvas.height !== bh) {
+            self.gridCanvas.width = bw;
+            self.gridCanvas.height = bh;
+            return true;
+        }
+        return false;
+    };
+
+    // Crisp hollow rectangle. Coordinates are viewport-local CSS px; thickness is
+    // CSS px. Four device-pixel-aligned strips keep the border sharp and a
+    // constant thickness at any zoom level and DPR.
+    self._hollowRect = function (x0c, y0c, x1c, y1c, thicknessCss, color) {
+        var ctx = self.gridCtx;
+        var dpr = window.devicePixelRatio || 1;
+        var t = Math.max(1, Math.round(thicknessCss * dpr));
+        var x0 = Math.round(x0c * dpr);
+        var y0 = Math.round(y0c * dpr);
+        var x1 = Math.round(x1c * dpr);
+        var y1 = Math.round(y1c * dpr);
+        var w = x1 - x0;
+        var h = y1 - y0;
+        if (w <= 0 || h <= 0) {
+            return;
+        }
+        ctx.fillStyle = color;
+        ctx.fillRect(x0, y0, w, t);       // top
+        ctx.fillRect(x0, y1 - t, w, t);   // bottom
+        ctx.fillRect(x0, y0, t, h);       // left
+        ctx.fillRect(x1 - t, y0, t, h);   // right
+    };
+
+    // Redraw the whole screen-space interaction layer: pixel grid, canvas edge
+    // frame, hovered pixel border and selected pixel border. Runs on every
+    // scheduled frame — hover/pan/zoom/click/resize are all rAF-batched through
+    // _onFrame -> _updateOverlays.
+    self._drawInteraction = function () {
+        var ctx = self.gridCtx;
+        if (!ctx || !self.gridCanvas.isConnected) {
+            return;
+        }
+
+        var cssW = self.viewport.clientWidth;
+        var cssH = self.viewport.clientHeight;
+        if (cssW <= 0 || cssH <= 0) {
+            return;
+        }
+
+        var dpr = window.devicePixelRatio || 1;
+        if (!self._sizeGridCanvas(cssW, cssH, dpr)) {
+            ctx.clearRect(0, 0, self.gridCanvas.width, self.gridCanvas.height);
+        }
+
+        var rects = self._getRects();
+        var vpRect = rects.viewport;
+        var r = rects.renderer;
+        if (!r || r.width <= 0 || r.height <= 0 || self.cw <= 0 || self.ch <= 0) {
+            return;
+        }
+
+        var colors = self._ensureColors();
+        var originX = r.left - vpRect.left;
+        var originY = r.top - vpRect.top;
+        var cellW = r.width / self.cw;
+        var cellH = r.height / self.ch;
+        var canvasRight = originX + self.cw * cellW;
+        var canvasBottom = originY + self.ch * cellH;
+
+        var GRID_MIN_CELL = 8;   // hide the grid below this many CSS px per cell
+        var GRID_MAJOR = 10;     // emphasise every Nth line for orientation
+
+        // 1) Soft elevation shadow around the canvas edge so the white art
+        //    sheet floats above the page background. The rect is filled to
+        //    cast a full shadow, then its interior is cleared — leaving an
+        //    outer-only halo that never tints the art. Drawn before the grid
+        //    so the interior clear can't erase the grid lines.
+        var shadowX = Math.round(originX * dpr);
+        var shadowY = Math.round(originY * dpr);
+        var shadowW = Math.round((canvasRight - originX) * dpr);
+        var shadowH = Math.round((canvasBottom - originY) * dpr);
+        if (shadowW > 0 && shadowH > 0) {
+            ctx.save();
+            ctx.shadowColor = 'rgba(20, 52, 108, 0.18)';
+            ctx.shadowBlur = 18 * dpr;
+            ctx.shadowOffsetX = 0;
+            ctx.shadowOffsetY = 6 * dpr;
+            ctx.fillStyle = '#000000';
+            ctx.fillRect(shadowX, shadowY, shadowW, shadowH);
+            ctx.restore();
+            ctx.clearRect(shadowX, shadowY, shadowW, shadowH);
+        }
+
+        // 2) Faint pixel grid — only when cells are large enough to read.
+        if (cellW >= GRID_MIN_CELL && cellH >= GRID_MIN_CELL) {
+            var top = Math.round(originY * dpr);
+            var bot = Math.round(canvasBottom * dpr);
+            var left = Math.round(originX * dpr);
+            var right = Math.round(canvasRight * dpr);
+
+            var iMin = Math.max(0, Math.floor(-originX / cellW));
+            var iMax = Math.min(self.cw, Math.ceil((cssW - originX) / cellW));
+            for (var i = iMin; i <= iMax; i++) {
+                var gx = Math.round((originX + i * cellW) * dpr);
+                ctx.fillStyle = (i % GRID_MAJOR === 0) ? colors.gridStrong : colors.grid;
+                ctx.fillRect(gx, top, 1, bot - top);
+            }
+
+            var jMin = Math.max(0, Math.floor(-originY / cellH));
+            var jMax = Math.min(self.ch, Math.ceil((cssH - originY) / cellH));
+            for (var j = jMin; j <= jMax; j++) {
+                var gy = Math.round((originY + j * cellH) * dpr);
+                ctx.fillStyle = (j % GRID_MAJOR === 0) ? colors.gridStrong : colors.grid;
+                ctx.fillRect(left, gy, right - left, 1);
+            }
+        }
+
+        // 3) Crisp canvas edge frame.
+        self._hollowRect(originX, originY, canvasRight, canvasBottom, 2, colors.edge);
+
+        // 4) Hovered pixel border (blue accent).
+        var hover = self._pendingHover;
+        if (hover && !self.brushing) {
+            self._hollowRect(
+                originX + hover.x * cellW, originY + hover.y * cellH,
+                originX + (hover.x + 1) * cellW, originY + (hover.y + 1) * cellH,
+                1.5, colors.hover);
+        }
+
+        // 5) Selected pixel border (orange accent) — static, no blink. Hidden in
+        // brush mode, where clickedPx tracks the brush head (the solid colour
+        // preview on the art-space overlay is the indicator there instead).
+        var sel = (!self.brushEnabled) ? self.clickedPx : null;
+        if (sel) {
+            self._hollowRect(
+                originX + sel.x * cellW, originY + sel.y * cellH,
+                originX + (sel.x + 1) * cellW, originY + (sel.y + 1) * cellH,
+                2, colors.selected);
+        }
+    };
+
     self._syncInteractionOverlay = function (hoverPixel, hoverStrokeWidth, clickStrokeWidth) {
         if (!window.canvasRenderer || typeof window.canvasRenderer.setInteractionState !== 'function') {
             return;
         }
 
-        var renderedClickPixel = self.brushEnabled ? null : self.clickedPx;
-        var clickPreviewMode = 'blink-contrast';
+        // The selected pixel is no longer rendered here (it used to blink on the
+        // art-space overlay). It is now a static orange border on the screen-space
+        // interaction canvas (_drawInteraction). In brush mode we only draw the
+        // solid colour preview while an actual brush stroke is active, otherwise
+        // a palette change would falsely recolour the last selected pixel locally.
+        var renderedClickPixel = null;
+        var clickPreviewMode = 'solid';
         var clickPreviewColor = null;
-        if (renderedClickPixel) {
+        if (self.brushEnabled && self.brushing && self.clickedPx) {
+            renderedClickPixel = self.clickedPx;
             if (self.eraserEnabled) {
-                clickPreviewMode = 'solid';
                 clickPreviewColor = '#ffffff';
-            } else if (self.brushEnabled && self.brushPreviewColor) {
-                clickPreviewMode = 'solid';
+            } else if (self.brushPreviewColor) {
                 clickPreviewColor = self.brushPreviewColor;
             }
         }
@@ -290,6 +473,9 @@ function CanvasViewportController(dotNetRef, viewportEl, rendererEl, coordsEl, c
         }
 
         self._syncInteractionOverlay(p, hoverStrokeWidth, clickStrokeWidth);
+
+        // Screen-space grid + canvas edge frame + hover/selected borders.
+        self._drawInteraction();
     };
 
     self.setBrushEnabled = function (enabled) {
@@ -448,6 +634,7 @@ function CanvasViewportController(dotNetRef, viewportEl, rendererEl, coordsEl, c
         self.lastBrushedPixel = null;
         self.dotNet.invokeMethodAsync('OnBrushStrokeEnded');
         self._updateCursor();
+        self._scheduleFrame();
     };
 
     self._startPanDrag = function (clientX, clientY, button) {
@@ -815,6 +1002,11 @@ CanvasViewportController.prototype.destroy = function () {
         this.eventLayer.removeEventListener('touchend', this._onTouchEnd);
         this.eventLayer.removeEventListener('touchcancel', this._onTouchEnd);
         this.eventLayer.remove();
+    }
+    if (this.gridCanvas) {
+        this.gridCanvas.remove();
+        this.gridCanvas = null;
+        this.gridCtx = null;
     }
     if (window.canvasRenderer && typeof window.canvasRenderer.setInteractionState === 'function') {
         window.canvasRenderer.setInteractionState({
